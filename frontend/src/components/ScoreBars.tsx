@@ -1,0 +1,41 @@
+import type { ReportData } from '../api/types'
+import ChartCard from './ChartCard'
+
+const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#0ea5e9']
+
+export default function ScoreBars({ data }: { data: ReportData }) {
+  const colorOf = new Map(data.competitors.map((c, i) => [c.name, COLORS[i % COLORS.length]]))
+
+  return (
+    <ChartCard icon="📊" title="分维度评分对比" subtitle="按维度横向对比各产品得分，降序排列">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {data.dimensions.map((dim) => {
+          const rows = data.competitors
+            .map((c) => ({ name: c.name, score: c.scores[dim] ?? 0 }))
+            .sort((a, b) => b.score - a.score)
+          return (
+            <div key={dim} className="rounded-lg bg-gray-50 p-3">
+              <p className="text-xs font-medium text-gray-700">{dim}</p>
+              <div className="mt-2 space-y-1.5">
+                {rows.map((r) => (
+                  <div key={r.name} className="flex items-center gap-2">
+                    <span className="w-20 truncate text-xs text-gray-600" title={r.name}>
+                      {r.name}
+                    </span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${r.score * 10}%`, backgroundColor: colorOf.get(r.name) }}
+                      />
+                    </div>
+                    <span className="w-6 text-right text-xs font-medium text-gray-700">{r.score}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </ChartCard>
+  )
+}
