@@ -1,7 +1,9 @@
+import random
+import string
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -13,6 +15,12 @@ def _uuid() -> str:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _invite_code() -> str:
+    """随机 8 位邀请码（大写字母+数字，排除易混淆字符）"""
+    alphabet = "".join(c for c in string.ascii_uppercase + string.digits if c not in "0O1IL")
+    return "".join(random.choices(alphabet, k=8))
 
 
 class User(Base):
@@ -31,6 +39,9 @@ class User(Base):
     token_version: Mapped[int] = mapped_column(default=0)  # 修改密码/退出所有设备时 +1，旧 token 失效
     reset_code: Mapped[str] = mapped_column(String(10), default="")  # 忘记密码验证码（演示用）
     reset_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)  # 所属企业，一人一企，空串表示无
+    org_role: Mapped[str] = mapped_column(String(10), default="")  # owner / admin / member，空串表示无企业
+    org_monthly_limit: Mapped[int] = mapped_column(default=-1)  # 企业管理员设置的成员月调研额度，-1 不限
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     tasks: Mapped[list["ResearchTask"]] = relationship(back_populates="user")
@@ -78,14 +89,18 @@ class ResearchTask(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)  # 创建时所属企业，空串为个人任务
+    tracker_id: Mapped[str] = mapped_column(String(32), default="", index=True)  # 由追踪项调度产生时记录
     product_name: Mapped[str] = mapped_column(String(200))
     competitors: Mapped[str] = mapped_column(Text, default="")  # 用户指定的竞品，逗号分隔，可为空
     focus: Mapped[str] = mapped_column(Text, default="")  # 调研重点，可为空
+    time_range: Mapped[str] = mapped_column(String(10), default="year")  # 检索时效：''/day/week/month/year
     # pending / planning / searching / analyzing / reporting / completed / failed
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     error: Mapped[str] = mapped_column(Text, default="")
     report_markdown: Mapped[str] = mapped_column(Text, default="")
     report_data: Mapped[str] = mapped_column(Text, default="")  # 结构化洞察 JSON（评分/SWOT/结论）
+    change_summary: Mapped[str] = mapped_column(Text, default="")  # 与上一期报告对比的本期变更 markdown
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -96,6 +111,11 @@ class ResearchTask(Base):
         back_populates="task", cascade="all, delete-orphan", order_by="Source.id"
     )
     user: Mapped[User] = relationship(back_populates="tasks")
+
+    @property
+    def creator_nickname(self) -> str:
+        """创建人昵称，供企业共享任务列表展示"""
+        return self.user.nickname if self.user else ""
 
 
 class TaskStep(Base):
@@ -132,3 +152,170 @@ class Source(Base):
     raw_content: Mapped[str] = mapped_column(Text, default="")  # 原文摘录（截断保存）
 
     task: Mapped[ResearchTask] = relationship(back_populates="sources")
+
+    @property
+    def age_days(self) -> int:
+        """距今天数（按基准时间计算），无发布日期返回 -1"""
+        from app.core.timeutil import age_days_of, parse_published
+
+        return age_days_of(parse_published(self.published_at))
+
+
+class Organization(Base):
+    """企业组织：成员通过邀请码加入，套餐/配额/追踪项按企业维度共享"""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(100))
+    plan: Mapped[str] = mapped_column(String(20), default="free")  # free / pro / enterprise
+    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner_id: Mapped[str] = mapped_column(String(32), index=True)
+    invite_code: Mapped[str] = mapped_column(String(8), default=_invite_code, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Tracker(Base):
+    """定时追踪项：按频率自动执行调研流水线并推送变更摘要"""
+
+    __tablename__ = "trackers"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(String(32), index=True)
+    creator_id: Mapped[str] = mapped_column(String(32), index=True)
+    product_name: Mapped[str] = mapped_column(String(200))
+    competitors: Mapped[str] = mapped_column(Text, default="")
+    focus: Mapped[str] = mapped_column(Text, default="")
+    time_range: Mapped[str] = mapped_column(String(10), default="year")  # 检索时效：''/day/week/month/year
+    frequency: Mapped[str] = mapped_column(String(10), default="weekly")  # daily / weekly / monthly
+    run_hour: Mapped[int] = mapped_column(default=9)  # 每期运行的整点（本地时区 0-23）
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    push_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    push_webhook: Mapped[bool] = mapped_column(Boolean, default=False)
+    webhook_type: Mapped[str] = mapped_column(String(20), default="generic")  # wecom / dingtalk / feishu / generic
+    webhook_url: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Notification(Base):
+    """站内通知（铃铛消息）"""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    link: Mapped[str] = mapped_column(String(500), default="")  # 前端路由，如 /app/tasks/{id}
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AssistantSession(Base):
+    """全局 AI 助手会话：一个用户可有多个会话，每个会话一条连续对话"""
+
+    __tablename__ = "assistant_sessions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="新对话")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AssistantMessage(Base):
+    """全局 AI 助手对话消息：归属于某个会话（session_id），可按会话清空"""
+
+    __tablename__ = "assistant_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    session_id: Mapped[str] = mapped_column(String(32), index=True, default="")
+    role: Mapped[str] = mapped_column(String(10))  # user / assistant
+    content: Mapped[str] = mapped_column(Text, default="")
+    refs: Mapped[str] = mapped_column(Text, default="")  # 引用的报告 JSON 数组 [{task_id, product_name}]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class EmailLog(Base):
+    """邮件发送记录：SMTP 未配置时以演示模式落库（status=demo）"""
+
+    __tablename__ = "email_logs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    to_email: Mapped[str] = mapped_column(String(255), index=True)
+    subject: Mapped[str] = mapped_column(String(300), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(10), default="demo")  # sent / demo / failed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+# ---------------------------------------------------------------------------
+# 产业链关系图谱（模块B）
+# ---------------------------------------------------------------------------
+
+class GraphProject(Base):
+    """一次关系图谱构建任务：以某个根对象为中心抽取产业链关系网络"""
+
+    __tablename__ = "graph_projects"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)  # 创建时所属企业，空串为个人
+    root_name: Mapped[str] = mapped_column(String(200))  # 根对象（企业/产品）名称
+    industry: Mapped[str] = mapped_column(String(100), default="")  # 所属行业（可选，辅助检索）
+    time_range: Mapped[str] = mapped_column(String(10), default="year")  # 检索时效
+    # pending / building / completed / failed
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    report_markdown: Mapped[str] = mapped_column(Text, default="")  # 构建完成后生成的关系网络分析报告
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    entities: Mapped[list["GraphEntity"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan", order_by="GraphEntity.id"
+    )
+    relations: Mapped[list["GraphRelation"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan", order_by="GraphRelation.id"
+    )
+
+
+class GraphEntity(Base):
+    """图谱中的实体节点（企业/产品/机构/人物）"""
+
+    __tablename__ = "graph_entities"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("graph_projects.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    type: Mapped[str] = mapped_column(String(20), default="company")  # company / product / org / person
+    industry: Mapped[str] = mapped_column(String(100), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_root: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    project: Mapped[GraphProject] = relationship(back_populates="entities")
+
+
+class GraphRelation(Base):
+    """图谱中的关系边（上下游/竞争/合作/投资/母子公司）"""
+
+    __tablename__ = "graph_relations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("graph_projects.id", ondelete="CASCADE"), index=True
+    )
+    source_id: Mapped[str] = mapped_column(String(32), index=True)
+    target_id: Mapped[str] = mapped_column(String(32), index=True)
+    # upstream_supplier / downstream_customer / competitor / partner / investor / parent / subsidiary
+    relation_type: Mapped[str] = mapped_column(String(30), default="partner")
+    description: Mapped[str] = mapped_column(Text, default="")
+    confidence: Mapped[float] = mapped_column(default=0.6)  # 关系置信度 0~1
+    source_url: Mapped[str] = mapped_column(String(1000), default="")  # 关系依据来源链接
+
+    project: Mapped[GraphProject] = relationship(back_populates="relations")

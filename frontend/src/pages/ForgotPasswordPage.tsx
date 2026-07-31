@@ -4,7 +4,7 @@ import { forgotPassword, resetPassword } from '../api/client'
 import AuthShell from '../components/AuthShell'
 
 const INPUT_CLS =
-  'w-full rounded-xl border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
+  'w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
 
 /** 忘记密码：两步式（获取演示验证码 → 重置密码） */
 export default function ForgotPasswordPage() {
@@ -84,7 +84,7 @@ export default function ForgotPasswordPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-md bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? '获取中…' : '获取验证码'}
           </button>
@@ -92,7 +92,7 @@ export default function ForgotPasswordPage() {
       ) : (
         <form onSubmit={handleReset} className="space-y-5">
           {/* 演示模式：无邮件服务，验证码直接展示 */}
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             演示模式：未接入邮件服务，你的验证码是{' '}
             <span className="font-mono text-base font-bold tracking-widest">{demoCode}</span>
             （10 分钟内有效）
@@ -135,7 +135,7 @@ export default function ForgotPasswordPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-md bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? '提交中…' : '重置密码'}
           </button>

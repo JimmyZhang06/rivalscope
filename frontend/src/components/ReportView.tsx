@@ -113,7 +113,7 @@ export default function ReportView({
               <button
                 key={s.id}
                 onClick={() => onCite?.(i + 1)}
-                className="group flex items-start gap-2.5 rounded-xl border border-gray-100 bg-gray-50/60 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50/40 hover:shadow-sm"
+                className="group flex items-start gap-2.5 rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50/40 hover:shadow-sm"
               >
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
                   {i + 1}

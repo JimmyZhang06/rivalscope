@@ -1,3 +1,4 @@
+import { Scale } from 'lucide-react'
 import type { ReportData } from '../api/types'
 import ChartCard from './ChartCard'
 
@@ -10,7 +11,7 @@ const QUADRANTS = [
 
 export default function SwotGrid({ data, productName }: { data: ReportData; productName: string }) {
   return (
-    <ChartCard icon="⚖️" title={`SWOT 分析 · ${productName}`} subtitle="主产品的优势、劣势、机会与威胁">
+    <ChartCard icon={<Scale className="h-4 w-4" />} title={`SWOT 分析 · ${productName}`} subtitle="主产品的优势、劣势、机会与威胁">
       <div className="grid gap-3 sm:grid-cols-2">
         {QUADRANTS.map((q) => (
           <div key={q.key} className={`rounded-lg border p-3 ${q.cls}`}>

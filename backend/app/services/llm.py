@@ -25,6 +25,15 @@ class LLMClient:
         )
         return resp.choices[0].message.content or ""
 
+    async def chat_messages(self, messages: list[dict], temperature: float = 0.3) -> str:
+        """多轮对话：直接传入完整 messages 列表（含 system/user/assistant）"""
+        resp = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+        )
+        return resp.choices[0].message.content or ""
+
     async def chat_json(self, system: str, user: str) -> dict:
         """要求 LLM 输出 JSON 并解析；容忍代码块包裹等常见格式"""
         text = await self.chat(system + "\n\n只输出 JSON，不要输出任何其他内容。", user)

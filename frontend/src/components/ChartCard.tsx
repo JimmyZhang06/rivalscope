@@ -7,15 +7,15 @@ export default function ChartCard({
   subtitle,
   children,
 }: {
-  icon: string
+  icon: ReactNode
   title: string
   subtitle?: string
   children: ReactNode
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-center gap-2.5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-base">{icon}</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-50 text-blue-700">{icon}</span>
         <div>
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
           {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}

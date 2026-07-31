@@ -49,6 +49,8 @@ class QuotaOut(BaseModel):
     used: int
     limit: int  # -1 表示不限
     max_queries: int
+    member_used: int = 0  # 本月本人发起次数（企业成员维度）
+    member_limit: int = -1  # 管理员设置的成员月额度，-1 未设限
 
 
 class OrderOut(BaseModel):
@@ -77,6 +79,23 @@ class AdminStatsOut(BaseModel):
     tasks_this_month: int
     total_revenue: int
     paid_users: int
+
+
+class AdminOrgOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    plan: str
+    plan_expires_at: datetime | None
+    invite_code: str
+    created_at: datetime
+    member_count: int = 0
+    month_used: int = 0  # 本月已消耗额度（调研 + 图谱，失败不计）
+
+
+class AdminOrgUpdate(BaseModel):
+    plan: str | None = None  # free / pro / enterprise
 
 
 def _validate_password_strength(v: str) -> str:

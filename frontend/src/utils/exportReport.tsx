@@ -13,12 +13,12 @@ import { splitSourcesSection } from './reportSections'
 
 const EXPORT_CSS = `
   .exp-root { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; color: #1f2937; font-size: 14px; line-height: 1.9; overflow-wrap: break-word; }
-  .exp-cover { border-bottom: 3px solid #2563eb; padding-bottom: 18px; margin-bottom: 24px; }
-  .exp-cover .exp-kicker { font-size: 11px; letter-spacing: 3px; color: #2563eb; text-transform: uppercase; margin: 0; }
+  .exp-cover { border-bottom: 3px solid #1e40af; padding-bottom: 18px; margin-bottom: 24px; }
+  .exp-cover .exp-kicker { font-size: 11px; letter-spacing: 3px; color: #1e40af; text-transform: uppercase; margin: 0; }
   .exp-cover h1 { font-size: 26px; color: #111827; margin: 8px 0 10px; }
   .exp-cover .exp-meta { font-size: 12px; color: #6b7280; margin: 2px 0; }
   .exp-body h1 { display: none; }
-  .exp-body h2 { font-size: 19px; color: #111827; border-left: 4px solid #2563eb; padding-left: 10px; margin: 26px 0 12px; }
+  .exp-body h2 { font-size: 19px; color: #111827; border-left: 4px solid #1e40af; padding-left: 10px; margin: 26px 0 12px; }
   .exp-body h3 { font-size: 16px; color: #1f2937; margin: 18px 0 8px; }
   .exp-body p { margin: 8px 0; }
   .exp-body strong { color: #1e3a8a; }
@@ -28,16 +28,16 @@ const EXPORT_CSS = `
   .exp-body table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; line-height: 1.7; margin: 12px 0; }
   .exp-body th, .exp-body td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; vertical-align: top; word-break: break-word; overflow-wrap: break-word; }
   .exp-body thead th { background: #eff6ff; color: #1e3a8a; }
-  .exp-body a { color: #2563eb; text-decoration: none; word-break: break-all; }
+  .exp-body a { color: #1d4ed8; text-decoration: none; word-break: break-all; }
   .exp-body pre { white-space: pre-wrap; word-break: break-word; background: #f3f4f6; border-radius: 4px; padding: 10px 12px; font-size: 11px; }
   .exp-body code { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
   .exp-body hr { border: none; border-top: 1px solid #e5e7eb; margin: 22px 0; }
-  .exp-sources { margin-top: 30px; border-top: 3px solid #2563eb; padding-top: 14px; }
+  .exp-sources { margin-top: 30px; border-top: 3px solid #1e40af; padding-top: 14px; }
   .exp-sources h2 { font-size: 19px; color: #111827; margin: 0 0 12px; }
   .exp-source { font-size: 12px; margin: 0 0 10px; }
   .exp-source .exp-src-title { color: #111827; font-weight: 600; }
   .exp-source .exp-src-meta { color: #6b7280; margin-top: 2px; }
-  .exp-source .exp-src-url { color: #2563eb; word-break: break-all; }
+  .exp-source .exp-src-url { color: #1d4ed8; word-break: break-all; }
 `
 
 /**

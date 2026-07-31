@@ -1,6 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import type { FormEvent, ReactNode } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  AlertTriangle,
+  BarChart3,
+  Building2,
+  Camera,
+  CreditCard,
+  History,
+  KeyRound,
+  Lock,
+  Pencil,
+  ReceiptText,
+  User,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import {
   changePassword,
   deleteAccount,
@@ -13,6 +27,7 @@ import {
 } from '../../api/client'
 import type { LoginLog, Order, UsageStats } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
+import OrgPanel from '../../components/OrgPanel'
 import PlanBadge from '../../components/PlanBadge'
 
 const PLAN_NAMES: Record<string, string> = { free: '免费版', pro: '专业版', enterprise: '企业版' }
@@ -29,7 +44,6 @@ const AVATAR_COLORS: Record<string, string> = {
   teal: 'from-teal-500 to-teal-600',
   sky: 'from-sky-400 to-sky-600',
 }
-const AVATAR_KEYS = ['blue', 'cyan', 'emerald', 'amber', 'rose', 'slate', 'teal', 'sky']
 
 const ACTION_LABELS: Record<LoginLog['action'], string> = {
   login: '登录',
@@ -67,7 +81,7 @@ function compressAvatar(file: File): Promise<string> {
 }
 
 const INPUT_CLS =
-  'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100'
+  'w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100'
 
 /** 从 UA 提取简短设备名 */
 function shortUA(ua: string): string {
@@ -80,35 +94,81 @@ function shortUA(ua: string): string {
   return ua.slice(0, 24)
 }
 
-type Tab = 'overview' | 'security' | 'orders'
+type Tab = 'overview' | 'security' | 'org' | 'orders'
+
+const TAB_KEYS: Tab[] = ['overview', 'security', 'org', 'orders']
+
+/** 统一的区块标题：图标徽标 + 标题 + 说明 + 可选右侧操作，营造企业级设置面板的规整层次 */
+function SectionHeader({
+  icon: Icon,
+  title,
+  desc,
+  action,
+  tone = 'blue',
+}: {
+  icon: LucideIcon
+  title: string
+  desc?: string
+  action?: ReactNode
+  tone?: 'blue' | 'red'
+}) {
+  const isRed = tone === 'red'
+  return (
+    <div
+      className={`flex items-start justify-between gap-3 border-b pb-3 ${
+        isRed ? 'border-red-100' : 'border-gray-100'
+      }`}
+    >
+      <div className="flex items-center gap-2.5">
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
+            isRed ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-700'
+          }`}
+        >
+          <Icon className="h-4 w-4" />
+        </span>
+        <div>
+          <h2 className={`text-sm font-semibold ${isRed ? 'text-red-700' : 'text-gray-900'}`}>{title}</h2>
+          {desc && <p className={`mt-0.5 text-xs ${isRed ? 'text-red-500' : 'text-gray-400'}`}>{desc}</p>}
+        </div>
+      </div>
+      {action}
+    </div>
+  )
+}
 
 export default function AccountPage() {
   const { user } = useAuth()
-  const [tab, setTab] = useState<Tab>('overview')
+  // Tab 由 URL 参数驱动（/app/account?tab=org），便于外部直达与刷新保持
+  const [searchParams, setSearchParams] = useSearchParams()
+  const param = searchParams.get('tab') as Tab | null
+  const tab: Tab = param && TAB_KEYS.includes(param) ? param : 'overview'
+  const setTab = (t: Tab) => setSearchParams(t === 'overview' ? {} : { tab: t }, { replace: true })
 
   if (!user) return null
 
-  const tabs: { key: Tab; label: string; icon: string }[] = [
-    { key: 'overview', label: '概览', icon: '👤' },
-    { key: 'security', label: '安全', icon: '🔒' },
-    { key: 'orders', label: '订单', icon: '🧾' },
+  const tabs: { key: Tab; label: string; icon: LucideIcon }[] = [
+    { key: 'overview', label: '概览', icon: User },
+    { key: 'security', label: '安全', icon: Lock },
+    { key: 'org', label: '企业', icon: Building2 },
+    { key: 'orders', label: '订单', icon: ReceiptText },
   ]
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="text-2xl font-bold text-gray-900">个人中心</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-gray-900">个人中心</h1>
       <p className="mt-1 text-sm text-gray-500">管理你的账号资料、安全设置与订单记录</p>
 
-      <div className="mt-6 flex w-fit gap-1 rounded-xl bg-gray-100 p-1">
+      <div className="mt-6 flex w-fit gap-1 rounded-lg bg-gray-100 p-1">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-              tab === t.key ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+            className={`flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium transition ${
+              tab === t.key ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
             }`}
           >
-            <span className="text-xs">{t.icon}</span>
+            <t.icon className="h-3.5 w-3.5" />
             {t.label}
           </button>
         ))}
@@ -116,6 +176,7 @@ export default function AccountPage() {
 
       {tab === 'overview' && <OverviewTab />}
       {tab === 'security' && <SecurityTab />}
+      {tab === 'org' && <OrgPanel />}
       {tab === 'orders' && <OrdersTab />}
     </div>
   )
@@ -139,15 +200,6 @@ function OverviewTab() {
   if (!user) return null
 
   const isCustomAvatar = user.avatar.startsWith('data:image/')
-
-  const pickAvatar = async (key: string) => {
-    if (key === user.avatar) return
-    try {
-      updateUser(await updateProfile({ avatar: key }))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败')
-    }
-  }
 
   const handleUpload = async (file: File | undefined) => {
     if (!file) return
@@ -198,12 +250,12 @@ function OverviewTab() {
 
   return (
     <div className="mt-6 space-y-6">
-      {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="rounded-md bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
       {/* 资料卡：头像 + 昵称行内编辑 */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-sm font-semibold text-gray-900">账号资料</h2>
-        <div className="mt-4 flex flex-wrap items-start gap-5">
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <SectionHeader icon={User} title="账号资料" desc="头像、昵称与基础信息" />
+        <div className="mt-5 flex flex-wrap items-start gap-5">
           {isCustomAvatar ? (
             <img
               src={user.avatar}
@@ -232,18 +284,18 @@ function OverviewTab() {
                       if (e.key === 'Enter') saveName()
                       if (e.key === 'Escape') setEditingName(false)
                     }}
-                    className="w-44 rounded-lg border border-blue-300 px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    className="w-44 rounded-md border border-blue-300 px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
                   <button
                     onClick={saveName}
                     disabled={saving}
-                    className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                   >
                     {saving ? '保存中…' : '保存'}
                   </button>
                   <button
                     onClick={() => setEditingName(false)}
-                    className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:text-gray-600"
+                    className="rounded-md px-2 py-1 text-xs text-gray-400 hover:text-gray-600"
                   >
                     取消
                   </button>
@@ -256,9 +308,9 @@ function OverviewTab() {
                       setNameDraft(user.nickname)
                       setEditingName(true)
                     }}
-                    className="text-xs text-blue-600 hover:underline"
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
                   >
-                    ✏️ 编辑
+                    <Pencil className="h-3 w-3" /> 编辑
                   </button>
                   {user.role === 'admin' && (
                     <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
@@ -272,7 +324,7 @@ function OverviewTab() {
             <p className="mt-0.5 text-xs text-gray-400">
               注册于 {new Date(user.created_at).toLocaleDateString('zh-CN')}
             </p>
-            {/* 头像：上传自定义图片 或 选择预设色 */}
+            {/* 头像：上传自定义图片 */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <input
                 ref={fileRef}
@@ -284,32 +336,18 @@ function OverviewTab() {
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}
-                className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 transition hover:border-blue-300 hover:text-blue-600 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 transition hover:border-blue-300 hover:text-blue-600 disabled:opacity-50"
               >
-                {uploading ? '上传中…' : '📷 上传头像'}
+                <Camera className="h-3 w-3" /> {uploading ? '上传中…' : '上传头像'}
               </button>
-              <span className="text-xs text-gray-300">|</span>
-              <span className="text-xs text-gray-400">预设色</span>
-              {AVATAR_KEYS.map((key) => (
-                <button
-                  key={key}
-                  onClick={() => pickAvatar(key)}
-                  title={key}
-                  className={`h-6 w-6 rounded-full bg-gradient-to-br transition ${AVATAR_COLORS[key]} ${
-                    !isCustomAvatar && (user.avatar || 'blue') === key
-                      ? 'ring-2 ring-blue-500 ring-offset-2'
-                      : 'hover:scale-110'
-                  }`}
-                />
-              ))}
             </div>
           </div>
         </div>
       </section>
 
       {/* 本月用量 + 近 6 个月柱状 */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-sm font-semibold text-gray-900">用量统计</h2>
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <SectionHeader icon={BarChart3} title="用量统计" desc="本月调研配额与近半年趋势" />
         {!usage || !quota ? (
           <p className="mt-4 text-sm text-gray-400">加载中…</p>
         ) : (
@@ -317,7 +355,7 @@ function OverviewTab() {
             <div>
               <div className="flex items-baseline justify-between">
                 <p className="text-xs text-gray-400">本月调研次数</p>
-                <p className="text-sm font-semibold text-gray-900">
+                <p className="text-sm font-semibold tabular-nums text-gray-900">
                   {quota.used}
                   <span className="font-normal text-gray-400"> / {unlimited ? '不限' : quota.limit}</span>
                 </p>
@@ -337,6 +375,11 @@ function OverviewTab() {
                     ? '本月额度即将用完，可考虑升级套餐'
                     : `单次调研最多 ${quota.max_queries} 组检索`}
               </p>
+              {quota.member_limit >= 0 && (
+                <p className="mt-1 text-xs text-blue-500">
+                  管理员为你设置的成员月额度：{quota.member_used} / {quota.member_limit} 次
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-400">近 6 个月调研次数</p>
@@ -358,13 +401,20 @@ function OverviewTab() {
       </section>
 
       {/* 套餐状态 */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900">当前套餐</h2>
-          <Link to="/app/pricing" className="text-sm text-blue-600 hover:underline">
-            升级 / 续费 →
-          </Link>
-        </div>
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <SectionHeader
+          icon={CreditCard}
+          title="当前套餐"
+          desc="你的会员权益与有效期"
+          action={
+            <Link
+              to="/app/pricing"
+              className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition hover:bg-blue-100"
+            >
+              升级 / 续费 →
+            </Link>
+          }
+        />
         <div className="mt-4 flex items-center gap-3">
           <PlanBadge plan={user.plan} />
           <span className="text-sm text-gray-500">
@@ -461,10 +511,13 @@ function SecurityTab() {
   return (
     <div className="mt-6 space-y-6">
       {/* 修改密码 */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-sm font-semibold text-gray-900">修改密码</h2>
-        <p className="mt-1 text-xs text-gray-400">修改后其他设备的登录将全部失效，当前设备无需重新登录</p>
-        <form onSubmit={submitPassword} className="mt-4 max-w-sm space-y-3">
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <SectionHeader
+          icon={KeyRound}
+          title="修改密码"
+          desc="修改后其他设备的登录将全部失效，当前设备无需重新登录"
+        />
+        <form onSubmit={submitPassword} className="mt-5 max-w-sm space-y-3">
           <input
             type="password"
             placeholder="当前密码"
@@ -495,7 +548,7 @@ function SecurityTab() {
           <button
             type="submit"
             disabled={pwdSaving}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
           >
             {pwdSaving ? '提交中…' : '确认修改'}
           </button>
@@ -503,16 +556,20 @@ function SecurityTab() {
       </section>
 
       {/* 登录历史 */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900">登录历史</h2>
-          <button
-            onClick={handleLogoutAll}
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-amber-300 hover:text-amber-600"
-          >
-            退出所有设备
-          </button>
-        </div>
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <SectionHeader
+          icon={History}
+          title="登录历史"
+          desc="最近的登录、注册与重置密码记录"
+          action={
+            <button
+              onClick={handleLogoutAll}
+              className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-amber-300 hover:text-amber-600"
+            >
+              退出所有设备
+            </button>
+          }
+        />
         {logoutAllMsg && <p className="mt-2 text-xs text-emerald-600">{logoutAllMsg}</p>}
         {logs.length === 0 ? (
           <p className="mt-4 text-sm text-gray-400">暂无记录</p>
@@ -522,7 +579,7 @@ function SecurityTab() {
               <li key={log.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 text-sm">
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    log.action === 'reset' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'
+                    log.action === 'reset' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-700'
                   }`}
                 >
                   {ACTION_LABELS[log.action] ?? log.action}
@@ -538,18 +595,20 @@ function SecurityTab() {
 
       {/* 危险区：注销账号（管理员不可注销） */}
       {user?.role !== 'admin' && (
-        <section className="rounded-2xl border border-red-200 bg-red-50/50 p-6">
-          <h2 className="text-sm font-semibold text-red-700">危险操作</h2>
-          <p className="mt-1 text-xs text-red-500">
-            注销账号将永久删除全部调研任务、报告与订单记录，且不可恢复
-          </p>
+        <section className="rounded-lg border border-red-200 bg-red-50/50 p-6">
+          <SectionHeader
+            icon={AlertTriangle}
+            tone="red"
+            title="危险操作"
+            desc="注销账号将永久删除全部调研任务、报告与订单记录，且不可恢复"
+          />
           <button
             onClick={() => {
               setShowDelete(true)
               setDeletePwd('')
               setDeleteErr('')
             }}
-            className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-600 hover:text-white"
+            className="mt-3 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-600 hover:text-white"
           >
             注销账号
           </button>
@@ -559,7 +618,7 @@ function SecurityTab() {
       {/* 注销确认弹窗 */}
       {showDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-base font-semibold text-gray-900">确认注销账号？</h3>
             <p className="mt-2 text-sm text-gray-500">
               此操作不可恢复，你的所有调研数据将被永久删除。请输入密码确认。
@@ -576,14 +635,14 @@ function SecurityTab() {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setShowDelete(false)}
-                className="rounded-lg px-4 py-2 text-sm text-gray-500 hover:bg-gray-50"
+                className="rounded-md px-4 py-2 text-sm text-gray-500 hover:bg-gray-50"
               >
                 取消
               </button>
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
               >
                 {deleting ? '注销中…' : '永久注销'}
               </button>
@@ -604,31 +663,31 @@ function OrdersTab() {
   }, [])
 
   return (
-    <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="text-sm font-semibold text-gray-900">订单记录</h2>
+    <section className="mt-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <SectionHeader icon={ReceiptText} title="订单记录" desc="模拟支付的历史订单与状态" />
       {orders.length === 0 ? (
-        <p className="mt-4 rounded-xl border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
+        <p className="mt-4 rounded-md border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
           暂无订单
         </p>
       ) : (
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-xs text-gray-400">
-                <th className="pb-2 font-medium">订单号</th>
-                <th className="pb-2 font-medium">套餐</th>
-                <th className="pb-2 font-medium">金额</th>
-                <th className="pb-2 font-medium">状态</th>
-                <th className="pb-2 font-medium">支付时间</th>
+              <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-500">
+                <th className="px-3 py-2 font-medium">订单号</th>
+                <th className="px-3 py-2 font-medium">套餐</th>
+                <th className="px-3 py-2 font-medium">金额</th>
+                <th className="px-3 py-2 font-medium">状态</th>
+                <th className="px-3 py-2 font-medium">支付时间</th>
               </tr>
             </thead>
             <tbody>
               {orders.map((o) => (
-                <tr key={o.id} className="border-b border-gray-50 last:border-0">
-                  <td className="py-3 font-mono text-xs text-gray-500">{o.id.slice(0, 8)}…</td>
-                  <td className="py-3 text-gray-900">{PLAN_NAMES[o.plan] ?? o.plan}</td>
-                  <td className="py-3 font-medium text-gray-900">¥{o.amount}</td>
-                  <td className="py-3">
+                <tr key={o.id} className="border-b border-gray-100 last:border-0">
+                  <td className="px-3 py-3 font-mono text-xs text-gray-500">{o.id.slice(0, 8)}…</td>
+                  <td className="px-3 py-3 text-gray-900">{PLAN_NAMES[o.plan] ?? o.plan}</td>
+                  <td className="px-3 py-3 font-medium tabular-nums text-gray-900">¥{o.amount}</td>
+                  <td className="px-3 py-3">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                         o.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
@@ -637,7 +696,7 @@ function OrdersTab() {
                       {o.status === 'paid' ? '已支付' : o.status}
                     </span>
                   </td>
-                  <td className="py-3 text-gray-500">
+                  <td className="px-3 py-3 text-gray-500">
                     {o.paid_at ? new Date(o.paid_at).toLocaleString('zh-CN') : '—'}
                   </td>
                 </tr>

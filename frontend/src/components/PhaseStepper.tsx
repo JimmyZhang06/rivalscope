@@ -1,10 +1,11 @@
+import { BarChart3, Check, Compass, PenLine, Search } from 'lucide-react'
 import type { TaskStatus } from '../api/types'
 
 const STAGES = [
-  { phase: 'planning', label: '规划方案', icon: '🧭' },
-  { phase: 'searching', label: '联网检索', icon: '🔍' },
-  { phase: 'analyzing', label: '对比分析', icon: '📊' },
-  { phase: 'reporting', label: '生成报告', icon: '📝' },
+  { phase: 'planning', label: '规划方案', icon: Compass },
+  { phase: 'searching', label: '联网检索', icon: Search },
+  { phase: 'analyzing', label: '对比分析', icon: BarChart3 },
+  { phase: 'reporting', label: '生成报告', icon: PenLine },
 ] as const
 
 /** 运行中任务的四阶段步骤条：已完成→蓝色对勾，进行中→高亮脉冲，未开始→灰色 */
@@ -31,19 +32,19 @@ export default function PhaseStepper({ status }: { status: TaskStatus }) {
             )}
             <div className="flex flex-col items-center gap-1.5">
               <span
-                className={`flex h-9 w-9 items-center justify-center rounded-full text-sm transition ${
+                className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
                   done
-                    ? 'bg-blue-600 font-bold text-white'
+                    ? 'bg-blue-600 text-white'
                     : active
-                      ? 'animate-pulse bg-blue-50 ring-2 ring-blue-500'
-                      : 'bg-gray-100 ring-1 ring-gray-200 grayscale'
+                      ? 'animate-pulse bg-blue-50 text-blue-600 ring-2 ring-blue-500'
+                      : 'bg-gray-100 text-gray-400 ring-1 ring-gray-200'
                 }`}
               >
-                {done ? '✓' : stage.icon}
+                {done ? <Check className="h-4 w-4" /> : <stage.icon className="h-4 w-4" />}
               </span>
               <span
                 className={`whitespace-nowrap text-xs ${
-                  active ? 'font-semibold text-blue-600' : done ? 'text-gray-700' : 'text-gray-400'
+                  active ? 'font-semibold text-blue-700' : done ? 'text-gray-700' : 'text-gray-400'
                 }`}
               >
                 {stage.label}

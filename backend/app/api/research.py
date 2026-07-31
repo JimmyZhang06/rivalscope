@@ -9,7 +9,7 @@ from app.api.deps import check_quota_or_403, get_current_user, get_quota, get_us
 from app.db.database import SessionLocal, get_db
 from app.db.models import ResearchTask, Source, TaskStep, User
 from app.schemas.auth import QuotaOut
-from app.schemas.research import ResearchCreate, SourceDetail, StepOut, TaskBrief, TaskDetail
+from app.schemas.research import AskIn, AskOut, ResearchCreate, SourceDetail, StepOut, TaskBrief, TaskDetail
 from app.services.agent import run_research
 
 router = APIRouter(prefix="/api/research", tags=["research"])
@@ -28,9 +28,11 @@ def create_research(
     check_quota_or_403(db, user)
     task = ResearchTask(
         user_id=user.id,
+        org_id=user.org_id or "",
         product_name=payload.product_name.strip(),
         competitors=payload.competitors.strip(),
         focus=payload.focus.strip(),
+        time_range=payload.time_range,
     )
     db.add(task)
     db.commit()
@@ -41,12 +43,13 @@ def create_research(
 
 @router.get("", response_model=list[TaskBrief])
 def list_research(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return (
-        db.query(ResearchTask)
-        .filter(ResearchTask.user_id == user.id)
-        .order_by(ResearchTask.created_at.desc())
-        .all()
-    )
+    """任务列表：本人任务 + 同企业共享任务"""
+    q = db.query(ResearchTask)
+    if user.org_id:
+        q = q.filter((ResearchTask.user_id == user.id) | (ResearchTask.org_id == user.org_id))
+    else:
+        q = q.filter(ResearchTask.user_id == user.id)
+    return q.order_by(ResearchTask.created_at.desc()).all()
 
 
 @router.get("/quota", response_model=QuotaOut)
@@ -55,8 +58,16 @@ def my_quota(user: User = Depends(get_current_user), db: Session = Depends(get_d
 
 
 def _get_owned_task(task_id: str, user: User, db: Session) -> ResearchTask:
+    """本人、同企业成员或管理员可访问"""
     task = db.get(ResearchTask, task_id)
-    if not task or (task.user_id != user.id and user.role != "admin"):
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    allowed = (
+        task.user_id == user.id
+        or user.role == "admin"
+        or (bool(user.org_id) and task.org_id == user.org_id)
+    )
+    if not allowed:
         raise HTTPException(status_code=404, detail="任务不存在")
     return task
 
@@ -86,6 +97,59 @@ def delete_research(task_id: str, user: User = Depends(get_current_user), db: Se
     task = _get_owned_task(task_id, user, db)
     db.delete(task)
     db.commit()
+
+
+ASK_SOURCE_LIMIT = 15  # 追问上下文最多附带的来源条数
+ASK_SNIPPET_LIMIT = 600  # 每条来源摘要截断长度
+
+
+@router.post("/{task_id}/ask", response_model=AskOut)
+async def ask_research(
+    task_id: str,
+    payload: AskIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """基于报告与来源材料的无状态追问（不占调研配额）"""
+    task = _get_owned_task(task_id, user, db)
+    if task.status != "completed" or not task.report_markdown:
+        raise HTTPException(status_code=400, detail="报告尚未生成，无法追问")
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if not settings.llm_api_key or settings.llm_api_key == "your-llm-api-key":
+        raise HTTPException(status_code=503, detail="缺少 LLM 配置，请在 backend/.env 中填写")
+
+    # 高分来源材料（编号与报告 [n] 一致：入库顺序即优先级顺序）
+    sources = db.query(Source).filter(Source.task_id == task_id).order_by(Source.id).all()
+    materials = "\n".join(
+        f"[{i}] {s.title}\nURL: {s.url}\n摘要: {s.snippet[:ASK_SNIPPET_LIMIT]}"
+        for i, s in enumerate(sources[:ASK_SOURCE_LIMIT], 1)
+    )
+
+    from app.services.agent import _date_header
+    from app.services.llm import LLMClient
+
+    system = (
+        _date_header()
+        + "你是一名竞品调研助手。用户会针对一份已完成的调研报告提问，"
+        "请仅依据给出的报告内容与来源材料回答：\n"
+        "1. 论断处标注对应的来源编号 [n]（纯文本，不要写成链接）；\n"
+        "2. 报告与材料未覆盖的内容要明确说明信息不足，不得编造；\n"
+        "3. 用中文回答，简洁直接，可用 Markdown 列表/表格。"
+    )
+    prompt = (
+        f"调研对象：{task.product_name}\n\n"
+        f"调研报告：\n{task.report_markdown[:12000]}\n\n"
+        f"来源材料：\n{materials}\n\n"
+        f"用户问题：{payload.question.strip()}"
+    )
+    try:
+        answer = await LLMClient().chat(system, prompt)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"回答生成失败：{str(exc)[:200]}") from exc
+    return AskOut(answer=answer)
 
 
 @router.get("/{task_id}/events")

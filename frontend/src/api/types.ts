@@ -7,6 +7,9 @@ export type TaskStatus =
   | 'completed'
   | 'failed'
 
+// 检索时效：''=不限 / day=近1天 / week=近1周 / month=近1月 / year=近1年
+export type TimeRange = '' | 'day' | 'week' | 'month' | 'year'
+
 export interface TaskBrief {
   id: string
   product_name: string
@@ -14,6 +17,9 @@ export interface TaskBrief {
   focus: string
   status: TaskStatus
   error: string
+  org_id: string
+  tracker_id: string
+  creator_nickname: string
   created_at: string
   updated_at: string
 }
@@ -39,6 +45,7 @@ export interface Source {
   tier: SourceTier
   published_at: string
   dimension: string
+  age_days: number // 距今天数，无日期为 -1
 }
 
 export interface SourceDetail extends Source {
@@ -51,6 +58,13 @@ export interface CompetitorScore {
   positioning: string
 }
 
+export interface TimelineEvent {
+  date: string // YYYY-MM-DD 或 YYYY-MM
+  title: string
+  summary: string
+  ref: number | null // 对应来源编号 [n]，可能为空
+}
+
 export interface ReportData {
   dimensions: string[]
   competitors: CompetitorScore[]
@@ -61,11 +75,13 @@ export interface ReportData {
     threats: string[]
   }
   verdict: string
+  timeline?: TimelineEvent[] // 事件时间线（可能缺失，前端优雅降级）
 }
 
 export interface TaskDetail extends TaskBrief {
   report_markdown: string
   report_data: ReportData | null
+  change_summary: string
   steps: Step[]
   sources: Source[]
 }
@@ -74,6 +90,7 @@ export interface ResearchCreate {
   product_name: string
   competitors: string
   focus: string
+  time_range: TimeRange
 }
 
 // ---------- 账号体系 ----------
@@ -104,6 +121,8 @@ export interface Quota {
   used: number
   limit: number // -1 表示不限
   max_queries: number
+  member_used: number // 本月本人发起次数（企业成员维度）
+  member_limit: number // 管理员设置的成员月额度，-1 未设限
 }
 
 export interface PlanInfo {
@@ -133,6 +152,17 @@ export interface AdminStats {
   paid_users: number
 }
 
+export interface AdminOrg {
+  id: string
+  name: string
+  plan: Plan
+  plan_expires_at: string | null
+  invite_code: string
+  created_at: string
+  member_count: number
+  month_used: number // 本月已消耗额度（调研 + 图谱，失败不计）
+}
+
 export interface LoginLog {
   id: string
   action: 'login' | 'register' | 'reset'
@@ -154,4 +184,182 @@ export interface UsageStats {
 export interface ForgotResponse {
   message: string
   demo_code: string
+}
+
+// ---------- 企业组织 ----------
+
+export type OrgRole = 'owner' | 'admin' | 'member' | ''
+
+export interface Org {
+  id: string
+  name: string
+  plan: Plan
+  plan_expires_at: string | null
+  owner_id: string
+  invite_code: string
+  created_at: string
+}
+
+export interface OrgMe {
+  org: Org | null
+  org_role: OrgRole
+  member_count: number
+}
+
+export interface OrgMember {
+  id: string
+  email: string
+  nickname: string
+  avatar: string
+  org_role: OrgRole
+  org_monthly_limit: number // -1 不限，0 禁止发起
+  month_used: number // 本月本人发起的调研次数
+  created_at: string
+}
+
+// ---------- 定时追踪 ----------
+
+export type Frequency = 'daily' | 'weekly' | 'monthly'
+export type WebhookType = 'wecom' | 'dingtalk' | 'feishu' | 'generic'
+
+export interface Tracker {
+  id: string
+  org_id: string
+  creator_id: string
+  product_name: string
+  competitors: string
+  focus: string
+  time_range: TimeRange
+  frequency: Frequency
+  run_hour: number
+  next_run_at: string | null
+  last_run_at: string | null
+  enabled: boolean
+  push_email: boolean
+  push_webhook: boolean
+  webhook_type: WebhookType
+  webhook_url: string
+  created_at: string
+  run_count: number
+  last_task_id: string
+  last_change_summary: string
+  running: boolean
+  running_task_id: string
+  creator_nickname: string // 创建人昵称
+  can_manage: boolean // 当前用户是否可管理（创建人或企业管理员）
+}
+
+export interface TrackerCreate {
+  product_name: string
+  competitors: string
+  focus: string
+  time_range: TimeRange
+  frequency: Frequency
+  run_hour: number
+  push_email: boolean
+  push_webhook: boolean
+  webhook_type: WebhookType
+  webhook_url: string
+}
+
+export type TrackerUpdate = Partial<TrackerCreate> & { enabled?: boolean }
+
+export interface TrackerRun {
+  id: string
+  status: TaskStatus
+  error: string
+  change_summary: string
+  report_data: ReportData | null
+  created_at: string
+}
+
+// ---------- 产业链关系图谱 ----------
+
+export type GraphStatus = 'pending' | 'building' | 'completed' | 'failed'
+export type EntityType = 'company' | 'product' | 'org' | 'person'
+export type RelationType =
+  | 'upstream_supplier'
+  | 'downstream_customer'
+  | 'competitor'
+  | 'partner'
+  | 'investor'
+  | 'parent'
+  | 'subsidiary'
+
+export interface GraphProject {
+  id: string
+  root_name: string
+  industry: string
+  time_range: TimeRange
+  status: GraphStatus
+  error: string
+  org_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface GraphEntity {
+  id: string
+  name: string
+  type: EntityType
+  industry: string
+  description: string
+  is_root: boolean
+}
+
+export interface GraphRelation {
+  id: string
+  source_id: string
+  target_id: string
+  relation_type: RelationType
+  description: string
+  confidence: number
+  source_url: string
+}
+
+export interface GraphDetail extends GraphProject {
+  report_markdown: string
+  entities: GraphEntity[]
+  relations: GraphRelation[]
+}
+
+export interface GraphCreate {
+  root_name: string
+  industry: string
+  competitors: string
+  time_range: TimeRange
+}
+
+// ---------- 站内通知 ----------
+
+export interface NotificationItem {
+  id: string
+  title: string
+  body: string
+  link: string
+  read: boolean
+  created_at: string
+}
+
+// ---------- 全局 AI 助手 ----------
+
+export interface AssistantRef {
+  task_id: string
+  product_name: string
+}
+
+export interface AssistantMessage {
+  id: string
+  session_id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+  refs: AssistantRef[] // 回答引用的报告，用户消息为空数组
+}
+
+export interface AssistantSession {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
 }

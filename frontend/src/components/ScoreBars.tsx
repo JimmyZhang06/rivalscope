@@ -1,13 +1,14 @@
+import { BarChart3 } from 'lucide-react'
 import type { ReportData } from '../api/types'
 import ChartCard from './ChartCard'
 
-const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#0ea5e9']
+const COLORS = ['#1d4ed8', '#0e7490', '#475569', '#b45309', '#15803d', '#0369a1']
 
 export default function ScoreBars({ data }: { data: ReportData }) {
   const colorOf = new Map(data.competitors.map((c, i) => [c.name, COLORS[i % COLORS.length]]))
 
   return (
-    <ChartCard icon="📊" title="分维度评分对比" subtitle="按维度横向对比各产品得分，降序排列">
+    <ChartCard icon={<BarChart3 className="h-4 w-4" />} title="分维度评分对比" subtitle="按维度横向对比各产品得分，降序排列">
       <div className="grid gap-4 sm:grid-cols-2">
         {data.dimensions.map((dim) => {
           const rows = data.competitors

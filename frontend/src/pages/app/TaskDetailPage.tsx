@@ -1,6 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { getResearch, subscribeEvents } from '../../api/client'
+import remarkGfm from 'remark-gfm'
+import {
+  BarChart3,
+  Bot,
+  CalendarDays,
+  Clock,
+  FileDown,
+  FileText,
+  Lightbulb,
+  Link2,
+  MessageSquareText,
+  Printer,
+  RefreshCw,
+  Target,
+  Timer,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { askResearch, getResearch, subscribeEvents } from '../../api/client'
 import type { Source, SourceTier, Step, TaskBrief, TaskDetail, TaskStatus } from '../../api/types'
 import BackToTop from '../../components/BackToTop'
 import PhaseStepper from '../../components/PhaseStepper'
@@ -16,6 +34,7 @@ import StepTimeline from '../../components/StepTimeline'
 import SwotGrid from '../../components/SwotGrid'
 import { TIER_LABELS } from '../../components/TierBadge'
 import { exportMarkdown, exportPdf, exportWord } from '../../utils/exportReport'
+import { parseUtc } from '../../utils/time'
 
 const RUNNING = new Set<TaskStatus>(['pending', 'planning', 'searching', 'analyzing', 'reporting'])
 const TIER_ORDER: SourceTier[] = ['official', 'media', 'community', 'other']
@@ -29,11 +48,6 @@ const TIER_BAR_COLORS: Record<SourceTier, string> = {
 type Tab = 'report' | 'insights' | 'sources'
 type SourceSort = 'score' | 'index' | 'date'
 
-/** 后端时间为 UTC，序列化可能不带时区后缀，缺失时补 Z 再解析 */
-function parseUtc(iso: string) {
-  return new Date(/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`)
-}
-
 function formatElapsed(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000))
   const m = Math.floor(total / 60)
@@ -43,7 +57,7 @@ function formatElapsed(ms: number) {
 
 /** 新建页跳转时通过路由 state 秒传任务概要，免去"加载中"闪屏 */
 function briefToDetail(brief: TaskBrief): TaskDetail {
-  return { ...brief, report_markdown: '', report_data: null, steps: [], sources: [] }
+  return { ...brief, report_markdown: '', report_data: null, change_summary: '', steps: [], sources: [] }
 }
 
 /** 来源可信度概览统计 */
@@ -52,15 +66,23 @@ function useSourceStats(sources: Source[]) {
     const tierCount = new Map<SourceTier, number>()
     const dates: string[] = []
     const dimensions = new Set<string>()
+    const freshness = { recent: 0, fresh: 0, normal: 0, old: 0, undated: 0 }
     for (const s of sources) {
       tierCount.set(s.tier, (tierCount.get(s.tier) ?? 0) + 1)
       if (s.published_at) dates.push(s.published_at.slice(0, 10))
       if (s.dimension) dimensions.add(s.dimension)
+      const age = s.age_days
+      if (age < 0) freshness.undated += 1
+      else if (age <= 30) freshness.recent += 1
+      else if (age <= 180) freshness.fresh += 1
+      else if (age <= 365) freshness.normal += 1
+      else freshness.old += 1
     }
     dates.sort()
     return {
       tierCount,
       dimensions: [...dimensions],
+      freshness,
       timeSpan: dates.length >= 2 ? `${dates[0]} ~ ${dates[dates.length - 1]}` : dates[0] ?? '',
     }
   }, [sources])
@@ -89,6 +111,11 @@ export default function TaskDetailPage() {
   const [exporting, setExporting] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
   const subscribed = useRef(false)
+  // 报告追问（无状态问答线程，不持久化）
+  const [qaThread, setQaThread] = useState<{ q: string; a: string }[]>([])
+  const [question, setQuestion] = useState('')
+  const [asking, setAsking] = useState(false)
+  const [askError, setAskError] = useState('')
 
   const loadDetail = useCallback(async () => {
     if (!id) return
@@ -146,6 +173,8 @@ export default function TaskDetailPage() {
     task?.report_data && task.report_data.competitors?.length > 0 && task.report_data.dimensions?.length > 0
       ? task.report_data
       : null
+  // 事件时间线独立于洞察评分数据（洞察失败时时间线仍可展示）
+  const timeline = task?.report_data?.timeline ?? []
 
   // 引用编号 = 来源列表顺序（与后端材料编号一致）
   const openCite = useCallback(
@@ -199,11 +228,27 @@ export default function TaskDetailPage() {
     }
   }
 
+  const handleAsk = async () => {
+    const q = question.trim()
+    if (!q || !id || asking) return
+    setAsking(true)
+    setAskError('')
+    try {
+      const { answer } = await askResearch(id, q)
+      setQaThread((prev) => [...prev, { q, a: answer }])
+      setQuestion('')
+    } catch (err) {
+      setAskError(err instanceof Error ? err.message : '回答生成失败')
+    } finally {
+      setAsking(false)
+    }
+  }
+
   if (notFound) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-16 text-center">
         <p className="text-gray-500">任务不存在或已被删除</p>
-        <Link to="/app/tasks" className="mt-4 inline-block text-sm text-blue-600 hover:underline">
+        <Link to="/app/tasks" className="mt-4 inline-block text-sm text-blue-700 hover:underline">
           ← 返回调研记录
         </Link>
       </div>
@@ -214,10 +259,10 @@ export default function TaskDetailPage() {
     return <p className="py-16 text-center text-sm text-gray-400">加载中…</p>
   }
 
-  const tabs: { key: Tab; label: string; icon: string }[] = [
-    { key: 'report', label: '调研报告', icon: '📄' },
-    ...(reportData ? [{ key: 'insights' as Tab, label: '数据洞察', icon: '📊' }] : []),
-    { key: 'sources', label: `信息来源（${sources.length}）`, icon: '🔗' },
+  const tabs: { key: Tab; label: string; icon: LucideIcon }[] = [
+    { key: 'report', label: '调研报告', icon: FileText },
+    ...(reportData || timeline.length > 0 ? [{ key: 'insights' as Tab, label: '数据洞察', icon: BarChart3 }] : []),
+    { key: 'sources', label: `信息来源（${sources.length}）`, icon: Link2 },
   ]
 
   return (
@@ -226,11 +271,11 @@ export default function TaskDetailPage() {
       <BackToTop />
       {/* 头部 */}
       <div className="no-print mb-6">
-        <Link to="/app/tasks" className="text-sm text-blue-600 hover:underline">
+        <Link to="/app/tasks" className="text-sm text-blue-700 hover:underline">
           ← 返回调研记录
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900">{task.product_name}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">{task.product_name}</h1>
           <StatusBadge status={status} />
           {status === 'completed' && task.report_markdown && (
             <>
@@ -238,17 +283,18 @@ export default function TaskDetailPage() {
                 <button
                   onClick={() => setExportOpen((v) => !v)}
                   disabled={exporting}
-                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-blue-300 hover:text-blue-600 disabled:opacity-60"
+                  className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-blue-300 hover:text-blue-700 disabled:opacity-60"
                 >
-                  {exporting ? '⏳ 正在生成 PDF…' : '⬇ 导出报告 ▾'}
+                  <FileDown className="h-3.5 w-3.5" />
+                  {exporting ? '正在生成 PDF…' : '导出报告 ▾'}
                 </button>
                 {exportOpen && (
-                  <div className="absolute left-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+                  <div className="absolute left-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg">
                     {(
                       [
-                        { kind: 'pdf', icon: '📕', label: 'PDF 文档 (.pdf)' },
-                        { kind: 'word', icon: '📘', label: 'Word 文档 (.doc)' },
-                        { kind: 'md', icon: '📝', label: 'Markdown (.md)' },
+                        { kind: 'pdf', label: 'PDF 文档 (.pdf)' },
+                        { kind: 'word', label: 'Word 文档 (.doc)' },
+                        { kind: 'md', label: 'Markdown (.md)' },
                       ] as const
                     ).map((item) => (
                       <button
@@ -256,7 +302,7 @@ export default function TaskDetailPage() {
                         onClick={() => handleExport(item.kind)}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
                       >
-                        <span>{item.icon}</span>
+                        <FileDown className="h-3.5 w-3.5 text-gray-400" />
                         {item.label}
                       </button>
                     ))}
@@ -269,7 +315,7 @@ export default function TaskDetailPage() {
                       }}
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"
                     >
-                      <span>🖨</span>
+                      <Printer className="h-3.5 w-3.5 text-gray-400" />
                       浏览器打印…
                     </button>
                   </div>
@@ -280,13 +326,13 @@ export default function TaskDetailPage() {
           {!running && steps.length > 0 && (
             <button
               onClick={() => setShowSteps((v) => !v)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+              className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition ${
                 showSteps
-                  ? 'border-blue-300 bg-blue-50 text-blue-600'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                  ? 'border-blue-300 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700'
               }`}
             >
-              🕐 执行过程{showSteps ? ' ▲' : ' ▼'}
+              <Clock className="h-3.5 w-3.5" /> 执行过程{showSteps ? ' ▲' : ' ▼'}
             </button>
           )}
         </div>
@@ -298,14 +344,16 @@ export default function TaskDetailPage() {
 
         {/* 执行进度：运行中为一体化执行视图（状态头 + 阶段步骤条 + 实时时间线）；完成后由按钮折叠展开 */}
         {running && (
-          <div className="mt-4 overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 px-5 py-4 text-white">
+          <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900 px-5 py-4 text-white">
               <div>
-                <p className="text-sm font-semibold">🤖 Agent 正在调研「{task.product_name}」</p>
-                <p className="mt-0.5 text-xs text-blue-100">全流程自动执行，报告生成后将自动展示，无需刷新页面</p>
+                <p className="flex items-center gap-2 text-sm font-semibold">
+                  <Bot className="h-4 w-4" /> Agent 正在调研「{task.product_name}」
+                </p>
+                <p className="mt-0.5 text-xs text-slate-400">全流程自动执行，报告生成后将自动展示，无需刷新页面</p>
               </div>
-              <span className="rounded-full bg-white/15 px-3 py-1 text-xs tabular-nums">
-                ⏱ 已用时 {formatElapsed(now - parseUtc(task.created_at).getTime())}
+              <span className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs tabular-nums">
+                <Timer className="h-3.5 w-3.5" /> 已用时 {formatElapsed(now - parseUtc(task.created_at).getTime())}
               </span>
             </div>
             <div className="px-5 py-5">
@@ -317,7 +365,7 @@ export default function TaskDetailPage() {
           </div>
         )}
         {!running && showSteps && (
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mt-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <h2 className="mb-4 text-sm font-semibold text-gray-900">执行过程</h2>
             {steps.length === 0 ? (
               <p className="text-sm text-gray-400">暂无步骤记录</p>
@@ -332,7 +380,7 @@ export default function TaskDetailPage() {
 
       {/* 报告 / 洞察 / 来源：运行中不渲染（执行视图即主界面） */}
       {!running && (
-        <main className="print-full min-w-0 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <main className="print-full min-w-0 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           {status === 'failed' ? (
             <div className="rounded-lg bg-red-50 p-4">
               <p className="text-sm font-medium text-red-700">调研失败</p>
@@ -340,18 +388,18 @@ export default function TaskDetailPage() {
             </div>
           ) : (
             <>
-              <div className="no-print mb-5 flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
+              <div className="no-print mb-5 flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg bg-gray-100 p-1">
                 {tabs.map((t) => (
                   <button
                     key={t.key}
                     onClick={() => setTab(t.key)}
-                    className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
+                    className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
                       tab === t.key
-                        ? 'bg-white text-blue-600 shadow-sm'
+                        ? 'bg-white text-blue-700 shadow-sm'
                         : 'text-gray-500 hover:text-gray-800'
                     }`}
                   >
-                    <span className="text-xs">{t.icon}</span>
+                    <t.icon className="h-3.5 w-3.5" />
                     {t.label}
                   </button>
                 ))}
@@ -361,16 +409,30 @@ export default function TaskDetailPage() {
               {tab === 'report' &&
                 (task.report_markdown ? (
                   <div>
+                    {/* 本期变更：定时追踪任务的与上一期对比摘要 */}
+                    {task.change_summary && (
+                      <div className="mb-5 rounded-lg border border-blue-200 bg-blue-50/70 p-5">
+                        <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-700">
+                          <RefreshCw className="h-4 w-4" /> 本期变更
+                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                            与上一期对比
+                          </span>
+                        </p>
+                        <div className="prose prose-sm mt-2 max-w-none text-sm leading-relaxed text-gray-700 prose-headings:my-2 prose-headings:text-sm prose-headings:text-blue-800 prose-p:my-1 prose-ul:my-1">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.change_summary}</ReactMarkdown>
+                        </div>
+                      </div>
+                    )}
                     {/* 报告封面头 */}
-                    <div className="rounded-2xl bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 p-6 text-white print:rounded-none print:bg-none print:p-0 print:text-gray-900">
-                      <p className="text-xs font-medium uppercase tracking-widest text-blue-100 print:text-gray-400">
+                    <div className="relative overflow-hidden rounded-lg bg-slate-900 p-6 text-white print:rounded-none print:bg-transparent print:p-0 print:text-gray-900">
+                      <p className="text-xs font-medium uppercase tracking-widest text-slate-400 print:text-gray-400">
                         Competitive Research Report
                       </p>
                       <h2 className="mt-1.5 text-xl font-bold leading-snug sm:text-2xl">
                         {task.product_name} 竞品调研报告
                       </h2>
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="rounded-full bg-white/15 px-2.5 py-1 print:border print:border-gray-200 print:bg-transparent">
+                        <span className="rounded-full bg-white/10 px-2.5 py-1 print:border print:border-gray-200 print:bg-transparent">
                           生成于 {new Date(task.created_at).toLocaleDateString('zh-CN')}
                         </span>
                         {task.competitors &&
@@ -381,7 +443,7 @@ export default function TaskDetailPage() {
                             .map((c) => (
                               <span
                                 key={c}
-                                className="rounded-full bg-white/15 px-2.5 py-1 print:border print:border-gray-200 print:bg-transparent"
+                                className="rounded-full bg-white/10 px-2.5 py-1 print:border print:border-gray-200 print:bg-transparent"
                               >
                                 vs {c}
                               </span>
@@ -391,21 +453,21 @@ export default function TaskDetailPage() {
                       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/20 pt-4 sm:grid-cols-4 print:border-gray-200">
                         <div>
                           <p className="text-lg font-bold">{sources.length}</p>
-                          <p className="text-[11px] text-blue-100 print:text-gray-500">信息来源</p>
+                          <p className="text-[11px] text-slate-400 print:text-gray-500">信息来源</p>
                         </div>
                         <div>
-                          <p className="text-lg font-bold">
+                          <p className="text-lg font-bold tabular-nums">
                             {(stats.tierCount.get('official') ?? 0) + (stats.tierCount.get('media') ?? 0)}
                           </p>
-                          <p className="text-[11px] text-blue-100 print:text-gray-500">官方与媒体来源</p>
+                          <p className="text-[11px] text-slate-400 print:text-gray-500">官方与媒体来源</p>
                         </div>
                         <div>
                           <p className="text-lg font-bold">{stats.dimensions.length || '—'}</p>
-                          <p className="text-[11px] text-blue-100 print:text-gray-500">检索维度</p>
+                          <p className="text-[11px] text-slate-400 print:text-gray-500">检索维度</p>
                         </div>
                         <div>
                           <p className="text-lg font-bold">{reportData ? reportData.competitors.length : '—'}</p>
-                          <p className="text-[11px] text-blue-100 print:text-gray-500">对比产品</p>
+                          <p className="text-[11px] text-slate-400 print:text-gray-500">对比产品</p>
                         </div>
                       </div>
                     </div>
@@ -419,6 +481,58 @@ export default function TaskDetailPage() {
                         <ReportToc markdown={task.report_markdown} />
                       </div>
                     </div>
+
+                    {/* 报告追问：基于报告与来源的 AI 问答（会话内不持久化） */}
+                    {status === 'completed' && (
+                      <div className="no-print mt-8 rounded-lg border border-blue-100 bg-blue-50/40 p-5">
+                        <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+                          <MessageSquareText className="h-4 w-4 text-blue-700" /> 针对报告追问
+                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                            AI 基于报告与来源回答，不占调研额度
+                          </span>
+                        </p>
+                        {qaThread.length > 0 && (
+                          <div className="mt-4 space-y-4">
+                            {qaThread.map((qa, i) => (
+                              <div key={i}>
+                                <p className="flex items-start gap-2 text-sm font-medium text-gray-900">
+                                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                                    问
+                                  </span>
+                                  {qa.q}
+                                </p>
+                                <div className="mt-2 rounded-md border border-gray-100 bg-white p-4">
+                                  <ReportView markdown={qa.a} onCite={openCite} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {askError && (
+                          <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600">{askError}</p>
+                        )}
+                        <div className="mt-4 flex gap-2">
+                          <input
+                            value={question}
+                            onChange={(e) => setQuestion(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleAsk()
+                            }}
+                            placeholder="如：这两个产品的定价差异主要在哪？"
+                            maxLength={2000}
+                            className="flex-1 rounded-md border border-gray-200 bg-white px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none"
+                          />
+                          <button
+                            onClick={handleAsk}
+                            disabled={asking || !question.trim()}
+                            className="rounded-md bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {asking ? '思考中…' : '追问'}
+                          </button>
+                        </div>
+                        {asking && <p className="mt-2 text-xs text-gray-400">正在检索报告与来源材料生成回答…</p>}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="py-8 text-center text-sm text-gray-400">暂无报告</p>
@@ -428,9 +542,9 @@ export default function TaskDetailPage() {
               {tab === 'insights' && reportData && (
                 <div className="space-y-4">
                   {reportData.verdict && (
-                    <div className="rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 p-4 text-white shadow-sm">
-                      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-100">
-                        💡 总体结论
+                    <div className="relative overflow-hidden rounded-lg bg-slate-900 p-4 text-white shadow-sm">
+                      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        <Lightbulb className="h-3.5 w-3.5" /> 总体结论
                       </p>
                       <p className="mt-1.5 text-sm font-medium leading-relaxed">{reportData.verdict}</p>
                     </div>
@@ -438,9 +552,9 @@ export default function TaskDetailPage() {
                   <ScoreRadar data={reportData} />
                   <ScoreBars data={reportData} />
                   <SwotGrid data={reportData} productName={task.product_name} />
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                     <div className="flex items-center gap-2.5">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-base">🎯</span>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-50 text-blue-700"><Target className="h-4 w-4" /></span>
                       <div>
                         <h3 className="text-sm font-semibold text-gray-900">一句话定位</h3>
                         <p className="text-xs text-gray-400">各产品的市场定位速览</p>
@@ -458,17 +572,53 @@ export default function TaskDetailPage() {
                 </div>
               )}
 
+              {/* 动态时间线（独立于评分洞察，抽取失败时不展示） */}
+              {tab === 'insights' && timeline.length > 0 && (
+                <div className={`rounded-lg border border-gray-200 bg-white p-4 shadow-sm ${reportData ? 'mt-4' : ''}`}>
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-cyan-50 text-cyan-700"><CalendarDays className="h-4 w-4" /></span>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">动态时间线</h3>
+                      <p className="text-xs text-gray-400">从检索材料中抽取的关键事件，按时间降序</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-0 border-l-2 border-blue-100 pl-5">
+                    {timeline.map((ev, i) => (
+                      <div key={i} className="relative pb-5 last:pb-0">
+                        <span className="absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-white bg-blue-500 ring-1 ring-blue-200" />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-blue-700">
+                            {ev.date}
+                          </span>
+                          <span className="text-sm font-medium text-gray-900">{ev.title}</span>
+                          {ev.ref != null && sources[ev.ref - 1] && (
+                            <button
+                              onClick={() => openCite(ev.ref as number)}
+                              className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500 transition hover:bg-blue-600 hover:text-white"
+                              title="查看来源"
+                            >
+                              [{ev.ref}]
+                            </button>
+                          )}
+                        </div>
+                        {ev.summary && <p className="mt-1 text-xs leading-relaxed text-gray-600">{ev.summary}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Tab 3：信息来源 */}
               {tab === 'sources' && (
                 <div>
                   {/* 概览统计卡 */}
                   <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5">
+                    <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
                       <p className="text-xl font-bold text-gray-900">{sources.length}</p>
                       <p className="mt-0.5 text-xs text-gray-500">信息来源总数</p>
                     </div>
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5">
-                      <p className="text-xl font-bold text-blue-600">
+                    <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
+                      <p className="text-xl font-bold text-blue-700">
                         {sources.length
                           ? Math.round(
                               (((stats.tierCount.get('official') ?? 0) + (stats.tierCount.get('media') ?? 0)) /
@@ -480,11 +630,11 @@ export default function TaskDetailPage() {
                       </p>
                       <p className="mt-0.5 text-xs text-gray-500">官方与媒体占比</p>
                     </div>
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5">
+                    <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
                       <p className="text-xl font-bold text-gray-900">{stats.dimensions.length || '—'}</p>
                       <p className="mt-0.5 text-xs text-gray-500">检索维度</p>
                     </div>
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5">
+                    <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
                       <p className="truncate text-sm font-bold leading-7 text-gray-900" title={stats.timeSpan}>
                         {stats.timeSpan || '—'}
                       </p>
@@ -494,7 +644,7 @@ export default function TaskDetailPage() {
 
                   {/* 可信度分布条 */}
                   {sources.length > 0 && (
-                    <div className="mb-4 rounded-xl border border-gray-100 p-3.5">
+                    <div className="mb-4 rounded-md border border-gray-100 p-3.5">
                       <div className="flex h-2.5 w-full overflow-hidden rounded-full">
                         {TIER_ORDER.map((t) => {
                           const n = stats.tierCount.get(t) ?? 0
@@ -522,6 +672,18 @@ export default function TaskDetailPage() {
                     </div>
                   )}
 
+                  {/* 信息新鲜度分布 */}
+                  {sources.length > 0 && (
+                    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-gray-100 bg-gray-50/70 px-3.5 py-2.5 text-xs text-gray-600">
+                      <span className="font-medium text-gray-700">信息新鲜度</span>
+                      {stats.freshness.recent > 0 && <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />最新（≤30天）{stats.freshness.recent} 条</span>}
+                      {stats.freshness.fresh > 0 && <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-500" />较新（≤180天）{stats.freshness.fresh} 条</span>}
+                      {stats.freshness.normal > 0 && <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-gray-300" />一般（≤365天）{stats.freshness.normal} 条</span>}
+                      {stats.freshness.old > 0 && <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-400" />较旧（&gt;365天）{stats.freshness.old} 条</span>}
+                      {stats.freshness.undated > 0 && <span className="text-gray-400">无日期 {stats.freshness.undated} 条</span>}
+                    </div>
+                  )}
+
                   {/* 筛选与排序 */}
                   <div className="mb-4 flex flex-wrap items-center gap-2">
                     {(['all', ...TIER_ORDER] as const).map((t) => {
@@ -546,7 +708,7 @@ export default function TaskDetailPage() {
                         <select
                           value={dimFilter}
                           onChange={(e) => setDimFilter(e.target.value)}
-                          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
+                          className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
                         >
                           <option value="all">全部维度</option>
                           {stats.dimensions.map((d) => (
@@ -559,7 +721,7 @@ export default function TaskDetailPage() {
                       <select
                         value={sourceSort}
                         onChange={(e) => setSourceSort(e.target.value as SourceSort)}
-                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
+                        className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
                       >
                         <option value="score">按相关度</option>
                         <option value="index">按引用编号</option>

@@ -1,0 +1,190 @@
+"""定时追踪项：CRUD + 立即运行 + 运行历史（企业维度共享）"""
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.api.deps import check_quota_or_403, get_current_user
+from app.core.plans import TRACKER_LIMITS, effective_org_plan, plan_limits
+from app.db.database import get_db
+from app.db.models import Organization, ResearchTask, Tracker, User
+from app.schemas.tracker import TrackerCreateIn, TrackerOut, TrackerRunOut, TrackerUpdateIn
+from app.services.agent import run_research
+from app.services.scheduler import initial_next_run
+
+router = APIRouter(prefix="/api/trackers", tags=["trackers"])
+
+
+def _require_org(db: Session, user: User) -> Organization:
+    org = db.get(Organization, user.org_id) if user.org_id else None
+    if not org:
+        raise HTTPException(status_code=403, detail="定时追踪为企业功能，请先创建或加入企业")
+    return org
+
+
+def _get_org_tracker(tracker_id: str, user: User, db: Session) -> Tracker:
+    tracker = db.get(Tracker, tracker_id)
+    if not tracker or not user.org_id or tracker.org_id != user.org_id:
+        raise HTTPException(status_code=404, detail="追踪项不存在")
+    return tracker
+
+
+def _require_manage(tracker: Tracker, user: User) -> None:
+    """创建人或企业管理员可修改/删除"""
+    if tracker.creator_id != user.id and user.org_role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="仅创建人或企业管理员可操作")
+
+
+def _with_extras(db: Session, tracker: Tracker, user: User) -> TrackerOut:
+    """附加运行次数、最近一期变更摘要预览、运行中状态与创建人/权限信息"""
+    out = TrackerOut.model_validate(tracker)
+    q = db.query(ResearchTask).filter(ResearchTask.tracker_id == tracker.id)
+    out.run_count = q.count()
+    last = q.filter(ResearchTask.status == "completed").order_by(ResearchTask.created_at.desc()).first()
+    if last:
+        out.last_task_id = last.id
+        out.last_change_summary = (last.change_summary or "")[:300]
+    running = (
+        q.filter(ResearchTask.status.notin_(["completed", "failed"]))
+        .order_by(ResearchTask.created_at.desc())
+        .first()
+    )
+    if running:
+        out.running = True
+        out.running_task_id = running.id
+    creator = db.get(User, tracker.creator_id)
+    if creator:
+        out.creator_nickname = creator.nickname or creator.email.split("@")[0]
+    out.can_manage = tracker.creator_id == user.id or user.org_role in ("owner", "admin")
+    return out
+
+
+@router.post("", response_model=TrackerOut, status_code=201)
+def create_tracker(payload: TrackerCreateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    org = _require_org(db, user)
+    plan = effective_org_plan(org)
+    limit = TRACKER_LIMITS.get(plan, 1)
+    count = db.query(Tracker).filter(Tracker.org_id == org.id).count()
+    if count >= limit:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{plan_limits(plan)['name']}最多创建 {limit} 个追踪项，请升级企业套餐",
+        )
+    tracker = Tracker(
+        org_id=org.id,
+        creator_id=user.id,
+        product_name=payload.product_name.strip(),
+        competitors=payload.competitors.strip(),
+        focus=payload.focus.strip(),
+        time_range=payload.time_range,
+        frequency=payload.frequency,
+        run_hour=payload.run_hour,
+        next_run_at=initial_next_run(payload.frequency, payload.run_hour),
+        push_email=payload.push_email,
+        push_webhook=payload.push_webhook,
+        webhook_type=payload.webhook_type,
+        webhook_url=payload.webhook_url.strip(),
+    )
+    db.add(tracker)
+    db.commit()
+    db.refresh(tracker)
+    return _with_extras(db, tracker, user)
+
+
+@router.get("", response_model=list[TrackerOut])
+def list_trackers(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    org = _require_org(db, user)
+    trackers = (
+        db.query(Tracker).filter(Tracker.org_id == org.id).order_by(Tracker.created_at.desc()).all()
+    )
+    return [_with_extras(db, t, user) for t in trackers]
+
+
+@router.get("/{tracker_id}", response_model=TrackerOut)
+def get_tracker(tracker_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    tracker = _get_org_tracker(tracker_id, user, db)
+    return _with_extras(db, tracker, user)
+
+
+@router.patch("/{tracker_id}", response_model=TrackerOut)
+def update_tracker(
+    tracker_id: str,
+    payload: TrackerUpdateIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tracker = _get_org_tracker(tracker_id, user, db)
+    _require_manage(tracker, user)
+    data = payload.model_dump(exclude_unset=True)
+    reschedule = False
+    for field, value in data.items():
+        if field in ("frequency", "run_hour") and value != getattr(tracker, field):
+            reschedule = True
+        if field == "enabled" and value and not tracker.enabled:
+            reschedule = True  # 重新启用时刷新下次运行时间
+        setattr(tracker, field, value.strip() if isinstance(value, str) else value)
+    if reschedule:
+        tracker.next_run_at = initial_next_run(tracker.frequency, tracker.run_hour)
+    db.commit()
+    db.refresh(tracker)
+    return _with_extras(db, tracker, user)
+
+
+@router.delete("/{tracker_id}", status_code=204)
+def delete_tracker(tracker_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    tracker = _get_org_tracker(tracker_id, user, db)
+    _require_manage(tracker, user)
+    # 保留历史任务（tracker_id 悬空不影响查看报告），仅删除追踪项本身
+    db.delete(tracker)
+    db.commit()
+
+
+@router.post("/{tracker_id}/run-now", response_model=TrackerRunOut, status_code=201)
+def run_now(
+    tracker_id: str,
+    background: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """手动触发一期调研（占用企业本月调研配额，仅创建人或企业管理员可触发）"""
+    tracker = _get_org_tracker(tracker_id, user, db)
+    _require_manage(tracker, user)
+    check_quota_or_403(db, user)
+    running = (
+        db.query(ResearchTask)
+        .filter(
+            ResearchTask.tracker_id == tracker.id,
+            ResearchTask.status.notin_(["completed", "failed"]),
+        )
+        .count()
+    )
+    if running:
+        raise HTTPException(status_code=400, detail="该追踪项有一期正在运行中，请等待完成")
+    task = ResearchTask(
+        user_id=user.id,
+        org_id=tracker.org_id,
+        tracker_id=tracker.id,
+        product_name=tracker.product_name,
+        competitors=tracker.competitors,
+        focus=tracker.focus,
+        time_range=tracker.time_range,
+    )
+    db.add(task)
+    tracker.last_run_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(task)
+    background.add_task(run_research, task.id)
+    return task
+
+
+@router.get("/{tracker_id}/runs", response_model=list[TrackerRunOut])
+def list_runs(tracker_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """该追踪项的历次运行（新→旧），含变更摘要与评分数据"""
+    tracker = _get_org_tracker(tracker_id, user, db)
+    return (
+        db.query(ResearchTask)
+        .filter(ResearchTask.tracker_id == tracker.id)
+        .order_by(ResearchTask.created_at.desc())
+        .all()
+    )

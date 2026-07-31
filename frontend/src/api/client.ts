@@ -1,8 +1,18 @@
 import type {
+  AdminOrg,
   AdminStats,
+  AssistantMessage,
+  AssistantSession,
   ForgotResponse,
+  GraphCreate,
+  GraphDetail,
+  GraphProject,
   LoginLog,
+  NotificationItem,
   Order,
+  Org,
+  OrgMe,
+  OrgMember,
   Plan,
   PlanInfo,
   Quota,
@@ -14,6 +24,10 @@ import type {
   TaskDetail,
   TaskStatus,
   TokenResponse,
+  Tracker,
+  TrackerCreate,
+  TrackerRun,
+  TrackerUpdate,
   UsageStats,
   User,
 } from './types'
@@ -136,6 +150,11 @@ export function getQuota(): Promise<Quota> {
   return request('/api/research/quota')
 }
 
+/** 基于报告与来源的无状态追问（不占调研配额） */
+export function askResearch(taskId: string, question: string): Promise<{ answer: string }> {
+  return request(`/api/research/${taskId}/ask`, { method: 'POST', body: JSON.stringify({ question }) })
+}
+
 /** 订阅任务 SSE 进度（token 走查询参数），返回取消订阅函数 */
 export function subscribeEvents(
   id: string,
@@ -184,4 +203,156 @@ export function adminListUsers(q = ''): Promise<User[]> {
 
 export function adminUpdateUser(id: string, payload: { plan?: Plan; role?: Role }): Promise<User> {
   return request(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function adminListOrgs(q = ''): Promise<AdminOrg[]> {
+  return request(`/api/admin/orgs?q=${encodeURIComponent(q)}`)
+}
+
+export function adminUpdateOrg(id: string, payload: { plan?: Plan }): Promise<AdminOrg> {
+  return request(`/api/admin/orgs/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+// ---------- 企业组织 ----------
+
+export function createOrg(name: string): Promise<Org> {
+  return request('/api/org', { method: 'POST', body: JSON.stringify({ name }) })
+}
+
+export function getOrgMe(): Promise<OrgMe> {
+  return request('/api/org/me')
+}
+
+export function updateOrg(name: string): Promise<Org> {
+  return request('/api/org', { method: 'PATCH', body: JSON.stringify({ name }) })
+}
+
+export function resetInviteCode(): Promise<Org> {
+  return request('/api/org/invite-code/reset', { method: 'POST' })
+}
+
+export function joinOrg(inviteCode: string): Promise<Org> {
+  return request('/api/org/join', { method: 'POST', body: JSON.stringify({ invite_code: inviteCode }) })
+}
+
+export function listOrgMembers(): Promise<OrgMember[]> {
+  return request('/api/org/members')
+}
+
+export function updateOrgMember(
+  id: string,
+  patch: { org_role?: 'admin' | 'member'; org_monthly_limit?: number },
+): Promise<OrgMember> {
+  return request(`/api/org/members/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+export function removeOrgMember(id: string): Promise<void> {
+  return request(`/api/org/members/${id}`, { method: 'DELETE' })
+}
+
+export function leaveOrg(): Promise<void> {
+  return request('/api/org/leave', { method: 'POST' })
+}
+
+// ---------- 定时追踪 ----------
+
+export function createTracker(payload: TrackerCreate): Promise<Tracker> {
+  return request('/api/trackers', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function listTrackers(): Promise<Tracker[]> {
+  return request('/api/trackers')
+}
+
+export function getTracker(id: string): Promise<Tracker> {
+  return request(`/api/trackers/${id}`)
+}
+
+export function updateTracker(id: string, payload: TrackerUpdate): Promise<Tracker> {
+  return request(`/api/trackers/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function deleteTracker(id: string): Promise<void> {
+  return request(`/api/trackers/${id}`, { method: 'DELETE' })
+}
+
+export function runTrackerNow(id: string): Promise<TrackerRun> {
+  return request(`/api/trackers/${id}/run-now`, { method: 'POST' })
+}
+
+export function listTrackerRuns(id: string): Promise<TrackerRun[]> {
+  return request(`/api/trackers/${id}/runs`)
+}
+
+// ---------- 产业链关系图谱 ----------
+
+export function createGraph(payload: GraphCreate): Promise<GraphProject> {
+  return request('/api/graph', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function listGraphs(): Promise<GraphProject[]> {
+  return request('/api/graph')
+}
+
+export function getGraph(id: string): Promise<GraphDetail> {
+  return request(`/api/graph/${id}`)
+}
+
+export function refreshGraph(id: string): Promise<GraphProject> {
+  return request(`/api/graph/${id}/refresh`, { method: 'POST' })
+}
+
+export function deleteGraph(id: string): Promise<void> {
+  return request(`/api/graph/${id}`, { method: 'DELETE' })
+}
+
+// ---------- 站内通知 ----------
+
+export function listNotifications(): Promise<NotificationItem[]> {
+  return request('/api/notifications')
+}
+
+export function getUnreadCount(): Promise<{ count: number }> {
+  return request('/api/notifications/unread-count')
+}
+
+/** 标记已读：传 id 标记单条，不传标记全部 */
+export function markNotificationsRead(id = ''): Promise<void> {
+  return request('/api/notifications/read', { method: 'POST', body: JSON.stringify({ id }) })
+}
+
+// ---------- 全局 AI 助手 ----------
+
+/** 会话列表（最近活跃优先）；首次访问会把旧消息归入「历史对话」 */
+export function listAssistantSessions(): Promise<AssistantSession[]> {
+  return request('/api/assistant/sessions')
+}
+
+export function renameAssistantSession(sessionId: string, title: string): Promise<AssistantSession> {
+  return request(`/api/assistant/sessions/${sessionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  })
+}
+
+export function deleteAssistantSession(sessionId: string): Promise<void> {
+  return request(`/api/assistant/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+/** 某个会话的消息历史（升序） */
+export function listSessionMessages(sessionId: string): Promise<AssistantMessage[]> {
+  return request(`/api/assistant/sessions/${sessionId}/messages`)
+}
+
+/** 清空某个会话的消息（保留会话本身） */
+export function clearSessionMessages(sessionId: string): Promise<void> {
+  return request(`/api/assistant/sessions/${sessionId}/messages`, { method: 'DELETE' })
+}
+
+/** 跨报告问答（不占调研配额）；sessionId 为空则后端新建会话，返回落库后的 AI 回复 */
+export function askAssistant(question: string, sessionId = ''): Promise<AssistantMessage> {
+  return request('/api/assistant/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question, session_id: sessionId }),
+  })
 }

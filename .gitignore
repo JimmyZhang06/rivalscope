@@ -14,3 +14,5 @@ frontend/dist/
 .idea/
 *.log
 task-detail-notion.png
+*.png
+.env

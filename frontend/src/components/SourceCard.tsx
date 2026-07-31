@@ -6,6 +6,15 @@ function faviconUrl(domain: string) {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`
 }
 
+/** 按距今天数返回新鲜度徽标（无日期返回 null） */
+function freshnessBadge(ageDays: number) {
+  if (ageDays < 0) return null
+  if (ageDays <= 30) return { dot: 'bg-emerald-500', label: '最新', cls: 'bg-emerald-50 text-emerald-600' }
+  if (ageDays <= 180) return { dot: 'bg-blue-500', label: '较新', cls: 'bg-blue-50 text-blue-700' }
+  if (ageDays <= 365) return { dot: 'bg-gray-400', label: '一般', cls: 'bg-gray-100 text-gray-500' }
+  return { dot: 'bg-orange-400', label: '较旧', cls: 'bg-orange-50 text-orange-600' }
+}
+
 export default function SourceCard({
   source,
   index,
@@ -17,11 +26,12 @@ export default function SourceCard({
 }) {
   const [expanded, setExpanded] = useState(false)
   const pct = Math.round(Math.min(Math.max(source.score, 0), 1) * 100)
+  const fresh = freshnessBadge(source.age_days)
 
   return (
-    <div id={`source-${index}`} className="rounded-xl border border-gray-200 bg-white p-4 transition hover:border-blue-200 hover:shadow-sm">
+    <div id={`source-${index}`} className="rounded-lg border border-gray-200 bg-white p-4 transition hover:border-blue-200 hover:shadow-sm">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-600">
+        <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">
           {index}
         </span>
         <div className="min-w-0 flex-1">
@@ -53,6 +63,14 @@ export default function SourceCard({
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600">{source.dimension}</span>
             )}
             {source.published_at && <span>{source.published_at.slice(0, 10)}</span>}
+            {fresh && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${fresh.cls}`}
+                title={`距今 ${source.age_days} 天`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${fresh.dot}`} /> {fresh.label}
+              </span>
+            )}
             {source.domain && <span className="truncate">{source.domain}</span>}
           </div>
           {/* 相关度条 */}
@@ -75,7 +93,7 @@ export default function SourceCard({
           <div className="mt-2 flex gap-3">
             <button
               onClick={() => onOpenDetail(source)}
-              className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              className="text-xs font-medium text-blue-700 hover:text-blue-800"
             >
               查看原文摘录 →
             </button>

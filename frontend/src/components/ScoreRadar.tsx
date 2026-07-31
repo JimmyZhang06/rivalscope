@@ -8,10 +8,11 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts'
+import { Radar as RadarIcon } from 'lucide-react'
 import type { ReportData } from '../api/types'
 import ChartCard from './ChartCard'
 
-const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#0ea5e9']
+const COLORS = ['#1d4ed8', '#0e7490', '#475569', '#b45309', '#15803d', '#0369a1']
 
 export default function ScoreRadar({ data }: { data: ReportData }) {
   const chartData = data.dimensions.map((dim) => {
@@ -21,7 +22,7 @@ export default function ScoreRadar({ data }: { data: ReportData }) {
   })
 
   return (
-    <ChartCard icon="🕸️" title="综合能力雷达" subtitle="各产品在核心维度上的量化评分（0-10）">
+    <ChartCard icon={<RadarIcon className="h-4 w-4" />} title="综合能力雷达" subtitle="各产品在核心维度上的量化评分（0-10）">
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={chartData} outerRadius="70%">

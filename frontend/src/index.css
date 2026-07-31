@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 body {
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 
 /* 全局细节 */
@@ -58,7 +58,7 @@ select:focus-visible {
   bottom: 0.25rem;
   width: 4px;
   border-radius: 9999px;
-  background: linear-gradient(180deg, #3b82f6, #06b6d4);
+  background: #1e40af;
 }
 .report-md h3 {
   font-size: 1.05rem;
@@ -72,7 +72,7 @@ select:focus-visible {
   width: 7px;
   height: 7px;
   border-radius: 9999px;
-  background: #60a5fa;
+  background: #1e40af;
   margin-right: 0.5rem;
   vertical-align: 2px;
 }
@@ -136,7 +136,7 @@ select:focus-visible {
 }
 
 .report-md a {
-  color: #2563eb;
+  color: #1d4ed8;
   text-decoration: underline;
   text-underline-offset: 2px;
   word-break: break-all;
@@ -154,9 +154,9 @@ select:focus-visible {
 }
 .report-md hr {
   border: none;
-  height: 2px;
+  height: 1px;
   margin: 2rem 0;
-  background: linear-gradient(90deg, transparent, #bfdbfe, transparent);
+  background: #e5e7eb;
 }
 .report-md code {
   background: #f3f4f6;

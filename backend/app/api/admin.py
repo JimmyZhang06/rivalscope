@@ -7,8 +7,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin, month_start_utc
 from app.core.plans import PLANS
 from app.db.database import get_db
-from app.db.models import Order, ResearchTask, User
-from app.schemas.auth import AdminStatsOut, AdminUserUpdate, UserOut
+from app.db.models import GraphProject, Order, Organization, ResearchTask, User
+from app.schemas.auth import (
+    AdminOrgOut,
+    AdminOrgUpdate,
+    AdminStatsOut,
+    AdminUserUpdate,
+    UserOut,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(get_current_admin)])
 
@@ -64,3 +70,60 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+def _org_month_used(db: Session, org_id: str) -> int:
+    """企业本月已消耗额度：调研任务 + 图谱构建，失败不计（与 deps.month_usage 口径一致）"""
+    start = month_start_utc()
+    tasks = (
+        db.query(ResearchTask)
+        .filter(
+            ResearchTask.org_id == org_id,
+            ResearchTask.created_at >= start,
+            ResearchTask.status != "failed",
+        )
+        .count()
+    )
+    graphs = (
+        db.query(GraphProject)
+        .filter(
+            GraphProject.org_id == org_id,
+            GraphProject.created_at >= start,
+            GraphProject.status != "failed",
+        )
+        .count()
+    )
+    return tasks + graphs
+
+
+def _org_out(db: Session, org: Organization) -> AdminOrgOut:
+    out = AdminOrgOut.model_validate(org)
+    out.member_count = db.query(User).filter(User.org_id == org.id).count()
+    out.month_used = _org_month_used(db, org.id)
+    return out
+
+
+@router.get("/orgs", response_model=list[AdminOrgOut])
+def list_orgs(q: str = Query("", max_length=100), db: Session = Depends(get_db)):
+    query = db.query(Organization)
+    if q.strip():
+        query = query.filter(Organization.name.ilike(f"%{q.strip()}%"))
+    orgs = query.order_by(Organization.created_at.desc()).limit(200).all()
+    return [_org_out(db, org) for org in orgs]
+
+
+@router.patch("/orgs/{org_id}", response_model=AdminOrgOut)
+def update_org(org_id: str, payload: AdminOrgUpdate, db: Session = Depends(get_db)):
+    org = db.get(Organization, org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="企业不存在")
+    if payload.plan is not None:
+        if payload.plan not in PLANS:
+            raise HTTPException(status_code=400, detail="无效的套餐")
+        org.plan = payload.plan
+        org.plan_expires_at = (
+            None if payload.plan == "free" else datetime.now(timezone.utc) + timedelta(days=30)
+        )
+    db.commit()
+    db.refresh(org)
+    return _org_out(db, org)

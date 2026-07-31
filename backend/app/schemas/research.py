@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+TIME_RANGES = ("", "day", "week", "month", "year")
+
 
 class ResearchCreate(BaseModel):
     """创建调研任务请求"""
@@ -11,6 +13,14 @@ class ResearchCreate(BaseModel):
     product_name: str = Field(..., min_length=1, max_length=200, description="要调研的产品/公司名称")
     competitors: str = Field("", max_length=2000, description="可选：指定竞品，逗号分隔")
     focus: str = Field("", max_length=2000, description="可选：调研重点，如定价、功能对比等")
+    time_range: str = Field("year", description="检索时效：''(不限)/day/week/month/year")
+
+    @field_validator("time_range")
+    @classmethod
+    def check_time_range(cls, v: str) -> str:
+        if v not in TIME_RANGES:
+            raise ValueError("time_range 仅支持 ''/day/week/month/year")
+        return v
 
 
 class StepOut(BaseModel):
@@ -38,6 +48,7 @@ class SourceOut(BaseModel):
     tier: str = "other"
     published_at: str = ""
     dimension: str = ""
+    age_days: int = -1  # 距今天数（按基准时间计算），无日期为 -1
 
 
 class SourceDetail(SourceOut):
@@ -57,6 +68,9 @@ class TaskBrief(BaseModel):
     focus: str
     status: str
     error: str
+    org_id: str = ""
+    tracker_id: str = ""
+    creator_nickname: str = ""  # 企业共享任务展示创建人
     created_at: datetime
     updated_at: datetime
 
@@ -66,6 +80,7 @@ class TaskDetail(TaskBrief):
 
     report_markdown: str
     report_data: dict | None = None  # 结构化洞察，解析失败时为 null，前端优雅降级
+    change_summary: str = ""  # 定时追踪的本期变更摘要（与上一期对比）
     steps: list[StepOut] = []
     sources: list[SourceOut] = []
 
@@ -81,3 +96,15 @@ class TaskDetail(TaskBrief):
             except ValueError:
                 return None
         return None
+
+
+class AskIn(BaseModel):
+    """报告追问请求"""
+
+    question: str = Field(..., min_length=1, max_length=2000, description="针对报告的问题")
+
+
+class AskOut(BaseModel):
+    """报告追问回答（无状态，不持久化）"""
+
+    answer: str

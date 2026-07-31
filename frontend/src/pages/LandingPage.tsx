@@ -1,19 +1,20 @@
 import { Link } from 'react-router-dom'
+import { BarChart3, BrainCircuit, Check, Globe, Search, Zap } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 
 const FEATURES = [
   {
-    icon: '🧠',
+    icon: BrainCircuit,
     title: '智能规划',
     desc: 'AI 自动识别竞品对象，规划多组检索关键词与调研维度，无需人工拆解调研思路。',
   },
   {
-    icon: '🌐',
+    icon: Globe,
     title: '联网检索',
     desc: '并发调用实时搜索引擎，聚合官网、媒体与社区信息，来源自动分级并保留原文摘录，可信可溯源。',
   },
   {
-    icon: '📊',
+    icon: BarChart3,
     title: '深度分析报告',
     desc: '按功能、定价、口碑等维度对比分析，报告全程引用溯源，并生成雷达图、SWOT 等可视化洞察。',
   },
@@ -61,9 +62,11 @@ export default function LandingPage() {
       {/* 顶部导航 */}
       <header className="sticky top-0 z-20 border-b border-gray-100 bg-white/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🔎</span>
-            <span className="text-lg font-bold">竞品调研 Agent</span>
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-white">
+              <Search className="h-4 w-4" />
+            </span>
+            <span className="text-lg font-bold tracking-tight">竞品调研 Agent</span>
           </div>
           <nav className="hidden items-center gap-8 text-sm text-gray-600 md:flex">
             <a href="#features" className="hover:text-gray-900">产品能力</a>
@@ -74,7 +77,7 @@ export default function LandingPage() {
             {user ? (
               <Link
                 to="/app"
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
               >
                 进入工作台
               </Link>
@@ -85,7 +88,7 @@ export default function LandingPage() {
                 </Link>
                 <Link
                   to="/register"
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
                 >
                   免费注册
                 </Link>
@@ -96,17 +99,14 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-blue-50 via-white to-white">
-        <div className="pointer-events-none absolute -top-32 left-1/2 h-96 w-[48rem] -translate-x-1/2 rounded-full bg-blue-200/40 blur-3xl" />
-        <div className="relative mx-auto max-w-6xl px-4 pb-24 pt-20 text-center">
-          <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-            ⚡ AI Agent · 联网检索 · 实时进度
+      <section className="border-b border-gray-100 bg-white">
+        <div className="mx-auto max-w-6xl px-4 pb-24 pt-20 text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+            <Zap className="h-3 w-3" /> AI Agent · 联网检索 · 实时进度
           </span>
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-5xl">
             一句话发起竞品调研，
-            <span className="bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-              AI 替你完成情报收集与分析
-            </span>
+            <span className="text-blue-700">AI 替你完成情报收集与分析</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base text-gray-500 md:text-lg">
             输入产品名称，Agent 自动规划调研方案、联网检索全网信息、多维度对比分析，
@@ -115,13 +115,13 @@ export default function LandingPage() {
           <div className="mt-8 flex items-center justify-center gap-4">
             <Link
               to={user ? '/app/new' : '/register'}
-              className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700"
+              className="rounded-md bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
             >
               立即免费开始 →
             </Link>
             <a
               href="#workflow"
-              className="rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+              className="rounded-md border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-50"
             >
               了解工作流程
             </a>
@@ -132,15 +132,17 @@ export default function LandingPage() {
 
       {/* 功能特性 */}
       <section id="features" className="mx-auto max-w-6xl px-4 py-20">
-        <h2 className="text-center text-3xl font-bold">从检索到报告，全流程自动化</h2>
+        <h2 className="text-center text-3xl font-bold tracking-tight">从检索到报告，全流程自动化</h2>
         <p className="mt-3 text-center text-gray-500">像资深分析师一样思考，像机器一样高效执行</p>
         <div className="mt-12 grid gap-6 md:grid-cols-3">
           {FEATURES.map((f) => (
             <div
               key={f.title}
-              className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+              className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm transition hover:border-gray-300"
             >
-              <span className="text-3xl">{f.icon}</span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+                <f.icon className="h-5 w-5" />
+              </span>
               <h3 className="mt-4 text-lg font-semibold">{f.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-gray-500">{f.desc}</p>
             </div>
@@ -151,12 +153,14 @@ export default function LandingPage() {
       {/* 工作流程 */}
       <section id="workflow" className="bg-gray-50 py-20">
         <div className="mx-auto max-w-6xl px-4">
-          <h2 className="text-center text-3xl font-bold">四步完成一次专业调研</h2>
+          <h2 className="text-center text-3xl font-bold tracking-tight">四步完成一次专业调研</h2>
           <p className="mt-3 text-center text-gray-500">先思考后决策，先规划后执行</p>
           <div className="mt-12 grid gap-6 md:grid-cols-4">
             {WORKFLOW.map((w) => (
-              <div key={w.step} className="relative rounded-2xl border border-gray-100 bg-white p-6">
-                <span className="text-3xl font-extrabold text-blue-100">{w.step}</span>
+              <div key={w.step} className="relative rounded-lg border border-gray-200 bg-white p-6">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-blue-700 text-sm font-bold text-blue-700">
+                  {w.step}
+                </span>
                 <h3 className="mt-3 font-semibold">{w.title}</h3>
                 <p className="mt-1 text-sm text-gray-500">{w.desc}</p>
               </div>
@@ -167,43 +171,42 @@ export default function LandingPage() {
 
       {/* 定价 */}
       <section id="pricing" className="mx-auto max-w-6xl px-4 py-20">
-        <h2 className="text-center text-3xl font-bold">简单透明的定价</h2>
+        <h2 className="text-center text-3xl font-bold tracking-tight">简单透明的定价</h2>
         <p className="mt-3 text-center text-gray-500">按需选择，随时升级</p>
         <div className="mt-12 grid gap-6 md:grid-cols-3">
           {PRICING.map((p) => (
             <div
               key={p.plan}
-              className={`relative flex flex-col rounded-2xl border p-8 ${
-                p.highlight
-                  ? 'border-blue-600 bg-blue-600 text-white shadow-xl shadow-blue-200'
-                  : 'border-gray-200 bg-white'
+              className={`relative flex flex-col overflow-hidden rounded-lg border bg-white p-8 ${
+                p.highlight ? 'border-blue-600 shadow-md ring-1 ring-blue-600' : 'border-gray-200'
               }`}
             >
+              {p.highlight && <span className="absolute inset-x-0 top-0 h-1 bg-blue-600" />}
               {p.highlight && (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-3 py-0.5 text-xs font-bold text-amber-900">
+                <span className="absolute right-4 top-4 rounded-full bg-blue-50 px-3 py-0.5 text-xs font-bold text-blue-700">
                   最受欢迎
                 </span>
               )}
-              <h3 className={`text-lg font-semibold ${p.highlight ? 'text-white' : ''}`}>{p.plan}</h3>
-              <p className={`mt-1 text-sm ${p.highlight ? 'text-blue-200' : 'text-gray-500'}`}>{p.desc}</p>
+              <h3 className="text-lg font-semibold">{p.plan}</h3>
+              <p className="mt-1 text-sm text-gray-500">{p.desc}</p>
               <div className="mt-4 flex items-baseline gap-1">
-                <span className="text-4xl font-extrabold">{p.price}</span>
-                <span className={p.highlight ? 'text-blue-200' : 'text-gray-400'}>{p.unit}</span>
+                <span className="text-4xl font-extrabold tabular-nums tracking-tight">{p.price}</span>
+                <span className="text-gray-400">{p.unit}</span>
               </div>
               <ul className="mt-6 flex-1 space-y-3 text-sm">
                 {p.features.map((feat) => (
                   <li key={feat} className="flex items-start gap-2">
-                    <span className={p.highlight ? 'text-blue-300' : 'text-blue-600'}>✓</span>
-                    <span className={p.highlight ? 'text-blue-50' : 'text-gray-600'}>{feat}</span>
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
+                    <span className="text-gray-600">{feat}</span>
                   </li>
                 ))}
               </ul>
               <Link
                 to={user ? '/app/pricing' : '/register'}
-                className={`mt-8 rounded-xl px-4 py-2.5 text-center text-sm font-semibold transition ${
+                className={`mt-8 rounded-md px-4 py-2.5 text-center text-sm font-semibold transition ${
                   p.highlight
-                    ? 'bg-white text-blue-700 hover:bg-blue-50'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'border border-blue-600 text-blue-700 hover:bg-blue-50'
                 }`}
               >
                 {p.price === '¥0' ? '免费开始' : '选择该套餐'}
@@ -214,13 +217,13 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="bg-gradient-to-r from-blue-600 to-cyan-600 py-16">
+      <section className="bg-slate-900 py-16">
         <div className="mx-auto max-w-4xl px-4 text-center">
-          <h2 className="text-3xl font-bold text-white">现在开始你的第一次 AI 竞品调研</h2>
-          <p className="mt-3 text-blue-100">注册即享每月 3 次免费调研额度</p>
+          <h2 className="text-3xl font-bold tracking-tight text-white">现在开始你的第一次 AI 竞品调研</h2>
+          <p className="mt-3 text-slate-400">注册即享每月 3 次免费调研额度</p>
           <Link
             to={user ? '/app/new' : '/register'}
-            className="mt-8 inline-block rounded-xl bg-white px-8 py-3 text-sm font-semibold text-blue-700 shadow-lg transition hover:bg-blue-50"
+            className="mt-8 inline-block rounded-md bg-blue-600 px-8 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
           >
             免费注册使用 →
           </Link>
@@ -230,7 +233,7 @@ export default function LandingPage() {
       {/* 页脚 */}
       <footer className="border-t border-gray-100 py-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 text-sm text-gray-400 md:flex-row">
-          <span>🔎 竞品调研 Agent</span>
+          <span className="font-medium text-gray-500">竞品调研 Agent</span>
           <span>AI 驱动的竞品情报平台 · 仅供演示</span>
         </div>
       </footer>

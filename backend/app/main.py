@@ -1,13 +1,20 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.admin import router as admin_router
+from app.api.assistant import router as assistant_router
 from app.api.auth import router as auth_router
 from app.api.billing import router as billing_router
+from app.api.graph import router as graph_router
+from app.api.notifications import router as notifications_router
+from app.api.org import router as org_router
 from app.api.research import router as research_router
+from app.api.trackers import router as trackers_router
 from app.core.security import hash_password
 from app.db.database import Base, SessionLocal, engine
 from app.db import models  # noqa: F401  确保模型注册到 Base.metadata
@@ -25,8 +32,17 @@ def migrate_columns() -> None:
             "token_version": "INTEGER NOT NULL DEFAULT 0",
             "reset_code": "VARCHAR(10) NOT NULL DEFAULT ''",
             "reset_code_expires_at": "DATETIME",
+            "org_id": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "org_role": "VARCHAR(10) NOT NULL DEFAULT ''",
+            "org_monthly_limit": "INTEGER NOT NULL DEFAULT -1",
         },
-        "research_tasks": {"report_data": "TEXT NOT NULL DEFAULT ''"},
+        "research_tasks": {
+            "report_data": "TEXT NOT NULL DEFAULT ''",
+            "org_id": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "tracker_id": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "change_summary": "TEXT NOT NULL DEFAULT ''",
+            "time_range": "VARCHAR(10) NOT NULL DEFAULT 'year'",
+        },
         "sources": {
             "score": "FLOAT NOT NULL DEFAULT 0",
             "domain": "VARCHAR(255) NOT NULL DEFAULT ''",
@@ -34,6 +50,15 @@ def migrate_columns() -> None:
             "published_at": "VARCHAR(50) NOT NULL DEFAULT ''",
             "dimension": "VARCHAR(100) NOT NULL DEFAULT ''",
             "raw_content": "TEXT NOT NULL DEFAULT ''",
+        },
+        "trackers": {
+            "time_range": "VARCHAR(10) NOT NULL DEFAULT 'year'",
+        },
+        "assistant_messages": {
+            "session_id": "VARCHAR(32) NOT NULL DEFAULT ''",
+        },
+        "graph_projects": {
+            "report_markdown": "TEXT NOT NULL DEFAULT ''",
         },
     }
     with engine.connect() as conn:
@@ -71,7 +96,18 @@ def seed_admin() -> None:
 
 seed_admin()
 
-app = FastAPI(title="竞品调研 Agent", version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """启动定时追踪调度器（进程内 60s 扫描一次到期追踪项）"""
+    from app.services.scheduler import scheduler_loop
+
+    scheduler_task = asyncio.create_task(scheduler_loop())
+    yield
+    scheduler_task.cancel()
+
+
+app = FastAPI(title="竞品调研 Agent", version="0.3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -85,6 +121,11 @@ app.include_router(auth_router)
 app.include_router(research_router)
 app.include_router(billing_router)
 app.include_router(admin_router)
+app.include_router(org_router)
+app.include_router(notifications_router)
+app.include_router(trackers_router)
+app.include_router(graph_router)
+app.include_router(assistant_router)
 
 
 @app.get("/api/health")
