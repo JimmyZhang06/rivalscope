@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
@@ -9,7 +9,16 @@ from app.api.deps import check_quota_or_403, get_current_user, get_quota, get_us
 from app.db.database import SessionLocal, get_db
 from app.db.models import ResearchTask, Source, TaskStep, User
 from app.schemas.auth import QuotaOut
-from app.schemas.research import AskIn, AskOut, ResearchCreate, SourceDetail, StepOut, TaskBrief, TaskDetail
+from app.schemas.research import (
+    AskIn,
+    AskOut,
+    EmailReportOut,
+    ResearchCreate,
+    SourceDetail,
+    StepOut,
+    TaskBrief,
+    TaskDetail,
+)
 from app.services.agent import run_research
 
 router = APIRouter(prefix="/api/research", tags=["research"])
@@ -150,6 +159,81 @@ async def ask_research(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"回答生成失败：{str(exc)[:200]}") from exc
     return AskOut(answer=answer)
+
+
+# 发送报告邮件：附件由前端导出后上传，后端仅负责转发
+EMAIL_ATTACHMENT_MAX = 20 * 1024 * 1024  # 20MB
+EMAIL_MAX_RECIPIENTS = 10
+_ATTACH_SUBTYPES = {
+    "pdf": "pdf",
+    "doc": "msword",
+    "docx": "vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "md": "octet-stream",
+    "txt": "octet-stream",
+}
+
+
+@router.post("/{task_id}/email", response_model=EmailReportOut)
+async def email_report(
+    task_id: str,
+    to: str = Form(..., description="收件人邮箱，多个用逗号分隔"),
+    file: UploadFile = File(..., description="前端导出的报告文件（作为附件）"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """把已完成报告以附件邮件发送给指定收件人（附件由前端导出上传）"""
+    task = _get_owned_task(task_id, user, db)
+    if task.status != "completed" or not task.report_markdown:
+        raise HTTPException(status_code=400, detail="报告尚未生成，无法发送")
+
+    recipients = [e.strip() for e in to.replace("；", ",").replace(";", ",").replace("，", ",").split(",") if e.strip()]
+    if not recipients:
+        raise HTTPException(status_code=400, detail="请填写收件人邮箱")
+    if len(recipients) > EMAIL_MAX_RECIPIENTS:
+        raise HTTPException(status_code=400, detail=f"收件人不超过 {EMAIL_MAX_RECIPIENTS} 个")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="附件内容为空")
+    if len(content) > EMAIL_ATTACHMENT_MAX:
+        raise HTTPException(status_code=400, detail="附件过大（上限 20MB）")
+
+    filename = file.filename or f"竞品调研报告-{task.product_name}.pdf"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    subtype = _ATTACH_SUBTYPES.get(ext, "octet-stream")
+
+    from app.core.config import get_settings
+    from app.services.notify import send_email
+
+    link_url = f"{(get_settings().frontend_base or '').rstrip('/')}/app/tasks/{task_id}"
+    subject = f"「{task.product_name}」竞品调研报告"
+    sender = user.nickname or user.email
+    body = (
+        f"{sender} 与您分享了一份竞品调研报告「{task.product_name}」，详见附件。\n\n"
+        f"在线查看：{link_url}"
+    )
+    html = (
+        "<div style=\"font-family:'Microsoft YaHei','Segoe UI',sans-serif;color:#1f2937;font-size:14px;line-height:1.8;\">"
+        f"<p><strong>{sender}</strong> 与您分享了一份竞品调研报告「{task.product_name}」，完整报告见附件。</p>"
+        # f"<p><a href=\"{link_url}\" style=\"color:#1d4ed8;\">在网页中查看完整报告 →</a></p>"
+        "<p style=\"color:#9ca3af;font-size:12px;\">此邮件由系统发送，请勿直接回复。</p></div>"
+    )
+    attachments = [(filename, content, subtype)]
+
+    statuses: list[str] = []
+    for r in recipients:
+        try:
+            statuses.append(await asyncio.to_thread(send_email, r, subject, body, html, attachments))
+        except Exception:
+            statuses.append("failed")
+
+    if "sent" in statuses:
+        status = "sent"
+    elif "demo" in statuses:
+        status = "demo"
+    else:
+        status = "failed"
+    return EmailReportOut(status=status, recipients=len(recipients))
 
 
 @router.get("/{task_id}/events")

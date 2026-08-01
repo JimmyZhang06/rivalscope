@@ -525,6 +525,14 @@ async def run_research(task_id: str) -> None:
                 await push_tracker_report(task_id)
             except Exception:
                 logger.exception("push failed for task %s", task_id)
+        else:
+            # 一次性调研任务：完成后给创建人发送内嵌完整报告的邮件（失败不影响报告）
+            from app.services.notify import push_task_report_email
+
+            try:
+                await push_task_report_email(task_id)
+            except Exception:
+                logger.exception("report email failed for task %s", task_id)
     except Exception as exc:
         logger.exception("research task %s failed", task_id)
         msg = str(exc)[:1000]

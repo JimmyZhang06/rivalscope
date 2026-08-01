@@ -108,3 +108,10 @@ class AskOut(BaseModel):
     """报告追问回答（无状态，不持久化）"""
 
     answer: str
+
+
+class EmailReportOut(BaseModel):
+    """手动发送报告邮件结果"""
+
+    status: str  # sent / demo / failed
+    recipients: int

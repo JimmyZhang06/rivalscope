@@ -155,6 +155,32 @@ export function askResearch(taskId: string, question: string): Promise<{ answer:
   return request(`/api/research/${taskId}/ask`, { method: 'POST', body: JSON.stringify({ question }) })
 }
 
+/** 把报告以附件邮件发送给收件人（附件由前端导出后上传，to 支持逗号分隔多个） */
+export async function emailReport(
+  taskId: string,
+  to: string,
+  file: Blob,
+  filename: string,
+): Promise<{ status: string; recipients: number }> {
+  const form = new FormData()
+  form.append('to', to)
+  form.append('file', file, filename)
+  const token = tokenStore.get()
+  // FormData 需由浏览器自动设置 multipart 边界，不能复用统一 request（其会强制 JSON 头）
+  const resp = await fetch(`/api/research/${taskId}/email`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => null)
+    let detail = body?.detail
+    if (Array.isArray(detail)) detail = detail[0]?.msg ?? '请求参数有误'
+    throw new ApiError(resp.status, detail ?? `请求失败 (${resp.status})`)
+  }
+  return resp.json()
+}
+
 /** 订阅任务 SSE 进度（token 走查询参数），返回取消订阅函数 */
 export function subscribeEvents(
   id: string,

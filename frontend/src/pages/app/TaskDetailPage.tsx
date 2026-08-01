@@ -11,14 +11,16 @@ import {
   FileText,
   Lightbulb,
   Link2,
+  Mail,
   MessageSquareText,
   Printer,
   RefreshCw,
   Target,
   Timer,
+  X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { askResearch, getResearch, subscribeEvents } from '../../api/client'
+import { askResearch, emailReport, getResearch, subscribeEvents } from '../../api/client'
 import type { Source, SourceTier, Step, TaskBrief, TaskDetail, TaskStatus } from '../../api/types'
 import BackToTop from '../../components/BackToTop'
 import PhaseStepper from '../../components/PhaseStepper'
@@ -33,7 +35,7 @@ import StatusBadge from '../../components/StatusBadge'
 import StepTimeline from '../../components/StepTimeline'
 import SwotGrid from '../../components/SwotGrid'
 import { TIER_LABELS } from '../../components/TierBadge'
-import { exportMarkdown, exportPdf, exportWord } from '../../utils/exportReport'
+import { buildReportPdfBlob, exportMarkdown, exportPdf, exportWord } from '../../utils/exportReport'
 import { parseUtc } from '../../utils/time'
 
 const RUNNING = new Set<TaskStatus>(['pending', 'planning', 'searching', 'analyzing', 'reporting'])
@@ -110,6 +112,11 @@ export default function TaskDetailPage() {
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
+  // 发送到邮箱（附件走前端导出 PDF 上传后端转发）
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailMsg, setEmailMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null)
   const subscribed = useRef(false)
   // 报告追问（无状态问答线程，不持久化）
   const [qaThread, setQaThread] = useState<{ q: string; a: string }[]>([])
@@ -228,6 +235,29 @@ export default function TaskDetailPage() {
     }
   }
 
+  const handleSendEmail = async () => {
+    const to = emailTo.trim()
+    if (!task || !to || emailSending) return
+    setEmailSending(true)
+    setEmailMsg(null)
+    try {
+      // 前端导出 PDF → 作为附件上传后端转发（方案 C）
+      const blob = await buildReportPdfBlob(task, sources)
+      const res = await emailReport(task.id, to, blob, `竞品调研报告-${task.product_name}.pdf`)
+      if (res.status === 'sent') {
+        setEmailMsg({ kind: 'ok', text: `已发送给 ${res.recipients} 位收件人` })
+      } else if (res.status === 'demo') {
+        setEmailMsg({ kind: 'warn', text: '已提交（演示模式：后端未配置 SMTP，邮件未真实发出，已记录日志）' })
+      } else {
+        setEmailMsg({ kind: 'err', text: '发送失败，请检查 SMTP 配置后重试' })
+      }
+    } catch (err) {
+      setEmailMsg({ kind: 'err', text: err instanceof Error ? err.message : '发送失败' })
+    } finally {
+      setEmailSending(false)
+    }
+  }
+
   const handleAsk = async () => {
     const q = question.trim()
     if (!q || !id || asking) return
@@ -321,6 +351,16 @@ export default function TaskDetailPage() {
                   </div>
                 )}
               </div>
+              <button
+                onClick={() => {
+                  setEmailMsg(null)
+                  setEmailOpen(true)
+                }}
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-blue-300 hover:text-blue-700"
+              >
+                <Mail className="h-3.5 w-3.5" />
+                发送到邮箱
+              </button>
             </>
           )}
           {!running && steps.length > 0 && (
@@ -759,6 +799,73 @@ export default function TaskDetailPage() {
           index={drawer?.index ?? 0}
           onClose={() => setDrawer(null)}
         />
+      )}
+
+      {/* 发送到邮箱弹窗 */}
+      {emailOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => !emailSending && setEmailOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                <Mail className="h-4 w-4 text-blue-700" /> 发送报告到邮箱
+              </h3>
+              <button
+                onClick={() => !emailSending && setEmailOpen(false)}
+                className="text-gray-400 transition hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-gray-500">
+              将当前报告导出为 PDF 并作为附件发送。多个收件人用逗号分隔（最多 10 个）。
+            </p>
+            <input
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSendEmail()
+              }}
+              placeholder="recipient@example.com"
+              disabled={emailSending}
+              className="mt-4 w-full rounded-md border border-gray-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-50"
+            />
+            {emailMsg && (
+              <p
+                className={`mt-3 rounded-md px-3 py-2 text-xs ${
+                  emailMsg.kind === 'ok'
+                    ? 'bg-green-50 text-green-700'
+                    : emailMsg.kind === 'warn'
+                      ? 'bg-amber-50 text-amber-700'
+                      : 'bg-red-50 text-red-600'
+                }`}
+              >
+                {emailMsg.text}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setEmailOpen(false)}
+                disabled={emailSending}
+                className="rounded-md border border-gray-200 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
+              >
+                关闭
+              </button>
+              <button
+                onClick={handleSendEmail}
+                disabled={emailSending || !emailTo.trim()}
+                className="rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+              >
+                {emailSending ? '正在生成并发送…' : '发送'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

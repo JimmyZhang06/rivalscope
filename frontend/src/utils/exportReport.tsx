@@ -154,8 +154,8 @@ ${EXPORT_CSS}</style></head>
   downloadBlob(new Blob(['\ufeff', html], { type: 'application/msword;charset=utf-8' }), `竞品调研报告-${task.product_name}.doc`)
 }
 
-/** 下载 PDF（html2pdf 离屏渲染独立模板，A4 纵向） */
-export async function exportPdf(task: TaskDetail, sources: Source[]) {
+/** 构造离屏 html2pdf worker 与清理函数（save 与 blob 输出共用同一套离屏渲染） */
+function buildPdfWorker(task: TaskDetail, sources: Source[]) {
   // 偏移样式只能放在外层 wrapper 上：html2pdf 会连同内联样式克隆目标元素，
   // 若目标自身带 fixed/left:-10000px，克隆体也会偏移出画布导致 PDF 全白
   const wrapper = document.createElement('div')
@@ -183,9 +183,26 @@ export async function exportPdf(task: TaskDetail, sources: Source[]) {
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
     pagebreak: { mode: ['css', 'legacy'] },
   }
+  return { worker: html2pdf().set(options).from(content), cleanup: () => wrapper.remove() }
+}
+
+/** 下载 PDF（html2pdf 离屏渲染独立模板，A4 纵向） */
+export async function exportPdf(task: TaskDetail, sources: Source[]) {
+  const { worker, cleanup } = buildPdfWorker(task, sources)
   try {
-    await html2pdf().set(options).from(content).save()
+    await worker.save()
   } finally {
-    wrapper.remove()
+    cleanup()
+  }
+}
+
+/** 生成 PDF 的 Blob（用于邮件附件上传，不触发下载） */
+export async function buildReportPdfBlob(task: TaskDetail, sources: Source[]): Promise<Blob> {
+  const { worker, cleanup } = buildPdfWorker(task, sources)
+  try {
+    // outputPdf('blob') 为运行时支持，官方类型声明未收录，用 any 绕过
+    return await (worker as unknown as { outputPdf: (t: string) => Promise<Blob> }).outputPdf('blob')
+  } finally {
+    cleanup()
   }
 }
