@@ -25,11 +25,11 @@ class Settings(BaseSettings):
     jwt_expire_days: int = 7
 
     # SMTP 邮件推送（可选，不配置则邮件走演示模式落库 email_logs）
-    smtp_host: str = "outlook.office365.com"
+    smtp_host: str = ""
     smtp_port: int = 465
-    smtp_user: str = "jimmyzhang1729@outlook.com"
-    smtp_password: str = "Sz5$f5tLnbhf!Sq"
-    smtp_from: str = "jimmyzhang1729@outlook.com"
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
 
     # 前端基础 URL：邮件 / webhook 中「查看完整报告」链接前缀，生产环境需按实际域名配置
     frontend_base: str = "http://localhost:5173"
