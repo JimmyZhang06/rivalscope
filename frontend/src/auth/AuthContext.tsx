@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { fetchMe, login as apiLogin, register as apiRegister, tokenStore } from '../api/client'
+import { ApiError, fetchMe, login as apiLogin, register as apiRegister, request, tokenStore } from '../api/client'
 import type { User } from '../api/types'
 
 interface AuthState {
@@ -94,9 +94,34 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
-/** 仅管理员可访问 */
 export function RequireAdmin({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  if (user?.role !== 'admin') return <Navigate to="/app" replace />
+  const [verified, setVerified] = useState(false)
+  const [verifiedError, setVerifiedError] = useState(false)
+
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return
+    let cancelled = false
+    request<{ total_users: number }>('/api/admin/stats')
+      .then(() => !cancelled && setVerified(true))
+      .catch((err) => {
+        if (cancelled) return
+        if (err instanceof ApiError && err.status === 403) {
+          tokenStore.clear()
+        }
+        setVerifiedError(true)
+      })
+    return () => { cancelled = true }
+  }, [user])
+
+  if (!user || user.role !== 'admin') return <Navigate to="/app" replace />
+  if (verifiedError) return <Navigate to="/login" replace />
+  if (!verified) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+      </div>
+    )
+  }
   return <>{children}</>
 }

@@ -1,6 +1,8 @@
 import type {
   AdminOrg,
+  AdminOrgListResponse,
   AdminStats,
+  AdminUserListResponse,
   AssistantMessage,
   AssistantSession,
   ForgotResponse,
@@ -223,16 +225,18 @@ export function adminStats(): Promise<AdminStats> {
   return request('/api/admin/stats')
 }
 
-export function adminListUsers(q = ''): Promise<User[]> {
-  return request(`/api/admin/users?q=${encodeURIComponent(q)}`)
+export function adminListUsers(q = '', page = 1, pageSize = 20): Promise<AdminUserListResponse> {
+  const params = new URLSearchParams({ q, page: String(page), page_size: String(pageSize) })
+  return request(`/api/admin/users?${params}`)
 }
 
 export function adminUpdateUser(id: string, payload: { plan?: Plan; role?: Role }): Promise<User> {
   return request(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 }
 
-export function adminListOrgs(q = ''): Promise<AdminOrg[]> {
-  return request(`/api/admin/orgs?q=${encodeURIComponent(q)}`)
+export function adminListOrgs(q = '', page = 1, pageSize = 20): Promise<AdminOrgListResponse> {
+  const params = new URLSearchParams({ q, page: String(page), page_size: String(pageSize) })
+  return request(`/api/admin/orgs?${params}`)
 }
 
 export function adminUpdateOrg(id: string, payload: { plan?: Plan }): Promise<AdminOrg> {

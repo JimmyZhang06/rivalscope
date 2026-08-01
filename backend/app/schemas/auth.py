@@ -81,6 +81,20 @@ class AdminStatsOut(BaseModel):
     paid_users: int
 
 
+class AdminListOut(BaseModel):
+    items: list[UserOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminOrgListOut(BaseModel):
+    items: list[AdminOrgOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class AdminOrgOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -140,9 +154,18 @@ class MonthUsage(BaseModel):
     count: int
 
 
+class MemberUsage(BaseModel):
+    """企业成员当月用量明细"""
+
+    user_id: str
+    nickname: str
+    count: int = 0
+
+
 class UsageOut(BaseModel):
     months: list[MonthUsage]
     quota: QuotaOut
+    members: list[MemberUsage] | None = None  # 企业成员各自当月用量（企业成员视角）
 
 
 class ForgotIn(BaseModel):

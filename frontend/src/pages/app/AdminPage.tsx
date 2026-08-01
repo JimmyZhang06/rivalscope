@@ -1,39 +1,88 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ClipboardList, Gem, TrendingUp, Users, Wallet } from 'lucide-react'
 import { adminListOrgs, adminListUsers, adminStats, adminUpdateOrg, adminUpdateUser } from '../../api/client'
-import type { AdminOrg, AdminStats, Plan, Role, User } from '../../api/types'
+import type { AdminOrg, AdminOrgListResponse, AdminStats, AdminUserListResponse, Plan, Role, User } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import PlanBadge from '../../components/PlanBadge'
 
 const PLAN_NAMES: Record<Plan, string> = { free: '免费版', pro: '专业版', enterprise: '企业版' }
+
+function Pagination({ page, totalPages, total, onChange }: { page: number; totalPages: number; total: number; onChange: (p: number) => void }) {
+  if (totalPages <= 1) return null
+  const pages: (number | '...')[] = []
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    if (page > 3) pages.push('...')
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i)
+    if (page < totalPages - 2) pages.push('...')
+    pages.push(totalPages)
+  }
+  return (
+    <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
+      <span>共 {total} 条</span>
+      <div className="flex items-center gap-1">
+        <button onClick={() => onChange(page - 1)} disabled={page <= 1} className="rounded border border-gray-200 px-2 py-1 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">上一页</button>
+        {pages.map((p, i) => (
+          p === '...'
+            ? <span key={`e${i}`} className="px-1">…</span>
+            : <button key={p} onClick={() => onChange(p)} className={`rounded border px-2.5 py-1 ${p === page ? 'border-blue-400 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 hover:bg-gray-50'}`}>{p}</button>
+        ))}
+        <button onClick={() => onChange(page + 1)} disabled={page >= totalPages} className="rounded border border-gray-200 px-2 py-1 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">下一页</button>
+      </div>
+    </div>
+  )
+}
 
 export default function AdminPage() {
   const { user: me, refreshUser } = useAuth()
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [users, setUsers] = useState<User[]>([])
   const [orgs, setOrgs] = useState<AdminOrg[]>([])
+  const [userTotal, setUserTotal] = useState(0)
+  const [orgTotal, setOrgTotal] = useState(0)
+  const [userPage, setUserPage] = useState(1)
+  const [orgPage, setOrgPage] = useState(1)
+  const PAGE_SIZE = 20
   const [q, setQ] = useState('')
   const [orgQ, setOrgQ] = useState('')
   const [message, setMessage] = useState('')
   const [orgMessage, setOrgMessage] = useState('')
 
-  const loadUsers = useCallback((keyword: string) => {
-    adminListUsers(keyword).then(setUsers).catch(() => {})
+  const loadUsers = useCallback((keyword: string, page = 1) => {
+    adminListUsers(keyword, page, PAGE_SIZE).then((r) => {
+      setUsers(r.items)
+      setUserTotal(r.total)
+      setUserPage(r.page)
+    }).catch(() => {})
   }, [])
 
-  const loadOrgs = useCallback((keyword: string) => {
-    adminListOrgs(keyword).then(setOrgs).catch(() => {})
+  const loadOrgs = useCallback((keyword: string, page = 1) => {
+    adminListOrgs(keyword, page, PAGE_SIZE).then((r) => {
+      setOrgs(r.items)
+      setOrgTotal(r.total)
+      setOrgPage(r.page)
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
     adminStats().then(setStats).catch(() => {})
-    loadUsers('')
-    loadOrgs('')
+    loadUsers('', 1)
+    loadOrgs('', 1)
   }, [loadUsers, loadOrgs])
+
+  const totalUserPages = Math.max(1, Math.ceil(userTotal / PAGE_SIZE))
+  const totalOrgPages = Math.max(1, Math.ceil(orgTotal / PAGE_SIZE))
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    loadUsers(q.trim())
+    loadUsers(q.trim(), 1)
+  }
+
+  const handleOrgSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    loadOrgs(orgQ.trim(), 1)
   }
 
   const handlePlanChange = async (u: User, plan: Plan) => {
@@ -41,7 +90,7 @@ export default function AdminPage() {
     try {
       await adminUpdateUser(u.id, { plan })
       setMessage(`已将 ${u.nickname || u.email} 的套餐调整为${PLAN_NAMES[plan]}`)
-      loadUsers(q.trim())
+      loadUsers(q.trim(), userPage)
       adminStats().then(setStats).catch(() => {})
       if (u.id === me?.id) refreshUser()
     } catch (err) {
@@ -54,12 +103,11 @@ export default function AdminPage() {
     try {
       await adminUpdateUser(u.id, { role })
       setMessage(`已将 ${u.nickname || u.email} 的角色调整为${role === 'admin' ? '管理员' : '普通用户'}`)
-      loadUsers(q.trim())
+      loadUsers(q.trim(), userPage)
       if (u.id === me?.id) refreshUser()
     } catch (err) {
-      // 后端约束：不能取消自己的管理员权限
       setMessage(err instanceof Error ? err.message : '调整失败')
-      loadUsers(q.trim())
+      loadUsers(q.trim(), userPage)
     }
   }
 
@@ -68,7 +116,7 @@ export default function AdminPage() {
     try {
       await adminUpdateOrg(o.id, { plan })
       setOrgMessage(`已将企业「${o.name}」的套餐调整为${PLAN_NAMES[plan]}`)
-      loadOrgs(orgQ.trim())
+      loadOrgs(orgQ.trim(), orgPage)
     } catch (err) {
       setOrgMessage(err instanceof Error ? err.message : '调整失败')
     }
@@ -196,6 +244,7 @@ export default function AdminPage() {
           {users.length === 0 && (
             <p className="py-8 text-center text-sm text-gray-400">未找到匹配的用户</p>
           )}
+          <Pagination page={userPage} totalPages={totalUserPages} total={userTotal} onChange={(p) => loadUsers(q.trim(), p)} />
         </div>
       </section>
 
@@ -278,6 +327,7 @@ export default function AdminPage() {
           {orgs.length === 0 && (
             <p className="py-8 text-center text-sm text-gray-400">未找到匹配的企业</p>
           )}
+          <Pagination page={orgPage} totalPages={totalOrgPages} total={orgTotal} onChange={(p) => loadOrgs(orgQ.trim(), p)} />
         </div>
       </section>
     </div>

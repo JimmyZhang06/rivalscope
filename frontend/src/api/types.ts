@@ -152,6 +152,20 @@ export interface AdminStats {
   paid_users: number
 }
 
+export interface AdminUserListResponse {
+  items: User[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminOrgListResponse {
+  items: AdminOrg[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export interface AdminOrg {
   id: string
   name: string
@@ -171,6 +185,12 @@ export interface LoginLog {
   created_at: string
 }
 
+export interface MemberUsage {
+  user_id: string
+  nickname: string
+  count: number
+}
+
 export interface MonthUsage {
   month: string // YYYY-MM
   count: number
@@ -179,6 +199,7 @@ export interface MonthUsage {
 export interface UsageStats {
   months: MonthUsage[]
   quota: Quota
+  members: MemberUsage[] | null // 企业成员各自当月用量
 }
 
 export interface ForgotResponse {

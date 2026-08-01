@@ -382,7 +382,7 @@ function OverviewTab() {
               )}
             </div>
             <div>
-              <p className="text-xs text-gray-400">近 6 个月调研次数</p>
+              <p className="text-xs text-gray-400">近 {usage.months.length} 个月调研次数（任务 + 图谱）</p>
               <div className="mt-2 flex h-20 items-end gap-2">
                 {usage.months.map((m) => (
                   <div key={m.month} className="flex flex-1 flex-col items-center gap-1">
@@ -396,6 +396,19 @@ function OverviewTab() {
                 ))}
               </div>
             </div>
+            {/* 企业成员用量明细 */}
+            {usage.members && usage.members.length > 0 && (
+              <div className="sm:col-span-2 mt-2 rounded-md border border-gray-100 bg-gray-50/50 p-3">
+                <p className="text-xs font-medium text-gray-500 mb-2">本月各成员用量</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {usage.members.map((m) => (
+                    <span key={m.user_id} className="text-xs text-gray-600">
+                      {m.nickname}: <span className="font-medium tabular-nums">{m.count}</span> 次
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>

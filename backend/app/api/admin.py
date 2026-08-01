@@ -5,10 +5,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, month_start_utc
-from app.core.plans import PLANS
+from app.core.plans import PAID_PLANS, PLANS, effective_org_plan, effective_plan
 from app.db.database import get_db
 from app.db.models import GraphProject, Order, Organization, ResearchTask, User
 from app.schemas.auth import (
+    AdminListOut,
+    AdminOrgListOut,
     AdminOrgOut,
     AdminOrgUpdate,
     AdminStatsOut,
@@ -25,7 +27,15 @@ def stats(db: Session = Depends(get_db)):
     total_tasks = db.query(ResearchTask).count()
     tasks_this_month = db.query(ResearchTask).filter(ResearchTask.created_at >= month_start_utc()).count()
     total_revenue = db.query(func.coalesce(func.sum(Order.amount), 0)).filter(Order.status == "paid").scalar()
-    paid_users = db.query(User).filter(User.plan != "free").count()
+    # 活跃付费用户：管理员视同付费；入企用户按企业有效套餐；个人按个人有效套餐
+    orgs = {o.id: o for o in db.query(Organization).all()}
+    paid_users = sum(
+        1
+        for u in db.query(User).all()
+        if (u.role == "admin")
+        or (u.org_id and u.org_id in orgs and effective_org_plan(orgs[u.org_id]) in PAID_PLANS)
+        or (not u.org_id and effective_plan(u) in PAID_PLANS)
+    )
     return AdminStatsOut(
         total_users=total_users,
         total_tasks=total_tasks,
@@ -35,13 +45,20 @@ def stats(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/users", response_model=list[UserOut])
-def list_users(q: str = Query("", max_length=100), db: Session = Depends(get_db)):
+@router.get("/users", response_model=AdminListOut)
+def list_users(
+    q: str = Query("", max_length=100),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     query = db.query(User)
     if q.strip():
         like = f"%{q.strip()}%"
         query = query.filter((User.email.ilike(like)) | (User.nickname.ilike(like)))
-    return query.order_by(User.created_at.desc()).limit(200).all()
+    total = query.count()
+    items = query.order_by(User.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return AdminListOut(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
@@ -103,13 +120,21 @@ def _org_out(db: Session, org: Organization) -> AdminOrgOut:
     return out
 
 
-@router.get("/orgs", response_model=list[AdminOrgOut])
-def list_orgs(q: str = Query("", max_length=100), db: Session = Depends(get_db)):
+@router.get("/orgs", response_model=AdminOrgListOut)
+def list_orgs(
+    q: str = Query("", max_length=100),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     query = db.query(Organization)
     if q.strip():
         query = query.filter(Organization.name.ilike(f"%{q.strip()}%"))
-    orgs = query.order_by(Organization.created_at.desc()).limit(200).all()
-    return [_org_out(db, org) for org in orgs]
+    total = query.count()
+    orgs = query.order_by(Organization.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return AdminOrgListOut(
+        items=[_org_out(db, org) for org in orgs], total=total, page=page, page_size=page_size
+    )
 
 
 @router.patch("/orgs/{org_id}", response_model=AdminOrgOut)

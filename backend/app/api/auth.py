@@ -1,13 +1,13 @@
 import random
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_quota
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.database import get_db
-from app.db.models import LoginLog, Order, ResearchTask, User
+from app.db.models import GraphProject, LoginLog, Order, ResearchTask, User
 from app.schemas.auth import (
     ChangePasswordIn,
     DeleteAccountIn,
@@ -15,6 +15,7 @@ from app.schemas.auth import (
     ForgotOut,
     LoginIn,
     LoginLogOut,
+    MemberUsage,
     MonthUsage,
     ProfileUpdateIn,
     QuotaOut,
@@ -154,32 +155,111 @@ def delete_account(
 
 
 @router.get("/usage", response_model=UsageOut)
-def usage(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """近 6 个月每月调研次数 + 本月配额"""
+def usage(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    months: int = Query(6, ge=3, le=12),
+):
+    """近 N 个月每月调研次数（任务 + 图谱）+ 本月配额；企业成员返回成员各自当月用量"""
     now = datetime.now(timezone.utc)
-    # 生成最近 6 个月的 YYYY-MM 键（含本月）
-    months: list[str] = []
+    # 生成最近 N 个月的 YYYY-MM 键（含本月）
+    month_keys: list[str] = []
     y, m = now.year, now.month
-    for _ in range(6):
-        months.append(f"{y:04d}-{m:02d}")
+    for _ in range(months):
+        month_keys.append(f"{y:04d}-{m:02d}")
         m -= 1
         if m == 0:
             y, m = y - 1, 12
-    months.reverse()
-    since = datetime(int(months[0][:4]), int(months[0][5:7]), 1, tzinfo=timezone.utc)
-    counts = {key: 0 for key in months}
-    tasks = (
-        db.query(ResearchTask.created_at)
-        .filter(ResearchTask.user_id == user.id, ResearchTask.created_at >= since)
-        .all()
-    )
-    for (created_at,) in tasks:
+    month_keys.reverse()
+    since = datetime(int(month_keys[0][:4]), int(month_keys[0][5:7]), 1, tzinfo=timezone.utc)
+    counts = {key: 0 for key in month_keys}
+
+    # 企业成员：按 org_id 统计全企业（与 month_usage 口径一致）
+    # 个人用户：按 user_id 统计
+    if user.org_id:
+        task_rows = (
+            db.query(ResearchTask.created_at)
+            .filter(
+                ResearchTask.org_id == user.org_id,
+                ResearchTask.created_at >= since,
+                ResearchTask.status != "failed",
+            )
+            .all()
+        )
+        graph_rows = (
+            db.query(GraphProject.created_at)
+            .filter(
+                GraphProject.org_id == user.org_id,
+                GraphProject.created_at >= since,
+                GraphProject.status != "failed",
+            )
+            .all()
+        )
+        # 企业成员各自的当月用量
+        member_counts: dict[str, int] = {}
+        member_rows = (
+            db.query(ResearchTask.user_id, ResearchTask.created_at)
+            .filter(
+                ResearchTask.org_id == user.org_id,
+                ResearchTask.created_at >= since,
+                ResearchTask.status != "failed",
+            )
+            .all()
+        )
+        for (uid, created_at) in member_rows:
+            key = f"{created_at.year:04d}-{created_at.month:02d}"
+            if key in month_keys:
+                member_counts[uid] = member_counts.get(uid, 0) + 1
+
+        members_out = None
+        if member_counts:
+            org_members = db.query(User).filter(User.org_id == user.org_id).all()
+            members_map = {m.id: m for m in org_members}
+            members_out = []
+            for uid, cnt in member_counts.items():
+                m = members_map.get(uid)
+                members_out.append(
+                    MemberUsage(
+                        user_id=uid,
+                        nickname=m.nickname if m and m.nickname else (m.email if m else uid[:8]),
+                        count=cnt,
+                    )
+                )
+            members_out.sort(key=lambda x: -x.count)
+    else:
+        task_rows = (
+            db.query(ResearchTask.created_at)
+            .filter(
+                ResearchTask.user_id == user.id,
+                ResearchTask.created_at >= since,
+                ResearchTask.status != "failed",
+            )
+            .all()
+        )
+        graph_rows = (
+            db.query(GraphProject.created_at)
+            .filter(
+                GraphProject.user_id == user.id,
+                GraphProject.created_at >= since,
+                GraphProject.status != "failed",
+            )
+            .all()
+        )
+        members_out = None
+
+    for (created_at,) in task_rows:
         key = f"{created_at.year:04d}-{created_at.month:02d}"
         if key in counts:
             counts[key] += 1
+    for (created_at,) in graph_rows:
+        key = f"{created_at.year:04d}-{created_at.month:02d}"
+        if key in counts:
+            counts[key] += 1
+
     return UsageOut(
-        months=[MonthUsage(month=k, count=counts[k]) for k in months],
+        months=[MonthUsage(month=k, count=counts[k]) for k in month_keys],
         quota=QuotaOut(**get_quota(db, user)),
+        members=members_out,
     )
 
 
