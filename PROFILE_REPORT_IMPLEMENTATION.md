@@ -1,6 +1,6 @@
 # 画像板块 — 优秀报告实施方案
 
-> 版本：v5.1.0 | 日期：2026-08-02 | 分支：agent-v5
+> 版本：v6.0.0 | 日期：2026-08-03 | 分支：agent-v6
 > **关联文档**：[PERFORMANCE_OPTIMIZATION_PLAN.md](PERFORMANCE_OPTIMIZATION_PLAN.md) — 性能优化方案
 > **目标**：将画像板块从"结构化数据展示器"升级为"分析报告阅读器"，参考调研报告（TaskDetailPage）已达的表现层标准。
 

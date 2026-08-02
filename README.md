@@ -1,6 +1,6 @@
 # 竞品调研 Agent / Competitive Research Agent
 
-> **版本**: v5.1.0 | **日期**: 2026-08-02 | **分支**: agent-v5
+> **版本**: v6.0.0 | **日期**: 2026-08-03 | **分支**: agent-v6
 > This work is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
 
 > SaaS 化竞品情报平台 —— 联网检索、全链路引用溯源、SSE 实时进度、定时追踪、关系图谱、竞品画像、全局 AI 助手、企业组织与商业化账号体系
@@ -19,7 +19,7 @@
 2. **时效引擎**——所有 LLM 提示词注入当前日期，检索词自带时效约束，可指定检索时间范围（天/周/月/年）；来源发布时间解析、距今天数与新鲜度分布统计注入报告"可信度说明"
 3. **定时追踪**——按日/周/月频率自动执行调研，期次间自动生成"变更摘要"，支持站内通知、邮件与 Webhook（企业微信/钉钉/飞书/通用）推送；内置调度器每 60 秒扫描到期追踪项
 4. **关系图谱**——以任意企业/产品为根对象，联网抽取产业链关系网络（上下游/竞争/合作/投资/母子公司），可视化画布展示并支持一键重建
-5. **竞品画像**——结构化画像模板 → 基于已有来源生成竞品画像 → 冻结锁定 → 多份画像横向对比
+5. **竞品画像**——结构化画像模板 → 基于已有来源生成竞品画像 → 冻结锁定 → 多份画像横向对比；画像详情支持报告/洞察/来源/维度四 Tab，预生成报告+洞察存入缓存
 6. **报告问答与全局 AI 助手**——既可针对单份报告追问，也可在任意页面通过右下角悬浮球或独立页向 AI 助手提问，助手自动定位最相关的报告作为上下文并附引用链接，**不占调研额度**
 7. **企业组织**——邀请码加入、owner/admin/member 三级企业角色、企业套餐共享配额、成员月额度管控、RBAC 细粒度权限、任务/追踪/图谱企业内共享可见
 8. **安全增强**——JWT + Refresh Token（Access 8h / Refresh 30d）、会话版本控制、令牌桶限流、Fernet 加密、审计日志、执行快照
@@ -27,6 +27,9 @@
 10. **爬虫增强**——多语言网站智能识别（自动检测 /cn/、/en/ 等语言路径前缀），sitemap 多路径发现（`/{lang}/sitemap.xml`），隐私 consent overlay 自动 stripping（OneTrust/CCPA/GDPR），Chrome UA 降低被拦截率
 11. **性能优化**——SSE 长连接改为单 session 复用 + seq 增量查询（消除 O(n) offset 开销），追踪列表批量加载（窗口函数一次查询），调研/追踪列表分页支持（page/page_size），账号注销批量删除，git hash 启动时一次性缓存
 12. **安全加固**——审计日志数据库级触发器（防篡改），画像提取任务进程重启自动恢复，启动时 JWT_SECRET 强度校验与生产环境警告，reset_code 列修正为 VARCHAR(44) 适配 Fernet 加密输出
+13. **用户级限流**——补充 IP 级限流，防止 IP 共享场景下的滥用（`core/rate_limit_user.py`）
+14. **画像报告服务**——新增 `services/profile_report.py`，预生成画像报告+洞察存入 `profile_data` 缓存，前端优先读取缓存避免懒加载失败
+15. **数据播种脚本**——新增 `scripts/seed_data.py`，一键播种测试数据（用户、组织、竞品、画像模板、调研任务等）
 
 全过程通过 SSE 实时推送执行进度，前端以一体化执行视图（阶段步骤条 + 时间线）展示。
 
@@ -177,7 +180,7 @@ npm run dev
 | 层 | 技术 |
 |----|------|
 | 后端 | Python 3.12, FastAPI, SQLAlchemy 2.0, SQLite, SSE, PyJWT, bcrypt |
-| Agent | OpenAI 兼容 LLM（DeepSeek / 通义千问 / Kimi 等），Tavily 联网检索 |
+| Agent | OpenAI 兼容 LLM（DeepSeek / 通义千问 / Kimi / StepFun 等），Tavily 联网检索 |
 | 安全 | bcrypt · JWT + Refresh Token · Fernet 加密 · 令牌桶限流 · 审计日志 · 执行快照 |
 | 调度 | 后端内置线程调度器（60 秒轮询，无外部依赖） |
 | 前端 | React 18, TypeScript, Vite 5, Tailwind CSS 4, react-router 6 |
@@ -198,8 +201,12 @@ agent/
 │   │   │   ├── security.py      # bcrypt 密码哈希 + JWT 签发/校验（含会话版本 ver，Access 8h / Refresh 30d）
 │   │   │   ├── crypto.py        # Fernet 对称加密（AES-128-CBC + HMAC）
 │   │   │   ├── rate_limit.py    # 令牌桶限流（按 IP + 端点分类）
+│   │   │   ├── rate_limit_user.py # ★ 用户级限流（补充 IP 级限流，防止 IP 共享滥用）
 │   │   │   └── timeutil.py      # 时效引擎工具：baseline_now/parse_published/age_days_of/recency_weight
-│   │   ├── db/                  # SQLAlchemy engine + ORM 模型（23 张表，见 HANDOFF §21）
+│   │   ├── db/
+│   │   │   ├── database.py      # SQLAlchemy 引擎 + 会话工厂 + WAL 配置
+│   │   │   ├── models.py        # 23 张表的 ORM 模型
+│   │   │   └── audit_triggers.py # ★ 审计日志数据库级触发器（防 UPDATE/DELETE 篡改）
 │   │   ├── schemas/             # Pydantic 模型：auth / research / org / tracker / graph / competitor / profiles
 │   │   ├── api/
 │   │   │   ├── deps.py          # 认证依赖 + 配额计算（月用量=任务+图谱，失败不计）+ RBAC 权限装饰器
@@ -225,13 +232,15 @@ agent/
 │   │       ├── snapshot.py      # 页面快照抓取（HTML + 纯文本，httpx + BeautifulSoup）
 │   │       ├── digest.py        # 期次变更摘要生成（与上一期报告对比）
 │   │       ├── notify.py        # 通知分发：站内/邮件(SMTP/演示)/Webhook(企微/钉钉/飞书/通用)
-│   │       ├── scheduler.py     # ★ 追踪调度器（60s 扫描 + 配额跳过策略 + 执行快照）
+│   │       ├── scheduler.py     # ★ 追踪调度器（60s 扫描 + 配额跳过策略 + 执行快照，git hash 启动缓存）
 │   │       ├── audit.py         # 审计日志写入
-│   │       ├── profiles.py      # 竞品画像生成 + 冻结
-│   │       ├── profile_extractor.py # 竞品画像结构化信息提取
-│   │       ├── comparison.py    # 多份冻结画像横向对比
-│   │       ├── crawler.py       # 竞品官网爬虫核心逻辑
-│   │       └── digest.py        # 期次变更摘要生成
+│   │       ├── profiles.py         # 竞品画像生成 + 冻结
+│   │       ├── profile_extractor.py # 竞品画像结构化信息提取（含启动恢复 recover_stale_tasks）
+│   │       ├── profile_report.py   # ★ 画像报告/洞察生成（预生成报告+洞察存入 profile_data 缓存）
+│   │       ├── comparison.py       # 多份冻结画像横向对比
+│   │       └── crawler.py          # 竞品官网爬虫核心逻辑（多语言站点 + consent overlay 移除）
+│   ├── scripts/
+│   │   └── seed_data.py            # ★ 测试数据播种脚本（用户/组织/竞品/画像/调研任务等）
 │   ├── requirements.txt
 │   └── .env.example
 └── frontend/
@@ -286,6 +295,9 @@ agent/
 | GET | `/api/profiles` | 列出画像 | 用户 |
 | POST | `/api/profiles/{id}/freeze` | 冻结画像 | 管理员 |
 | POST | `/api/profiles/compare` | 横向对比（≥2 份冻结画像） | 用户 |
+| GET | `/api/profiles/{id}/report` | 画像报告（缓存优先，预生成报告+洞察） | 用户 |
+| GET | `/api/profiles/{id}/insights` | 画像洞察（缓存优先） | 用户 |
+| GET | `/api/profiles/{id}/report-full` | 一次性获取画像报告+洞察+来源索引 | 用户 |
 | POST | `/api/org` · `/join` · `/leave` | 创建企业 / 邀请码加入 / 退出 | 用户 |
 | GET | `/api/org/me` · `/members` | 我的企业 / 成员列表（含各自 month_used + permissions） | 用户 |
 | PATCH | `/api/org` | 改企业名 | org owner/admin |
@@ -345,6 +357,11 @@ A production-ready SaaS competitive-intelligence platform. Around the core resea
 8. **Security hardening** — JWT + Refresh Token (Access 8h / Refresh 30d), session versioning, token bucket rate limiting, Fernet encryption, audit logs, execution snapshots
 9. **Crawler enhancements** — Multi-language site intelligence (auto-detects /cn/, /en/ language path prefixes), sitemap multi-path discovery (`/{lang}/sitemap.xml`), privacy consent overlay auto-stripping (OneTrust/CCPA/GDPR), Chrome UA to reduce bot blocking
 10. **Commercial account stack** — email registration/login, three-tier plans with monthly quotas, simulated payment upgrades, order history, in-app notifications, and an admin console (user + org management + audit logs + execution snapshots)
+11. **Performance optimization** — SSE long-polling eliminated O(n) offset cost, tracker list N+1 fixed with window function batch loading, list pagination (page/page_size), account deletion batch cleanup, git hash cached at startup
+12. **Security hardening** — Audit log DB-level triggers (tamper-proof), profile extractor task startup recovery, JWT_SECRET strength validation at startup, reset_code column corrected to VARCHAR(44) for Fernet output
+13. **User-level rate limiting** — Per-user token bucket complements IP-level rate limiting (`core/rate_limit_user.py`)
+14. **Profile report service** — New `services/profile_report.py` pre-generates profile reports + insights into `profile_data` cache; frontend reads cache first to avoid lazy-load failures
+15. **Data seeding script** — New `scripts/seed_data.py` for one-click test data seeding (users, orgs, competitors, profiles, research tasks, etc.)
 
 Execution progress is streamed in real time via SSE and rendered as a unified execution view (phase stepper + live timeline).
 
@@ -495,7 +512,7 @@ Open `http://localhost:5173`; the Vite proxy forwards `/api` requests to the bac
 | Layer | Technology |
 |-------|-----------|
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2.0, SQLite, SSE, PyJWT, bcrypt |
-| Agent | OpenAI-compatible LLM (DeepSeek / Qwen / Kimi, etc.), Tavily web search |
+| Agent | OpenAI-compatible LLM (DeepSeek / Qwen / Kimi / StepFun, etc.), Tavily web search |
 | Security | JWT + Refresh Token, Fernet encryption, Token Bucket rate limiting, Audit logs, Execution snapshots |
 | Scheduling | Built-in thread scheduler (60 s polling, no external dependency) |
 | Frontend | React 18, TypeScript, Vite 5, Tailwind CSS 4, react-router-dom 6, react-markdown + remark-gfm, recharts, ReactFlow, html2pdf.js |
@@ -509,15 +526,19 @@ agent/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI entry (CORS, routing, create_all + migration, admin seed, scheduler)
-│   │   ├── core/                # config / plans / security / crypto / rate_limit / timeutil
+│   │   ├── core/                # config / plans / security / crypto / rate_limit / rate_limit_user / timeutil
 │   │   ├── db/                  # SQLAlchemy engine + ORM models (23 tables, see HANDOFF §21)
-│   │   ├── schemas/             # Pydantic models: auth / research / org / tracker / graph / competitor / profiles / crawl
+│   │   │   └── audit_triggers.py # DB-level triggers preventing UPDATE/DELETE on audit_logs
+│   │   ├── schemas/             # Pydantic models: auth / research / org / tracker / graph / competitor / profiles
 │   │   ├── api/                 # deps (auth+quota+RBAC) / auth / research (+/ask/email) / trackers / graph /
 │   │   │                        #   org / competitors / profiles / crawl / permissions / notifications /
 │   │   │                        #   assistant (multi-session + ask) / billing / admin
 │   │   └── services/            # llm (chat/chat_json/chat_messages) / search / agent / graph_agent /
 │   │                            #   dedup / snapshot / digest / notify (in-app,email,webhook) /
-│   │                            #   scheduler / audit / profiles / profile_extractor / comparison / crawler
+│   │                            #   scheduler / audit / profiles / profile_extractor / profile_report /
+│   │                            #   comparison / crawler
+│   ├── scripts/
+│   │   └── seed_data.py         # Test data seeding script
 │   ├── requirements.txt
 │   ├── .env.example
 │   ├── start.bat                # Windows one-click startup
@@ -576,6 +597,9 @@ agent/
 | GET | `/api/profiles` | List profiles | User |
 | POST | `/api/profiles/{id}/freeze` | Freeze profile | Admin |
 | POST | `/api/profiles/compare` | Horizontal comparison (≥2 frozen profiles) | User |
+| GET | `/api/profiles/{id}/report` | Profile report (cache-first, pre-generated report+insights) | User |
+| GET | `/api/profiles/{id}/insights` | Profile insights (cache-first) | User |
+| GET | `/api/profiles/{id}/report-full` | Get profile report + insights + source index in one call | User |
 | POST | `/api/org` · `/join` · `/leave` | Create org / join by invite code / leave | User |
 | GET | `/api/org/me` · `/members` | My org / member list (with month usage + permissions) | User |
 | PATCH | `/api/org` | Rename org | Org admin |

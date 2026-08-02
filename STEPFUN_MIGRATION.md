@@ -1,5 +1,7 @@
 # StepFun 迁移报告
 
+> **版本**: v6.0.0 | **日期**: 2026-08-03 | **分支**: agent-v6
+
 ## TL;DR
 
 **改动极小，改动量约 10 行，核心代码几乎不需要动。** 原因是该项目已经基于 OpenAI 兼容接口设计，而 StepFun 的 `step-3.7-flash` 等模型完全兼容 OpenAI Chat Completions API。

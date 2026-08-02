@@ -1,7 +1,7 @@
 # 01. 项目概览
 
 > **竞品调研 Agent** / Competitive Research Agent
-> 版本：v5.1.0 · 分支：agent-v5
+> 版本：v6.0.0 | 日期：2026-08-03 | 分支：agent-v6
 
 ## 1.1 定位
 

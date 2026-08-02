@@ -1,6 +1,6 @@
-# 竞品调研 Agent — 项目交接与技术实现文档 v5.1
+# 竞品调研 Agent — 项目交接与技术实现文档 v6.0
 
-> 版本：v5.1.0 | 日期：2026-08-02
+> 版本：v6.0.0 | 日期：2026-08-03
 
 ## 目录
 
@@ -59,6 +59,7 @@
 | 调度 | `services/scheduler.py` 守护线程，60 秒轮询（无 celery/cron 外部依赖）；启动时自动恢复未完成的画像提取任务 |
 | 前端 | React 18 · TypeScript · Vite 5 · Tailwind CSS 4 · react-router-dom 6 · react-markdown + remark-gfm · recharts · ReactFlow · **html2pdf.js** |
 | 爬虫 | httpx + BeautifulSoup4（竞品官网信息结构化提取） |
+| 播种 | `scripts/seed_data.py` 测试数据播种（用户/组织/竞品/画像/调研任务等） |
 
 ## 3. 目录结构
 
@@ -80,6 +81,7 @@ agent/
 │     │  ├─ security.py         # ★ bcrypt 哈希 + JWT 签发/校验（Access 8h / Refresh 30d，payload 带 ver + type）
 │     │  ├─ crypto.py           # Fernet 对称加密（AES-128-CBC + HMAC），加密 DB 敏感字段
 │     │  ├─ rate_limit.py       # 令牌桶限流（按 IP + 端点分类）
+│     │  ├─ rate_limit_user.py  # ★ 用户级限流（补充 IP 级限流，防止 IP 共享滥用）
 │     │  └─ timeutil.py         # 时效引擎工具：baseline_now/parse_published/age_days_of/recency_weight
 │     ├── db/
 │     │  ├─ database.py         # SQLAlchemy 引擎 + WAL/外键/busy_timeout 配置
@@ -101,6 +103,7 @@ agent/
 │        ├─ audit.py            # 审计日志写入
 │        ├─ profiles.py         # 竞品画像生成 + 冻结
 │        ├─ profile_extractor.py # 竞品画像结构化信息提取
+│        ├─ profile_report.py   # ★ 画像报告/洞察生成（预生成报告+洞察存入 profile_data 缓存）
 │        ├─ comparison.py       # 多份冻结画像横向对比
 │        └─ crawler.py          # 竞品官网爬虫核心逻辑
 └── frontend/
@@ -633,7 +636,7 @@ npm run dev   # http://localhost:5173，/api 代理到 8000
 
 ## 23. 当前状态
 
-全部完成并验证（agent-v5 分支，核心功能完整）：
+全部完成并验证（agent-v6 分支，核心功能完整）：
 
 - 商业化账号体系、会员/支付/管理后台（含企业管理 + 审计日志 + 执行快照）
 - Agent 全流程（规划→检索→去重/置信度/冲突检测→快照存档→分析→洞察→时间线→报告）
@@ -648,7 +651,7 @@ npm run dev   # http://localhost:5173，/api 代理到 8000
 - 站内通知铃铛 + 额度预警（80% 阈值）
 - 安全增强：Refresh Token、限流、Fernet 加密、审计埋点、执行快照
 - 来源去重/置信度/冲突检测、页面快照存档
-- 代码托管：`https://github.com/JimmyZhang06/competitive-intel-agent.git` 分支 **agent-v5**
+- 代码托管：`https://github.com/JimmyZhang06/competitive-intel-agent.git` 分支 **agent-v6**
 
 ## 24. 踩坑备忘
 

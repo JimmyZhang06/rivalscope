@@ -1,7 +1,7 @@
 # 文档体系目录
 
 > **竞品调研 Agent** — 文档索引与导航
-> **版本**: v5.1.0 | **更新日期**: 2026-08-02
+> **版本**: v6.0.0 | **更新日期**: 2026-08-03 | **分支**: agent-v6
 
 ---
 
@@ -36,6 +36,9 @@
 | [HANDOFF.md](../HANDOFF.md) | ★ 项目交接与技术实现文档 — 权限矩阵、配额规则、流水线、安全、数据模型、踩坑备忘 |
 | [FIX_PLAN.md](../FIX_PLAN.md) | 代码问题修复方案 — P0-P3 分级 + 安全加固 S-1/S-2 |
 | [PROFILE_REPORT_IMPLEMENTATION.md](../PROFILE_REPORT_IMPLEMENTATION.md) | 画像板块报告实施方案 — 将画像升级为分析报告阅读器 |
+| [PROFILE_REPORT_FIX.md](../PROFILE_REPORT_FIX.md) | 画像报告/洞察加载失败修复方案 — 预生成报告+洞察存入缓存 |
+| [PROFILE_REPORT_FIX_PLAN.md](../PROFILE_REPORT_FIX_PLAN.md) | 画像报告质量提升计划 — 素材驱动报告生成 + 来源可追溯 |
+| [STEPFUN_MIGRATION.md](../STEPFUN_MIGRATION.md) | StepFun 迁移指南 — 零代码变更迁移到 StepFun LLM 提供商 |
 | [CHANGELOG.md](../CHANGELOG.md) | 版本变更日志 — 按 [Keep a Changelog](https://keepachangelog.com/) 格式 |
 
 ## 归档文档

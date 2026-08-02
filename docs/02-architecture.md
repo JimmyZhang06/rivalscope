@@ -1,7 +1,7 @@
 # 02. 系统架构
 
 > **竞品调研 Agent**
-> 版本：v5.1.0 · 日期：2026-08-02 · 分支：agent-v5
+> 版本：v6.0.0 · 日期：2026-08-03 · 分支：agent-v6
 
 ## 2.1 分层架构
 
@@ -140,7 +140,7 @@ run_research() [后台 asyncio 任务]
 |------|------|------|
 | 认证 | JWT + Refresh Token | `core/security.py`（Access 8h / Refresh 30d） |
 | 授权 | RBAC 细粒度权限 | `user_permissions` 表 + `require_permission` 装饰器 |
-| 限流 | 令牌桶 | `core/rate_limit.py`（按 IP + 端点分类） |
+| 限流 | 令牌桶 | `core/rate_limit.py`（按 IP + 端点分类）+ `core/rate_limit_user.py`（按 user_id） |
 | 加密 | Fernet 对称加密 | `core/crypto.py`（AES-128-CBC + HMAC） |
 | 审计 | 操作日志 + LLM 调用记录 + DB 级防篡改 | `services/audit.py` + `audit_logs` 表 + `audit_triggers.py` |
 | 追溯 | 执行快照 | `execution_snapshots` 表 + 调度器自动生成 |

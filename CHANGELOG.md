@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v6.0.0] - 2026-08-03
+
+### Added
+- **User-level rate limiting**: `core/rate_limit_user.py` complements IP-level rate limiting with per-user token bucket, preventing abuse in IP-sharing scenarios
+- **Profile report service**: `services/profile_report.py` pre-generates profile reports and insights into `profile_data` cache during background extraction tasks; frontend reads cache first to avoid lazy-load failures
+- **Profile report/insight API endpoints**: `GET /api/profiles/{id}/report`, `GET /api/profiles/{id}/insights`, and `GET /api/profiles/{id}/report-full` with cache-first strategy
+- **Data seeding script**: `scripts/seed_data.py` for one-click test data seeding (users, orgs, competitors, profiles, research tasks, trackers, graphs, etc.)
+- **Profile fix plan documentation**: `PROFILE_REPORT_FIX.md`, `PROFILE_REPORT_FIX_PLAN.md`, `PROFILE_REPORT_IMPLEMENTATION.md` — comprehensive plan for profile report quality improvements
+- **StepFun migration guide**: `STEPFUN_MIGRATION.md` — zero-code-change migration to StepFun LLM provider
+- **Code fix plan**: `FIX_PLAN.md` — P0-P3 bug fixes + security hardening (proactive token refresh, SSE reconnect, CORS env-driven, logout cleanup, etc.)
+
+### Changed
+- Profile detail page now reads pre-generated report and insights from `profile_data` cache, with lazy-load as fallback for older profiles
+- `services/profile_extractor.py` appends report/insight pre-generation after profile creation in background tasks (non-blocking on LLM failure)
+- `services/scheduler.py`: `initial_next_run()` uses UTC timezone; git hash cached at startup via `_load_git_hash()`
+- `reset_code` column type corrected from VARCHAR(10) to VARCHAR(44) to accommodate Fernet-encrypted values
+
+### Performance
+- SSE long-polling eliminated O(n) offset cost — replaced with `seq > sent` index-friendly query
+- Tracker list N+1 fixed — window function batch loads max 10 tasks per tracker in one query
+- Account deletion batch cleanup — bulk SQL DELETE replaces per-row Python loop
+- Git hash computed once at startup instead of per-snapshot subprocess call
+
 ## [v5.1.0] - 2026-08-02
 
 ### Added

@@ -1,7 +1,7 @@
 # 05. 后端服务层
 
 > **竞品调研 Agent**
-> 版本：v5.1.0 · 日期：2026-08-02 · 分支：agent-v5
+> 版本：v6.0.0 · 日期：2026-08-03 · 分支：agent-v6
 
 ## 5.1 Service 层职责总览
 
@@ -20,6 +20,8 @@
 | 画像提取 | `profile_extractor.py` | 竞品官网信息结构化提取（含启动恢复） |
 | 对比 | `comparison.py` | 多份冻结画像横向对比矩阵 |
 | 审计 | `audit.py` | 审计日志写入（fire-and-forget） |
+| 用户限流 | `rate_limit_user.py` | 用户级令牌桶限流（补充 IP 级限流） |
+| 画像报告 | `profile_report.py` | 画像报告/洞察预生成（存入 profile_data 缓存） |
 | 爬虫 | `crawler.py` | 竞品官网信息爬取核心逻辑 |
 
 ## 5.2 agent.py — 调研 Agent 编排核心
@@ -298,7 +300,7 @@ confidence = tier_weight × freshness_factor
 7. BeautifulSoup 解析 HTML，提取结构化信息
 8. 返回结构化 JSON，存储到 `crawl_tasks` 表
 
-### v5.0.0 改进要点 (2026-08-02)
+### v5.0.0 改进要点 (2026-08-03)
 
 | 改进 | 原因 | 效果 |
 |------|------|------|
