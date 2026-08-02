@@ -458,11 +458,13 @@ async def _layer3_synthesize(
         with SessionLocal() as db:
             profile = CompetitorProfile(
                 org_id=org_id,
+                user_id=user_id,
                 competitor_id=competitor.id,
                 template_id=template_id,
                 profile_data=json.dumps(merged, ensure_ascii=False),
                 source_refs=json.dumps(source_refs, ensure_ascii=False),
                 status="draft",
+                generation_source="product_intel",
             )
             db.add(profile)
             db.commit()

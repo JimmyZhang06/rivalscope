@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from typing import Any
 
 from app.core.timeutil import utcnow
@@ -26,7 +27,6 @@ _CONFIDENCE_MEDIUM = 0.6
 _CONFIDENCE_LOW = 0.3
 
 
-from app.core.timeutil import utcnow
 # ---------------------------------------------------------------------------
 # Stage 1: 页面摘要化 + 维度相关性标注
 # ---------------------------------------------------------------------------
@@ -332,11 +332,13 @@ async def extract_profile_from_pages(
     with SessionLocal() as db:
         profile = CompetitorProfile(
             org_id=org_id,
+            user_id=user_id,
             competitor_id=competitor_id,
             template_id=template_id,
             profile_data=json.dumps({"dimensions": profile_data, "summary": summary}, ensure_ascii=False),
             source_refs=json.dumps(source_refs, ensure_ascii=False),
             status="draft",
+            generation_source="crawl",
         )
         db.add(profile)
         db.commit()
@@ -357,7 +359,22 @@ async def extract_profile_from_pages(
 # ---------------------------------------------------------------------------
 
 # 内存缓存：用于正在运行的任务快速访问（进程重启后需从 DB 恢复）
+_EXTRACT_TASKS_MAX = 100  # 最大内存缓存数
 _extract_tasks: dict[str, "ExtractTask"] = {}
+_extract_lock = threading.Lock()
+
+
+def _cleanup_extract_cache() -> None:
+    """清理内存中已完成/失败的任务缓存"""
+    with _extract_lock:
+        to_remove = [
+            tid for tid, task in _extract_tasks.items()
+            if task.status in ("done", "error")
+        ]
+        for tid in to_remove:
+            _extract_tasks.pop(tid, None)
+        if to_remove:
+            logger.info("cleaned %d extract tasks from memory cache", len(to_remove))
 
 
 class ExtractTask:
@@ -379,9 +396,15 @@ class ExtractTask:
 
 def get_extract_task(task_id: str) -> ExtractTask | None:
     """获取任务状态：优先内存，回退到数据库（支持进程重启恢复）"""
-    # 内存命中
-    if task_id in _extract_tasks:
-        return _extract_tasks[task_id]
+    with _extract_lock:
+        if task_id in _extract_tasks:
+            cached = _extract_tasks[task_id]
+            # 如果缓存中的任务已完成/失败，允许 DB 覆盖（处理进程重启场景）
+            if cached.status not in ("done", "error"):
+                return cached
+            # 否则释放锁，从 DB 重新加载
+        if len(_extract_tasks) > _EXTRACT_TASKS_MAX:
+            _cleanup_extract_cache()
 
     # 从数据库恢复
     with SessionLocal() as db:
@@ -407,8 +430,8 @@ def get_extract_task(task_id: str) -> ExtractTask | None:
             except json.JSONDecodeError:
                 task.result = None
 
-        # 缓存到内存（如果仍在运行，确保后续轮询不走 DB）
-        if task.status in ("pending", "running"):
+        # 覆盖旧缓存（DB 是权威数据源）
+        with _extract_lock:
             _extract_tasks[task_id] = task
 
         return task
@@ -455,13 +478,50 @@ async def _run_extract_task(task_id: str) -> None:
         _persist_task(task)
 
     try:
-        result = await extract_profile_from_pages(
-            task.competitor_id, task.template_id, task.user_id,
-            on_progress=_on_progress,
+        # Use generate_profile (research -> product_intel -> crawl fallback chain)
+        from app.services.profiles import generate_profile
+        result = await generate_profile(
+            task.competitor_id, task.template_id, user_id=task.user_id,
         )
         task.result = result
         task.status = "done"
         task.current_step = "画像生成完成"
+
+        # Pre-generate report and insights in the same background task so the
+        # frontend can render all tabs without additional loading / on-demand LLM calls.
+        profile_id = result.get("id")
+        if profile_id:
+            try:
+                _on_progress("正在生成画像报告…")
+                from app.services.profile_report import generate_profile_report
+                report_data = await generate_profile_report(profile_id, task.user_id, result.get("org_id", ""))
+                report_markdown = report_data.get("report_markdown", "")
+                source_index = report_data.get("source_index", [])
+                quality = report_data.get("quality", {})
+
+                _on_progress("正在分析洞察数据…")
+                from app.services.profile_report import generate_profile_insights
+                insights = await generate_profile_insights(profile_id, task.user_id, result.get("org_id", ""))
+
+                # Persist pre-generated content into profile_data so the frontend
+                # can serve it directly from the cached profile without extra API calls.
+                with SessionLocal() as db:
+                    p = db.get(CompetitorProfile, profile_id)
+                    if p:
+                        raw = p.profile_data or "{}"
+                        pd = json.loads(raw) if isinstance(raw, str) else dict(raw)
+                        if report_markdown:
+                            pd["report_markdown"] = report_markdown
+                        if source_index:
+                            pd["source_index"] = source_index
+                        if quality:
+                            pd["report_quality"] = quality
+                        pd["insights"] = insights
+                        p.profile_data = json.dumps(pd, ensure_ascii=False)
+                        db.commit()
+                        logger.info("pre-generated report+insights for profile %s", profile_id)
+            except Exception as exc:
+                logger.warning("pre-generation for profile %s failed (non-blocking): %s", profile_id, exc)
     except Exception as exc:
         logger.exception("extract task %s failed", task_id)
         task.error = str(exc)[:500]
@@ -470,8 +530,9 @@ async def _run_extract_task(task_id: str) -> None:
     finally:
         task.updated_at = utcnow()
         _persist_task(task)
-        # 完成后从内存移除（DB 是持久化存储）
-        _extract_tasks.pop(task_id, None)
+        # Remove from memory after completion (DB is the persistent store)
+        with _extract_lock:
+            _extract_tasks.pop(task_id, None)
 
 
 def create_extract_task(competitor_id: str, template_id: str, user_id: str, org_id: str = "") -> ExtractTask:
@@ -484,7 +545,8 @@ def create_extract_task(competitor_id: str, template_id: str, user_id: str, org_
         user_id=user_id,
         org_id=org_id,
     )
-    _extract_tasks[task.task_id] = task
+    with _extract_lock:
+        _extract_tasks[task.task_id] = task
     # 立即持久化，确保进程崩溃后也能恢复
     _persist_task(task)
     asyncio.get_running_loop().create_task(_run_extract_task(task.task_id))
@@ -509,7 +571,9 @@ def recover_stale_tasks() -> list[ExtractTask]:
                 continue
 
             # 幂等性检查：任务已在内存中运行中，跳过
-            if row.id in _extract_tasks and _extract_tasks[row.id].status in ("pending", "running"):
+            with _extract_lock:
+                in_memory = row.id in _extract_tasks and _extract_tasks[row.id].status in ("pending", "running")
+            if in_memory:
                 logger.info("skipping stale extract task %s — already in memory", row.id)
                 continue
             task = ExtractTask(
@@ -530,7 +594,8 @@ def recover_stale_tasks() -> list[ExtractTask]:
                 except json.JSONDecodeError:
                     pass
 
-            _extract_tasks[task.task_id] = task
+            with _extract_lock:
+                _extract_tasks[task.task_id] = task
             # 重新启动后台任务
             asyncio.get_running_loop().create_task(_run_extract_task(task.task_id))
             recovered.append(task)

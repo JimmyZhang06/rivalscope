@@ -14,4 +14,21 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-charts': ['recharts'],
+          'vendor-editor': ['react-markdown', 'remark-gfm'],
+          'vendor-pdf': ['html2pdf.js'],
+          'vendor-flow': ['reactflow'],
+          'vendor-state': ['zustand', 'zustand/middleware'],
+          'vendor-utils': ['zod'],
+        },
+      },
+    },
+    sourcemap: false,
+    chunkSizeWarningLimit: 500,
+  },
 })

@@ -1,13 +1,15 @@
 """企业组织：创建/加入（邀请码）/成员管理，一人同时只属于一个企业"""
 
 import json
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, member_month_usage
 from app.db.database import get_db
-from app.db.models import Organization, Tracker, User, _invite_code
+from app.db.models import GraphProject, Organization, ResearchTask, Tracker, User, _invite_code
 from app.schemas.org import (
     MemberOut, MemberUpdateIn, OrgCreateIn, OrgJoinIn, OrgMeOut, OrgOut, OrgUpdateIn,
 )
@@ -121,18 +123,66 @@ def join_org(payload: OrgJoinIn, user: User = Depends(get_current_user), db: Ses
 
 
 @router.get("/members", response_model=list[MemberOut])
-def list_members(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_members(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+):
     org = _require_org(db, user)
     role_rank = {"owner": 0, "admin": 1, "member": 2}
-    members = db.query(User).filter(User.org_id == org.id).all()
+    members = db.query(User).filter(User.org_id == org.id).order_by(
+        User.org_role.asc(), User.created_at.asc()
+    ).offset((page - 1) * page_size).limit(page_size).all()
     members = sorted(members, key=lambda m: (role_rank.get(m.org_role, 9), m.created_at))
+
+    member_ids = [m.id for m in members]
+    now_utc = datetime.now(timezone.utc)
+    start = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # 批量查询：所有成员的任务数
+    task_counts = dict(
+        db.query(ResearchTask.user_id, func.count(ResearchTask.id))
+        .filter(
+            ResearchTask.user_id.in_(member_ids),
+            ResearchTask.created_at >= start,
+            ResearchTask.status != "failed",
+        )
+        .group_by(ResearchTask.user_id)
+        .all()
+    )
+
+    # 批量查询：所有成员的图谱数
+    graph_counts = dict(
+        db.query(GraphProject.user_id, func.count(GraphProject.id))
+        .filter(
+            GraphProject.user_id.in_(member_ids),
+            GraphProject.created_at >= start,
+            GraphProject.status != "failed",
+        )
+        .group_by(GraphProject.user_id)
+        .all()
+    )
+
+    # 批量加载所有成员的权限
+    from app.db.models import UserPermission
+    perms_rows = (
+        db.query(UserPermission)
+        .filter(UserPermission.user_id.in_(member_ids))
+        .all()
+    )
+    perms_map: dict[str, list[str]] = {}
+    for row in perms_rows:
+        try:
+            perms_map.setdefault(row.user_id, []).extend(json.loads(row.permissions or "[]"))
+        except (ValueError, TypeError):
+            pass
+
     result = []
     for m in members:
         out = MemberOut.model_validate(m)
-        out.month_used = member_month_usage(db, m.id)
-        # 加载 RBAC 权限（Sprint 4）
-        from app.api.deps import _load_permissions
-        out.permissions = sorted(_load_permissions(db, m.id))
+        out.month_used = task_counts.get(m.id, 0) + graph_counts.get(m.id, 0)
+        out.permissions = sorted(set(perms_map.get(m.id, [])))
         result.append(out)
     return result
 

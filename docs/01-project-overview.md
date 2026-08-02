@@ -1,9 +1,7 @@
 # 01. 项目概览
 
 > **竞品调研 Agent** / Competitive Research Agent
-> 版本：v5.0.0 · 分支：agent-v5
-> **更新说明**：基于 agent-v5 实际代码更新
-> **v5.0.0 (2026-08-02)**：爬虫可靠性修复（语言感知 sitemap、consent overlay 移除、Chrome UA）；Agent 7 核心交付物全部完成
+> 版本：v5.1.0 · 分支：agent-v5
 
 ## 1.1 定位
 

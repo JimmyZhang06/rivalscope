@@ -11,11 +11,13 @@ import { useTaskStore } from '../../stores/taskStore'
 const RUNNING = new Set(['pending', 'planning', 'searching', 'analyzing', 'reporting'])
 
 type Filter = 'all' | 'mine' | 'others'
+type StatusFilter = 'all' | 'running' | 'completed' | 'failed'
 
 export default function TasksPage() {
   const [loaded, setLoaded] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleteId, setDeleteId] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
   // 从 store 读取数据
   const tasks = useTaskStore((s) => s.tasks)
@@ -44,10 +46,14 @@ export default function TasksPage() {
   // 他人创建的任务后端会填 creator_nickname，据此区分「我的/成员的」
   const hasShared = useMemo(() => tasks.some((t) => t.creator_nickname), [tasks])
   const visible = useMemo(() => {
-    if (filter === 'mine') return tasks.filter((t) => !t.creator_nickname)
-    if (filter === 'others') return tasks.filter((t) => t.creator_nickname)
-    return tasks
-  }, [tasks, filter])
+    let list = tasks
+    if (filter === 'mine') list = list.filter((t) => !t.creator_nickname)
+    if (filter === 'others') list = list.filter((t) => t.creator_nickname)
+    if (statusFilter === 'running') return list.filter((t) => RUNNING.has(t.status))
+    if (statusFilter === 'completed') return list.filter((t) => t.status === 'completed')
+    if (statusFilter === 'failed') return list.filter((t) => t.status === 'failed')
+    return list
+  }, [tasks, filter, statusFilter])
 
   const handleDelete = async (id: string) => {
     setDeleteId(id)
@@ -67,6 +73,13 @@ export default function TasksPage() {
     { key: 'all', label: '全部' },
     { key: 'mine', label: '我创建的' },
     { key: 'others', label: '成员创建的' },
+  ]
+
+  const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+    { key: 'all', label: '全部' },
+    { key: 'running', label: '进行中' },
+    { key: 'completed', label: '已完成' },
+    { key: 'failed', label: '失败' },
   ]
 
   return (
@@ -107,6 +120,21 @@ export default function TasksPage() {
           ))}
         </div>
       )}
+
+      {/* 状态筛选 */}
+      <div className="mt-3 flex w-fit gap-1 rounded-lg bg-gray-100 p-1">
+        {STATUS_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setStatusFilter(f.key)}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${
+              statusFilter === f.key ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
 
       <div className="mt-6">
         {!loaded || storeLoading ? (

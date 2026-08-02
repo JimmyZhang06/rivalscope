@@ -1,6 +1,7 @@
 # 03. 数据库设计
 
-> **说明**：数据库 Schema 在 agent-v5 中无变更。本文件基于 v5.0.0 代码审查更新（仅版本参考）。
+> **竞品调研 Agent**
+> 版本：v5.1.0 · 日期：2026-08-02 · 分支：agent-v5
 
 ## 3.1 表结构总览
 
@@ -52,7 +53,7 @@ email_logs              邮件发送记录
 | plan | VARCHAR(20) | `free` / `pro` / `enterprise` |
 | plan_expires_at | DATETIME | 套餐过期时间，NULL = 永不过期 |
 | token_version | INTEGER | 会话版本，改密/退出所有设备时 +1 |
-| reset_code | VARCHAR(10) | 忘记密码验证码（Fernet 加密） |
+| reset_code | VARCHAR(44) | 忘记密码验证码（Fernet 加密后约 44 字符） |
 | reset_code_expires_at | DATETIME | 验证码过期时间 |
 | org_id | VARCHAR(32) | 所属企业，空串 = 无 |
 | org_role | VARCHAR(10) | `owner` / `admin` / `member`，空串 = 无企业 |
@@ -495,7 +496,16 @@ email_logs              邮件发送记录
 
 **索引**：competitor_id
 
-## 3.3 数据库管理方式
+## 3.3 审计日志保护
+
+启动时通过 `audit_triggers.py` 创建 SQLite 触发器，防止 `audit_logs` 表的 UPDATE/DELETE 操作（`backend/app/db/audit_triggers.py`）。
+
+| 保护机制 | 实现 |
+|----------|------|
+| 防 UPDATE | BEFORE UPDATE 触发器，RAISE(ABORT, '审计日志不可修改') |
+| 防 DELETE | BEFORE DELETE 触发器，RAISE(ABORT, '审计日志不可删除') |
+
+## 3.4 数据库管理方式
 
 ### 初始化与迁移
 

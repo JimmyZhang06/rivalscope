@@ -170,18 +170,17 @@ def _notify_quota_warning(db: Session, user: User, quota: dict) -> None:
 
 # ---------- RBAC 权限（Sprint 4） ----------
 
-# 权限缓存
-_PERM_CACHE: dict[str, set[str]] = {}
+# 权限缓存：per-user TTL，避免全局时间戳导致的缓存雪崩
+_PERM_CACHE: dict[str, tuple[set[str], float]] = {}  # user_id -> (perms, cached_at)
 _CACHE_TTL = 60  # 秒
-_last_refresh: float = 0
 
 
 def _load_permissions(db: Session, user_id: str) -> set[str]:
     """从数据库加载用户权限集合（带简单缓存）"""
-    global _last_refresh
     now = time.time()
-    if user_id in _PERM_CACHE and now - _last_refresh < _CACHE_TTL:
-        return _PERM_CACHE[user_id]
+    cached = _PERM_CACHE.get(user_id)
+    if cached and now - cached[1] < _CACHE_TTL:
+        return cached[0]
 
     perms: set[str] = set()
     user = db.get(User, user_id)
@@ -195,15 +194,12 @@ def _load_permissions(db: Session, user_id: str) -> set[str]:
         except (ValueError, TypeError):
             pass
 
-    _PERM_CACHE[user_id] = perms
-    _last_refresh = now
+    _PERM_CACHE[user_id] = (perms, now)
     return perms
 
 
 def invalidate_perm_cache(user_id: str = "") -> None:
     """权限变更后调用，清除缓存"""
-    global _last_refresh
-    _last_refresh = 0
     if user_id:
         _PERM_CACHE.pop(user_id, None)
     else:

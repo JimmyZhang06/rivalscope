@@ -1,5 +1,8 @@
 # 05. 后端服务层
 
+> **竞品调研 Agent**
+> 版本：v5.1.0 · 日期：2026-08-02 · 分支：agent-v5
+
 ## 5.1 Service 层职责总览
 
 | 模块 | 文件 | 职责 |
@@ -14,7 +17,7 @@
 | 通知 | `notify.py` | 站内通知 + SMTP 邮件 + Webhook 推送 |
 | 调度器 | `scheduler.py` | 60 秒扫描到期追踪项 + 触发执行 + 执行快照 |
 | 竞品画像 | `profiles.py` | 基于来源生成画像 + 冻结 |
-| 画像提取 | `profile_extractor.py` | 竞品官网信息结构化提取 |
+| 画像提取 | `profile_extractor.py` | 竞品官网信息结构化提取（含启动恢复） |
 | 对比 | `comparison.py` | 多份冻结画像横向对比矩阵 |
 | 审计 | `audit.py` | 审计日志写入（fire-and-forget） |
 | 爬虫 | `crawler.py` | 竞品官网信息爬取核心逻辑 |
@@ -188,6 +191,12 @@ Stage 5: Report (_report) ── 非阻塞
 - 纯文本 fallback + HTML（Markdown 渲染后带样式）
 - 附件支持（RFC 2231 编码中文文件名）
 - SMTP 未配置 → demo 模式（写入 email_logs，status=demo）
+
+## 5.6 scheduler.py
+
+- git hash 启动时一次性缓存到 `_GIT_HASH`（`_load_git_hash()`），不每次调用 subprocess
+- `initial_next_run()` 使用 UTC 基准时间
+- `recover_stale_tasks()` 在启动时恢复未完成的画像提取任务
 
 ## 5.6 scheduler.py — 定时追踪调度器
 

@@ -230,11 +230,10 @@ def delete_account(
         raise HTTPException(status_code=400, detail="管理员账号不能注销")
     if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=400, detail="密码不正确，无法注销")
-    # 级联清理：任务（ORM 级联删步骤/来源）→ 订单 → 登录日志 → 用户
-    for task in db.query(ResearchTask).filter(ResearchTask.user_id == user.id).all():
-        db.delete(task)
-    db.query(Order).filter(Order.user_id == user.id).delete()
-    db.query(LoginLog).filter(LoginLog.user_id == user.id).delete()
+    # 级联清理：批量删除任务（触发 ORM 级联删步骤/来源）→ 订单 → 登录日志 → 用户
+    db.query(ResearchTask).filter(ResearchTask.user_id == user.id).delete(synchronize_session=False)
+    db.query(Order).filter(Order.user_id == user.id).delete(synchronize_session=False)
+    db.query(LoginLog).filter(LoginLog.user_id == user.id).delete(synchronize_session=False)
     uid = user.id
     db.delete(user)
     db.commit()

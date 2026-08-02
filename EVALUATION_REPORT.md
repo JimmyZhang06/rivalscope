@@ -1,10 +1,6 @@
 # 竞品调研 Agent — 全面评测报告
 
-> **评测日期：** 2026-08-02
-> **评测人：** Claude Fable 5
-> **评测方式：** 代码静态分析 + 架构评审 + 前端文件审计
-> **分支：** agent-v5（Agent 7 完整实现）
-> **更新说明：** 本报告基于 agent-v5 实际代码更新，反映 Agent 7 全面实现后的状态
+> **版本**: v5.1.0 | **评测日期**: 2026-08-02 | **评测人**: Claude Fable 5 | **分支**: agent-v5
 
 ---
 
@@ -16,7 +12,7 @@
 | **技术栈** | 后端 FastAPI + SQLite + SQLAlchemy 2.0；前端 React 18 + TypeScript + Vite + Tailwind CSS v4 |
 | **LLM** | OpenAI 兼容接口（DeepSeek / 通义千问 / Kimi 等） |
 | **搜索** | Tavily 联网检索 |
-| **版本** | v5.0.0（含 v5.0.1 爬虫修复：多语言站点 + consent overlay 剥离） |
+| **版本** | v5.1.0（含 v5.1 性能优化：SSE 单 session + seq 查询、追踪列表批量加载、分页、批量删除、git hash 缓存、审计触发器、画像任务恢复） |
 | **分支** | agent-v5（Agent 7 竞品技术监测完整实现） |
 
 ### 功能模块一览
@@ -30,7 +26,7 @@
 | 调研详情 | `/app/tasks/:id` | `/api/research/{id}` | ✅ 正常 |
 | 定时追踪 | `/app/trackers` | `/api/trackers` | ✅ 正常 |
 | 竞品管理 | `/app/competitors` | `/api/competitors` | ✅ 正常 |
-| 竞品爬虫 | `/app/competitors` | `/api/crawl` | ✅ 正常（v5.1: 多语言站点修复） |
+| 竞品爬虫 | `/app/competitors` | `/api/crawl` | ✅ 正常（v5.1: 多语言站点修复 + Chrome UA + consent overlay） |
 | 画像模板 | `/app/profiles/templates` | `/api/profiles/templates` | ✅ 正常 |
 | 竞品画像 | `/app/profiles` | `/api/profiles` | ✅ 正常 |
 | 横向对比 | `/app/profiles/compare` | `/api/profiles/compare` | ✅ 正常 |
@@ -77,6 +73,13 @@
 | 引用编号排序后错位 | P1 | ✅ 已修复 |
 | 额度 API 静默失败无提示 | P1 | ✅ 已修复 |
 | 爬虫零页问题（多语言站点） | P1 — insta360.com/cn 0 页 + consent overlay | ✅ 已修复（v5.1: 语言前缀感知 + sitemap 过滤 + consent DOM 移除 + Chrome UA） |
+| SSE 轮询 O(n) offset | P1 — 长时间 SSE 连接查询累积 | ✅ 已修复（单 session 复用 + seq 增量查询） |
+| 追踪列表 N+1 查询 | P1 — 20 tracker × 250 tasks 全加载 | ✅ 已修复（窗口函数 _with_extras_batch 限 10 条/tracker） |
+| 账号注销逐行删除 | P2 — 500 tasks 逐条 DELETE | ✅ 已修复（批量 SQL DELETE） |
+| reset_code 列长度不足 | P2 — VARCHAR(10) 存不下 Fernet 44 字符 | ✅ 已修复（VARCHAR(44)） |
+| Git hash 每次 subprocess | P2 — 每次执行快照调用 git | ✅ 已修复（启动时缓存 _GIT_HASH） |
+| 审计日志可被修改/删除 | P2 — 无防篡改保护 | ✅ 已修复（DB 级 CREATE TRIGGER） |
+| 画像任务重启丢失 | P2 — 进程重启未完成的提取任务丢失 | ✅ 已修复（recover_stale_tasks 自动恢复） |
 
 ### 2.3 爬虫架构更新（agent-v5.1）
 
@@ -170,7 +173,7 @@
 | 密码哈希 | ✅ | bcrypt |
 | 限流 | ✅ | 令牌桶，按 IP+endpoint |
 | 加密 | ✅ | Fernet 对称加密（重置码） |
-| 审计日志 | ✅ | LLM 调用自动记录 + 业务操作可扩展 |
+| 审计日志 | ✅ | LLM 调用自动记录 + 业务操作可扩展 + DB 级触发器防篡改 |
 | 执行快照 | ✅ | 调度器自动生成 |
 | RBAC | ✅ | 细粒度权限 + 60s 缓存 |
 | 会话版本控制 | ✅ | 改密/退出所有设备时 token_version+1 |
@@ -187,12 +190,12 @@
 
 | 维度 | 评分 | 说明 |
 |------|------|------|
-| **功能完整性** | 10/10 | 覆盖竞品调研全流程 + Agent 7 全部交付物 |
-| **代码质量** | 8/10 | 架构清晰，严重 Bug 已修复，但仍有架构级风险 |
-| **安全性** | 7/10 | 基础+增强安全措施到位，但 Token 存储和验证码需改进 |
-| **用户体验** | 9/10 | UI 设计一致，交互流畅，18 个页面全覆盖 |
-| **稳定性** | 8/10 | 核心功能正常，严重 Bug 已修复，架构风险已识别 |
-| **可维护性** | 8/10 | 分层清晰，类型完整，文档完善 |
+| **功能完整性** | 10/10 | 覆盖竞品调研全流程 + Agent 7 全部交付物 + 性能优化 + 安全加固 |
+| **代码质量** | 8.5/10 | 架构清晰，严重 Bug 已修复，多项性能优化落地 |
+| **安全性** | 7.5/10 | 基础+增强安全措施到位，审计日志 DB 级保护，Token 存储仍需改进 |
+| **用户体验** | 9/10 | UI 设计一致，交互流畅，18 个页面全覆盖，SSE 自动重连 |
+| **稳定性** | 8.5/10 | 核心功能正常，严重 Bug 已修复，SSE 单 session + seq 查询消除连接泄漏 |
+| **可维护性** | 8.5/10 | 分层清晰，类型完整，文档完善，轻量迁移机制健壮 |
 
 ### 总结
 

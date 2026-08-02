@@ -1,6 +1,6 @@
 # 竞品调研 Agent / Competitive Research Agent
 
-> **版本**: v5.0.1 | **日期**: 2026-08-02 | **分支**: agent-v5
+> **版本**: v5.1.0 | **日期**: 2026-08-02 | **分支**: agent-v5
 > This work is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
 
 > SaaS 化竞品情报平台 —— 联网检索、全链路引用溯源、SSE 实时进度、定时追踪、关系图谱、竞品画像、全局 AI 助手、企业组织与商业化账号体系
@@ -25,6 +25,8 @@
 8. **安全增强**——JWT + Refresh Token（Access 8h / Refresh 30d）、会话版本控制、令牌桶限流、Fernet 加密、审计日志、执行快照
 9. **商业化账号体系**——邮箱注册登录、三级会员套餐与月度配额、模拟支付升级、订单记录、站内通知、管理员后台（用户 + 企业管理 + 审计日志 + 执行快照）
 10. **爬虫增强**——多语言网站智能识别（自动检测 /cn/、/en/ 等语言路径前缀），sitemap 多路径发现（`/{lang}/sitemap.xml`），隐私 consent overlay 自动 stripping（OneTrust/CCPA/GDPR），Chrome UA 降低被拦截率
+11. **性能优化**——SSE 长连接改为单 session 复用 + seq 增量查询（消除 O(n) offset 开销），追踪列表批量加载（窗口函数一次查询），调研/追踪列表分页支持（page/page_size），账号注销批量删除，git hash 启动时一次性缓存
+12. **安全加固**——审计日志数据库级触发器（防篡改），画像提取任务进程重启自动恢复，启动时 JWT_SECRET 强度校验与生产环境警告，reset_code 列修正为 VARCHAR(44) 适配 Fernet 加密输出
 
 全过程通过 SSE 实时推送执行进度，前端以一体化执行视图（阶段步骤条 + 时间线）展示。
 
@@ -263,7 +265,7 @@ agent/
 | GET | `/api/me/permissions` | 当前用户 RBAC 权限列表 | 用户 |
 | GET | `/api/research/quota` | 本月配额与用量（企业口径优先） | 用户 |
 | POST | `/api/research` | 创建调研任务（校验配额） | 用户 |
-| GET | `/api/research` · `/{id}` | 任务列表 / 详情（企业内共享可见） | 用户 |
+| GET | `/api/research` · `/{id}` | 任务列表（分页，默认 20）/ 详情（企业内共享可见） | 用户 |
 | GET | `/api/research/{id}/sources/{sid}` | 来源详情（含 raw_content + access_status，属主校验） | 用户 |
 | GET | `/api/research/{id}/events?token=…` | SSE 实时进度 | 用户 |
 | POST | `/api/research/{id}/ask` | 针对单份报告追问（不占配额） | 用户 |
@@ -272,10 +274,10 @@ agent/
 | GET/POST | `/api/competitors` | 列出竞品（本企业+系统级）/ 创建 | 用户 |
 | PATCH/DELETE | `/api/competitors/{id}` | 修改/删除竞品 | 用户/管理员 |
 | POST | `/api/crawl/{cid}/crawl` | 爬取竞品官网信息 | 用户 |
-| POST / GET | `/api/trackers` | 创建（套餐限数） / 列表 | 用户（需入企） |
+| POST / GET | `/api/trackers` | 创建（套餐限数） / 列表（分页，默认 20） | 用户（需入企） |
 | GET / PATCH / DELETE | `/api/trackers/{id}` | 详情 / 修改 / 删除 | 用户（创建人或企业管理员） |
 | POST | `/api/trackers/{id}/run-now` | 立即运行一期（占触发人所在口径配额） | 用户（创建人或企业管理员） |
-| GET | `/api/trackers/{id}/runs` | 期次任务列表 | 用户 |
+| GET | `/api/trackers/{id}/runs` | 期次任务列表（分页，默认 20） | 用户 |
 | POST / GET | `/api/graph` | 创建图谱（占配额） / 列表 | 用户 |
 | GET / DELETE | `/api/graph/{id}` | 图谱详情（实体+关系+report_markdown） / 删除 | 用户 |
 | POST | `/api/graph/{id}/refresh` | 重建图谱（占配额） | 用户 |

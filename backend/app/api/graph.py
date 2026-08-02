@@ -1,6 +1,6 @@
 """产业链关系图谱 API"""
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import check_quota_or_403, get_current_user
@@ -61,14 +61,19 @@ def create_graph(
 
 
 @router.get("", response_model=list[GraphProjectOut])
-def list_graphs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_graphs(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
     """项目列表：本人 + 同企业共享"""
     q = db.query(GraphProject)
     if user.org_id:
         q = q.filter((GraphProject.user_id == user.id) | (GraphProject.org_id == user.org_id))
     else:
         q = q.filter(GraphProject.user_id == user.id)
-    return q.order_by(GraphProject.created_at.desc()).all()
+    return q.order_by(GraphProject.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
 
 @router.get("/{project_id}", response_model=GraphDetailOut)

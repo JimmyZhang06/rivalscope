@@ -72,14 +72,19 @@ async def create_research(
 
 
 @router.get("", response_model=list[TaskBrief])
-def list_research(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_research(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
     """任务列表：本人任务 + 同企业共享任务"""
     q = db.query(ResearchTask)
     if user.org_id:
         q = q.filter((ResearchTask.user_id == user.id) | (ResearchTask.org_id == user.org_id))
     else:
         q = q.filter(ResearchTask.user_id == user.id)
-    return q.order_by(ResearchTask.created_at.desc()).all()
+    return q.order_by(ResearchTask.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
 
 @router.get("/quota", response_model=QuotaOut)
@@ -267,32 +272,37 @@ async def email_report(
 @router.get("/{task_id}/events")
 async def research_events(task_id: str, token: str = Query(...)):
     """SSE 实时推送任务步骤与状态（EventSource 不支持 Header，用查询参数鉴权）"""
-    with SessionLocal() as db:
-        user = get_user_from_query_token(token, db)
-        _get_owned_task(task_id, user, db)
+    # 鉴权用临时 session（stream 有独立 session）
+    auth_db = SessionLocal()
+    try:
+        user = get_user_from_query_token(token, auth_db)
+        _get_owned_task(task_id, user, auth_db)
+    finally:
+        auth_db.close()
 
     async def event_stream():
-        sent = 0
-        while True:
-            with SessionLocal() as db:
-                task = db.get(ResearchTask, task_id)
-                if not task:
-                    break
-                status = task.status
+        # stream 内复用同一 session，避免每次轮询创建新连接
+        db = SessionLocal()
+        try:
+            sent = 0
+            while True:
+                # 用 seq > sent 替代 offset O(n)，利用索引高效查询新增步骤
                 steps = (
                     db.query(TaskStep)
-                    .filter(TaskStep.task_id == task_id)
+                    .filter(TaskStep.task_id == task_id, TaskStep.seq > sent)
                     .order_by(TaskStep.seq)
-                    .offset(sent)
                     .all()
                 )
-                new_steps = [StepOut.model_validate(s).model_dump(mode="json") for s in steps]
-            for step in new_steps:
-                sent += 1
-                yield {"event": "step", "data": json.dumps(step, ensure_ascii=False)}
-            yield {"event": "status", "data": json.dumps({"status": status}, ensure_ascii=False)}
-            if status in FINAL_STATUSES:
-                break
-            await asyncio.sleep(1)
+                for step in steps:
+                    sent += 1
+                    yield {"event": "step", "data": json.dumps(StepOut.model_validate(step).model_dump(mode="json"), ensure_ascii=False)}
+                task = db.get(ResearchTask, task_id)
+                status = task.status if task else "failed"
+                yield {"event": "status", "data": json.dumps({"status": status}, ensure_ascii=False)}
+                if status in FINAL_STATUSES:
+                    break
+                await asyncio.sleep(1)
+        finally:
+            db.close()
 
     return EventSourceResponse(event_stream())

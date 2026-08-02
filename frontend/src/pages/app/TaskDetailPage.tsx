@@ -35,7 +35,7 @@ import StatusBadge from '../../components/StatusBadge'
 import StepTimeline from '../../components/StepTimeline'
 import SwotGrid from '../../components/SwotGrid'
 import { TIER_LABELS } from '../../components/TierBadge'
-import { buildReportPdfBlob, exportMarkdown, exportPdf, exportWord } from '../../utils/exportReport'
+import { buildReportPdfBlob as buildReportPdfBlobTask, exportMarkdown as exportMarkdownTask, exportPdf as exportPdfTask, exportWord as exportWordTask } from '../../utils/exportReport'
 import { parseUtc, fmtDateTime } from '../../utils/time'
 
 const RUNNING = new Set<TaskStatus>(['pending', 'planning', 'searching', 'analyzing', 'reporting'])
@@ -225,13 +225,13 @@ export default function TaskDetailPage() {
     if (!task?.report_markdown) return
     setExportOpen(false)
     if (kind === 'md') {
-      exportMarkdown(task)
+      exportMarkdownTask(task)
     } else if (kind === 'word') {
-      exportWord(task, sources)
+      exportWordTask(task, sources)
     } else {
       setExporting(true)
       try {
-        await exportPdf(task, sources)
+        await exportPdfTask(task, sources)
       } finally {
         setExporting(false)
       }
@@ -245,7 +245,7 @@ export default function TaskDetailPage() {
     setEmailMsg(null)
     try {
       // 前端导出 PDF → 作为附件上传后端转发（方案 C）
-      const blob = await buildReportPdfBlob(task, sources)
+      const blob = await buildReportPdfBlobTask(task, sources)
       const res = await emailReport(task.id, to, blob, `竞品调研报告-${task.product_name}.pdf`)
       if (res.status === 'sent') {
         setEmailMsg({ kind: 'ok', text: `已发送给 ${res.recipients} 位收件人` })

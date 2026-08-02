@@ -50,6 +50,7 @@ class ProfileTemplateOut(BaseModel):
 
 
 class ProfileTemplateFreezeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     frozen_at: datetime | None
 
@@ -65,6 +66,7 @@ class CompetitorProfileOut(BaseModel):
     source_refs: list[dict]
     status: str
     frozen_at: datetime | None
+    generation_source: str = ""
     created_at: datetime
     updated_at: datetime
 
@@ -141,3 +143,15 @@ class ComparisonOut(BaseModel):
     dimensions: list[str]
     matrix: list[ComparisonMatrixRow]
     source_refs: list[list[dict]]
+
+
+# ---------- 画像报告与洞察 ----------
+
+class ProfileInsightsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    scores: dict[str, float] = Field(default_factory=dict)
+    verdict: str = ""
+    positioning: str = ""
+    swot: dict[str, list[str]] = Field(default_factory=dict)
+    timeline: list[dict] = Field(default_factory=list)

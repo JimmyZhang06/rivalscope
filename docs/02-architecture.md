@@ -1,5 +1,8 @@
 # 02. 系统架构
 
+> **竞品调研 Agent**
+> 版本：v5.1.0 · 日期：2026-08-02 · 分支：agent-v5
+
 ## 2.1 分层架构
 
 ```
@@ -127,7 +130,11 @@ run_research() [后台 asyncio 任务]
 
 **并发控制**：`scheduler.py` 使用内存 `_running: set[str]` 防止同一 tracker 重复执行。
 
-## 2.6 安全架构
+## 2.6 审计日志防篡改
+
+启动时通过 `backend/app/db/audit_triggers.py` 创建 SQLite BEFORE UPDATE/DELETE 触发器保护 `audit_logs` 表，任何修改/删除审计日志的操作都会被数据库 abort 并返回错误。
+
+## 2.7 安全架构
 
 | 层次 | 机制 | 实现 |
 |------|------|------|
@@ -135,5 +142,5 @@ run_research() [后台 asyncio 任务]
 | 授权 | RBAC 细粒度权限 | `user_permissions` 表 + `require_permission` 装饰器 |
 | 限流 | 令牌桶 | `core/rate_limit.py`（按 IP + 端点分类） |
 | 加密 | Fernet 对称加密 | `core/crypto.py`（AES-128-CBC + HMAC） |
-| 审计 | 操作日志 + LLM 调用记录 | `services/audit.py` + `audit_logs` 表 |
+| 审计 | 操作日志 + LLM 调用记录 + DB 级防篡改 | `services/audit.py` + `audit_logs` 表 + `audit_triggers.py` |
 | 追溯 | 执行快照 | `execution_snapshots` 表 + 调度器自动生成 |

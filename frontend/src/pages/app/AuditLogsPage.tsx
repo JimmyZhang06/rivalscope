@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { listAuditLogs } from '../../api/client'
+import { Download } from 'lucide-react'
+import { listAuditLogs, exportAuditLogs } from '../../api/client'
 import type { AuditLog } from '../../api/types'
 import { fmtDateTime } from '../../utils/time'
 
@@ -61,6 +62,29 @@ export default function AuditLogsPage() {
     setPage(1)
   }
 
+  const handleExport = async () => {
+    try {
+      const blob = await exportAuditLogs({
+        action: action || undefined,
+        resource_type: resourceType || undefined,
+        user_id: userId || undefined,
+        start: start || undefined,
+        end: end || undefined,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('导出失败:', err)
+      alert(err instanceof Error ? err.message : '导出失败')
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
       <h1 className="text-2xl font-bold tracking-tight text-gray-900">审计日志</h1>
@@ -119,6 +143,13 @@ export default function AuditLogsPage() {
             className="self-end rounded-md border border-gray-300 px-4 py-1.5 text-sm hover:bg-gray-50"
           >
             刷新
+          </button>
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-1.5 self-end rounded-md border border-blue-200 bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
+          >
+            <Download className="h-3.5 w-3.5" />
+            导出 CSV
           </button>
         </div>
       </div>

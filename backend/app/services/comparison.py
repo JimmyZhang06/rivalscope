@@ -32,17 +32,25 @@ def generate_comparison(template_id: str, competitor_ids: list[str]) -> dict:
 
     matrix = []
     for dim in dimensions:
-        row = {"dimension": dim["label"], "values": {}}
         fields = dim.get("fields", [])
-        field_key = fields[0]["key"] if fields else None
-        for p in profiles:
-            data = json.loads(p.profile_data) if isinstance(p.profile_data, str) else p.profile_data
-            dim_data = data.get("dimensions", {}).get(dim["key"], {})
-            if field_key:
-                row["values"][p.competitor_id] = dim_data.get(field_key, "信息不足")
-            else:
-                row["values"][p.competitor_id] = json.dumps(dim_data, ensure_ascii=False)
-        matrix.append(row)
+        if not fields:
+            # 无子字段，整维度作为一行
+            row = {"dimension": dim["label"], "values": {}}
+            for p in profiles:
+                data = json.loads(p.profile_data) if isinstance(p.profile_data, str) else p.profile_data
+                dim_data = data.get("dimensions", {}).get(dim["key"], {})
+                row["values"][p.competitor_id] = json.dumps(dim_data, ensure_ascii=False) if dim_data else "信息不足"
+            matrix.append(row)
+        else:
+            # 每个子字段一行
+            for field in fields:
+                row = {"dimension": f"{dim['label']} · {field['label']}", "values": {}}
+                fk = field["key"]
+                for p in profiles:
+                    data = json.loads(p.profile_data) if isinstance(p.profile_data, str) else p.profile_data
+                    dim_data = data.get("dimensions", {}).get(dim["key"], {})
+                    row["values"][p.competitor_id] = dim_data.get(fk, "信息不足")
+                matrix.append(row)
 
     source_refs = []
     for p in profiles:

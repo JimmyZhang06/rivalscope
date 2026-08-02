@@ -42,11 +42,16 @@ import type {
 
 const TOKEN_KEY = 'cr_token'
 const REFRESH_KEY = 'cr_refresh'
+const CR_TOKEN_IAT = 'cr_token_iat'
+
+// Token proactive refresh constants
+const ACCESS_TOKEN_TTL_MS = 8 * 60 * 60 * 1000   // 8 hours
+const REFRESH_THRESHOLD_MS = 1 * 60 * 60 * 1000  // refresh 1 hour before expiry
 
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
   set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  clear: () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY) },
+  clear: () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY); localStorage.removeItem(CR_TOKEN_IAT) },
 }
 
 export function getRefreshToken(): string | null {
@@ -57,7 +62,53 @@ export function setRefreshToken(token: string) {
   localStorage.setItem(REFRESH_KEY, token)
 }
 
-let refreshPromise: Promise<void> | null = null
+function getTokenIssuedAt(): number {
+  const v = sessionStorage.getItem(CR_TOKEN_IAT)
+  return v ? Number(v) : 0
+}
+
+function setTokenIssuedAt(ts: number) {
+  sessionStorage.setItem(CR_TOKEN_IAT, String(ts))
+}
+
+function shouldProactiveRefresh(): boolean {
+  const issued = getTokenIssuedAt()
+  if (!issued) return false
+  const age = Date.now() - issued
+  return age > (ACCESS_TOKEN_TTL_MS - REFRESH_THRESHOLD_MS)
+}
+
+let refreshPromise: Promise<boolean> | null = null
+
+export async function tryProactiveRefresh(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise
+  const refresh = getRefreshToken()
+  if (!refresh) return false
+
+  refreshPromise = (async () => {
+    try {
+      const resp = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      })
+      if (!resp.ok) { tokenStore.clear(); return false }
+      const data = await resp.json() as TokenResponse
+      if (data.access_token) {
+        saveTokens(data)
+        return true
+      }
+      return false
+    } catch { return false }
+  })()
+
+  try {
+    return await refreshPromise
+  } finally {
+    // Delay cleanup to allow other concurrent callers to reuse the same promise
+    setTimeout(() => { refreshPromise = null }, 0)
+  }
+}
 
 async function tryRefreshToken(): Promise<boolean> {
   if (refreshPromise) return refreshPromise
@@ -74,16 +125,24 @@ async function tryRefreshToken(): Promise<boolean> {
       if (!resp.ok) { tokenStore.clear(); return false }
       const data = await resp.json() as TokenResponse
       if (data.access_token) {
-        tokenStore.set(data.access_token)
-        if (data.refresh_token) setRefreshToken(data.refresh_token)
+        saveTokens(data)
         return true
       }
       return false
-    } catch { return false } finally {
-      refreshPromise = null
-    }
+    } catch { return false }
   })()
-  return refreshPromise
+
+  try {
+    return await refreshPromise
+  } finally {
+    setTimeout(() => { refreshPromise = null }, 0)
+  }
+}
+
+function maybeProactiveRefresh(): void {
+  if (shouldProactiveRefresh()) {
+    tryProactiveRefresh().catch(() => {})
+  }
 }
 
 export class ApiError extends Error {
@@ -95,23 +154,34 @@ export class ApiError extends Error {
 }
 
 export async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  // Proactive token refresh check before each request
+  maybeProactiveRefresh()
+
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) }
   const token = tokenStore.get()
   if (token) headers['Authorization'] = `Bearer ${token}`
   if (init.body) headers['Content-Type'] = 'application/json'
 
   const resp = await fetch(url, { ...init, headers })
+  const isAuthEndpoint = url.startsWith('/api/auth/')
+
   if (resp.status === 401) {
     const refreshed = await tryRefreshToken()
+
     if (!refreshed) {
       tokenStore.clear()
-      if (!url.startsWith('/api/auth/')) window.location.href = '/login'
+      // Only redirect for non-auth endpoints (avoid loop when refresh itself returns 401)
+      if (!isAuthEndpoint && !url.includes('/api/auth/refresh')) {
+        window.location.href = '/login'
+      }
       return undefined as T
     }
-    // retry with new token
+
+    // Refresh succeeded, retry with new token
     const newToken = tokenStore.get()
     if (newToken) headers['Authorization'] = `Bearer ${newToken}`
     const retry = await fetch(url, { ...init, headers })
+
     if (retry.status === 204) return undefined as T
     if (!retry.ok) {
       const body = await retry.json().catch(() => null)
@@ -134,12 +204,19 @@ export async function request<T>(url: string, init: RequestInit = {}): Promise<T
 
 // ---------- 认证 ----------
 
+export function login(email: string, password: string): Promise<TokenResponse> {
+  return request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+}
+
 export function register(email: string, password: string, nickname: string): Promise<TokenResponse> {
   return request('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, nickname }) })
 }
 
-export function login(email: string, password: string): Promise<TokenResponse> {
-  return request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+export async function saveTokens(data: TokenResponse) {
+  tokenStore.set(data.access_token)
+  if (data.refresh_token) setRefreshToken(data.refresh_token)
+  // Record token issuance time for proactive refresh logic
+  setTokenIssuedAt(Date.now())
 }
 
 export function fetchMe(): Promise<User> {
@@ -192,8 +269,9 @@ export function createResearch(payload: ResearchCreate): Promise<TaskBrief> {
   return request('/api/research', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export function listResearch(): Promise<TaskBrief[]> {
-  return request('/api/research')
+export function listResearch(page = 1, pageSize = 20): Promise<TaskBrief[]> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  return request('/api/research?' + params)
 }
 
 export function getResearch(id: string): Promise<TaskDetail> {
@@ -249,20 +327,55 @@ export function subscribeEvents(
   onStep: (step: Step) => void,
   onStatus: (status: TaskStatus) => void,
 ): () => void {
-  const token = tokenStore.get() ?? ''
-  const es = new EventSource(`/api/research/${id}/events?token=${encodeURIComponent(token)}`)
-  es.addEventListener('step', (e) => {
-    onStep(JSON.parse((e as MessageEvent).data))
-  })
-  es.addEventListener('status', (e) => {
-    const { status } = JSON.parse((e as MessageEvent).data)
-    onStatus(status)
-    if (status === 'completed' || status === 'failed') es.close()
-  })
-  es.onerror = () => {
-    if (es.readyState === EventSource.CLOSED) es.close()
+  let es: EventSource | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let reconnectAttempts = 0
+  let currentToken = tokenStore.get() ?? ''
+  const MAX_RECONNECT = 5
+
+  function connect(token: string) {
+    es = new EventSource(`/api/research/${id}/events?token=${encodeURIComponent(token)}`)
+
+    es.addEventListener('step', (e) => {
+      onStep(JSON.parse((e as MessageEvent).data))
+      reconnectAttempts = 0 // received data means connection is healthy
+    })
+
+    es.addEventListener('status', (e) => {
+      const { status } = JSON.parse((e as MessageEvent).data)
+      onStatus(status)
+      if (status === 'completed' || status === 'failed') {
+        es?.close()
+      }
+    })
+
+    es.onerror = () => {
+      if (es?.readyState === EventSource.CLOSED) {
+        es.close()
+        if (reconnectAttempts < MAX_RECONNECT) {
+          reconnectAttempts++
+          const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000) // exponential backoff
+          reconnectTimer = setTimeout(() => {
+            // Try refreshing token before reconnecting
+            tryProactiveRefresh().then(() => {
+              currentToken = tokenStore.get() ?? currentToken
+              connect(currentToken)
+            }).catch(() => {
+              // Refresh also failed, retry with current token
+              connect(currentToken)
+            })
+          }, delay)
+        }
+      }
+    }
   }
-  return () => es.close()
+
+  connect(currentToken)
+
+  return () => {
+    if (reconnectTimer) clearTimeout(reconnectTimer)
+    es?.close()
+  }
 }
 
 // ---------- 计费 ----------
@@ -350,14 +463,16 @@ export function createTracker(payload: TrackerCreate): Promise<Tracker> {
   return request('/api/trackers', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export function listTrackers(): Promise<Tracker[]> {
-  return request('/api/trackers')
+export function listTrackers(page = 1, pageSize = 20): Promise<Tracker[]> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  return request('/api/trackers?' + params)
 }
 
 // ---------- 竞品管理 ----------
 
-export function listCompetitors(): Promise<Competitor[]> {
-  return request('/api/competitors')
+export function listCompetitors(page = 1, pageSize = 50): Promise<Competitor[]> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  return request('/api/competitors?' + params)
 }
 
 export function createCompetitor(payload: Omit<Competitor, 'id' | 'created_at' | 'updated_at'>): Promise<Competitor> {
@@ -408,8 +523,13 @@ export function getGenerateStatus(taskId: string): Promise<GenerateTaskStatus> {
   return request(`/api/profiles/generate-from-crawl/${taskId}`)
 }
 
-export function listProfiles(): Promise<CompetitorProfile[]> {
-  return request('/api/profiles')
+export function getProfile(id: string): Promise<CompetitorProfile> {
+  return request(`/api/profiles/${id}`)
+}
+
+export function listProfiles(page = 1, pageSize = 20): Promise<CompetitorProfile[]> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  return request('/api/profiles?' + params)
 }
 
 export function listProfileExtractTasks(): Promise<Array<{
@@ -427,6 +547,21 @@ export function listProfileExtractTasks(): Promise<Array<{
 
 export function freezeProfileApi(id: string): Promise<{ id: string; status: string }> {
   return request(`/api/profiles/${id}/freeze`, { method: 'POST' })
+}
+
+// ---------- 画像报告与洞察 ----------
+
+export function getProfileReport(id: string): Promise<{ report_markdown: string; insights: any; source_index: any[]; quality: any }> {
+  return request(`/api/profiles/${id}/report`)
+}
+
+export function getProfileInsights(id: string): Promise<any> {
+  return request(`/api/profiles/${id}/insights`)
+}
+
+/** One-call: fetch report + insights + source_index together (faster than two separate calls) */
+export function getProfileFullReport(id: string): Promise<{ report_markdown: string; insights: any; source_index: any[]; quality: any }> {
+  return request(`/api/profiles/${id}/report-full`)
 }
 
 // ---------- 横向对比 ----------
@@ -468,6 +603,29 @@ export function listAuditLogs(params?: {
   return request(`/api/admin/audit-logs?${qs}`)
 }
 
+export function exportAuditLogs(params?: {
+  action?: string
+  resource_type?: string
+  user_id?: string
+  start?: string
+  end?: string
+}): Promise<Blob> {
+  const p = new URLSearchParams()
+  if (params?.action) p.set('action', params.action)
+  if (params?.resource_type) p.set('resource_type', params.resource_type)
+  if (params?.user_id) p.set('user_id', params.user_id)
+  if (params?.start) p.set('start', params.start)
+  if (params?.end) p.set('end', params.end)
+  const qs = p.toString()
+  const token = tokenStore.get()
+  return fetch(`/api/admin/audit-logs/export?${qs}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).then((r) => {
+    if (!r.ok) throw new Error('导出失败')
+    return r.blob()
+  })
+}
+
 // ---------- 执行快照 ----------
 
 export function listExecutionSnapshots(taskId?: string): Promise<any[]> {
@@ -501,8 +659,9 @@ export function createGraph(payload: GraphCreate): Promise<GraphProject> {
   return request('/api/graph', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export function listGraphs(): Promise<GraphProject[]> {
-  return request('/api/graph')
+export function listGraphs(page = 1, pageSize = 20): Promise<GraphProject[]> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  return request('/api/graph?' + params)
 }
 
 export function getGraph(id: string): Promise<GraphDetail> {

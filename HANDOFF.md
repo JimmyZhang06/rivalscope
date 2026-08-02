@@ -1,6 +1,6 @@
 # 竞品调研 Agent — 项目交接与技术实现文档 v5.1
 
-> 更新时间：Agent 7 全面实现（竞品实体 + 来源存证 + 去重/置信度/冲突检测 + 快照存档 + 竞品画像 + 横向对比 + RBAC 权限 + 审计日志 + 执行快照 + 增强安全 + 爬虫多语言修复）。涵盖调研流水线、时效引擎、定时追踪与调度器、关系图谱、竞品管理、竞品画像、企业组织、通知、AI 助手、配额规则、安全增强、全量数据模型。
+> 版本：v5.1.0 | 日期：2026-08-02
 
 ## 目录
 
@@ -43,6 +43,7 @@
 6. **AI 问答**：单报告追问 + 全局 AI 助手（悬浮球/独立页），自动定位相关报告作答并附引用链接，不占配额
 7. **管理后台**：运营统计 + 用户管理 + 企业管理 + 审计日志 + 执行快照 + 权限管理
 8. **安全增强**：JWT + Refresh Token、令牌桶限流、Fernet 加密、审计日志、执行快照
+8.5 **审计保护**：审计日志数据库级触发器（防 UPDATE/DELETE 篡改）
 9. **企业组织**：邀请码加入、owner/admin/member 三级企业角色、企业套餐共享配额、成员月额度管控、RBAC 细粒度权限、任务/追踪/图谱企业内共享可见
 
 内置完整账号体系（注册/登录/改密/忘记密码/Refresh Token/登录历史/退出所有设备/注销/用量）、三级会员（个人 + 企业双维度）、模拟支付订单、站内通知、来源快照存档与审计追踪。
@@ -55,7 +56,7 @@
 | LLM | OpenAI 兼容接口（当前配置 DeepSeek），`app/services/llm.py` 封装 `chat` / `chat_json` / `chat_messages`（多轮），内置审计埋点 |
 | 检索 | Tavily API（`tavily-python`，`include_raw_content=True`，支持 time_range） |
 | 安全 | bcrypt · JWT + Refresh Token · Fernet 对称加密 · 令牌桶限流 · 审计日志 · 执行快照 |
-| 调度 | `services/scheduler.py` 守护线程，60 秒轮询（无 celery/cron 外部依赖） |
+| 调度 | `services/scheduler.py` 守护线程，60 秒轮询（无 celery/cron 外部依赖）；启动时自动恢复未完成的画像提取任务 |
 | 前端 | React 18 · TypeScript · Vite 5 · Tailwind CSS 4 · react-router-dom 6 · react-markdown + remark-gfm · recharts · ReactFlow · **html2pdf.js** |
 | 爬虫 | httpx + BeautifulSoup4（竞品官网信息结构化提取） |
 
@@ -222,7 +223,7 @@ npm run dev   # http://localhost:5173，/api 代理到 8000
 
 - `execution_snapshots` 表：记录调研任务的运行时环境与配置指纹
 - 字段：config_hash（SHA256 搜索配置）/ model_params / kb_version / deployment_env / candidate_version / build_hash（git HEAD）/ created_by / created_at
-- 调度器每次触发时自动生成
+- 调度器每次触发时自动生成（`build_hash` 启动时由 `_load_git_hash()` 缓存到 `_GIT_HASH`，不每次调用 subprocess）
 - 前端 API：`GET /api/admin/execution-snapshots?task_id=` + 无参全量列表
 
 ## 7. 配额规则专章
@@ -443,7 +444,7 @@ npm run dev   # http://localhost:5173，/api 代理到 8000
 
 - 记录调研任务的运行时环境与配置指纹
 - 字段：config_hash（SHA256 搜索配置）/ model_params / kb_version / deployment_env / candidate_version / build_hash（git HEAD）/ created_by / created_at
-- 调度器每次触发时自动生成
+- 调度器每次触发时自动生成（`build_hash` 启动时由 `_load_git_hash()` 缓存到 `_GIT_HASH`，不每次调用 subprocess）
 - 前端 API：`GET /api/admin/execution-snapshots?task_id=` + 无参全量列表
 
 ## 17. 加密服务

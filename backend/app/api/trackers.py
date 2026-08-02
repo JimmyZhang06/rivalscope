@@ -3,7 +3,8 @@
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import check_quota_or_403, get_current_user
@@ -62,6 +63,71 @@ def _with_extras(db: Session, tracker: Tracker, user: User) -> TrackerOut:
     return out
 
 
+def _with_extras_batch(db: Session, trackers: list[Tracker], user: User) -> list[TrackerOut]:
+    """批量附加 extras：一次查询获取所有 tracker 的任务统计和创建者信息
+
+    使用 row_number() window function 限制每个 tracker 最多 10 条任务，
+    防止 20 tracker × 250 tasks = 5000 条全加载。
+    """
+    if not trackers:
+        return []
+
+    tracker_ids = [t.id for t in trackers]
+    creator_ids = list({t.creator_id for t in trackers})
+
+    # 用 window function 按 tracker 分组取最近 10 条
+    from sqlalchemy import func
+
+    subq = (
+        db.query(
+            ResearchTask.id,
+            func.row_number()
+            .over(partition_by=ResearchTask.tracker_id, order_by=ResearchTask.created_at.desc())
+            .label("rn"),
+        )
+        .filter(ResearchTask.tracker_id.in_(tracker_ids))
+        .subquery()
+    )
+    recent = (
+        db.query(ResearchTask)
+        .select_from(subq)
+        .filter(subq.c.rn <= 10)
+        .join(ResearchTask, ResearchTask.id == subq.c.id)
+        .all()
+    )
+
+    # 按 tracker_id 分组
+    tasks_by_tracker: dict[str, list[ResearchTask]] = {}
+    for task in recent:
+        tasks_by_tracker.setdefault(task.tracker_id, []).append(task)
+
+    # 一次性加载所有创建者
+    creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()}
+
+    results = []
+    for tracker in trackers:
+        out = TrackerOut.model_validate(tracker)
+        tasks = tasks_by_tracker.get(tracker.id, [])
+        out.run_count = len(tasks)
+        # 最近完成（已按 created_at 倒序排列）
+        completed = [t for t in tasks if t.status == "completed"]
+        if completed:
+            last = completed[0]
+            out.last_task_id = last.id
+            out.last_change_summary = (last.change_summary or "")[:300]
+        # 运行中
+        running = [t for t in tasks if t.status not in ("completed", "failed")]
+        if running:
+            out.running = True
+            out.running_task_id = running[0].id
+        creator = creators.get(tracker.creator_id)
+        if creator:
+            out.creator_nickname = creator.nickname or creator.email.split("@")[0]
+        out.can_manage = tracker.creator_id == user.id or user.org_role in ("owner", "admin")
+        results.append(out)
+    return results
+
+
 @router.post("", response_model=TrackerOut, status_code=201)
 def create_tracker(payload: TrackerCreateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     org = _require_org(db, user)
@@ -104,12 +170,16 @@ def create_tracker(payload: TrackerCreateIn, user: User = Depends(get_current_us
 
 
 @router.get("", response_model=list[TrackerOut])
-def list_trackers(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_trackers(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
     org = _require_org(db, user)
-    trackers = (
-        db.query(Tracker).filter(Tracker.org_id == org.id).order_by(Tracker.created_at.desc()).all()
-    )
-    return [_with_extras(db, t, user) for t in trackers]
+    query = db.query(Tracker).filter(Tracker.org_id == org.id).order_by(Tracker.created_at.desc())
+    trackers = query.offset((page - 1) * page_size).limit(page_size).all()
+    return _with_extras_batch(db, trackers, user)
 
 
 @router.get("/{tracker_id}", response_model=TrackerOut)
@@ -216,12 +286,20 @@ def run_now(
 
 
 @router.get("/{tracker_id}/runs", response_model=list[TrackerRunOut])
-def list_runs(tracker_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_runs(
+    tracker_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """该追踪项的历次运行（新→旧），含变更摘要与评分数据"""
     tracker = _get_org_tracker(tracker_id, user, db)
     return (
         db.query(ResearchTask)
         .filter(ResearchTask.tracker_id == tracker.id)
         .order_by(ResearchTask.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )

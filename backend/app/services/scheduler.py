@@ -7,6 +7,7 @@
 
 import asyncio
 import logging
+import subprocess
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
@@ -23,6 +24,18 @@ PERIOD_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 QUOTA_SKIP_TITLE = "定时追踪因额度不足跳过本期"
 
 _running: set[str] = set()  # 正在执行的 tracker_id，防重入
+_GIT_HASH: str = ""          # 启动时缓存一次 git hash
+
+
+def _load_git_hash() -> None:
+    """启动时读取一次 git hash，缓存到模块级变量"""
+    global _GIT_HASH
+    try:
+        _GIT_HASH = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, timeout=5
+        ).strip()[:64]
+    except Exception:
+        _GIT_HASH = ""
 
 
 def _snapshot_execution(db, task: ResearchTask) -> None:
@@ -38,11 +51,7 @@ def _snapshot_execution(db, task: ResearchTask) -> None:
     }, sort_keys=True)
     config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:64]
 
-    try:
-        import subprocess
-        build_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, timeout=5).strip()[:64]
-    except Exception:
-        build_hash = ""
+    build_hash = _GIT_HASH  # 直接使用缓存值
 
     snapshot = ExecutionSnapshot(
         org_id=task.org_id,
@@ -64,12 +73,15 @@ def _as_utc(dt: datetime) -> datetime:
 
 
 def initial_next_run(frequency: str, run_hour: int) -> datetime:
-    """新建/修改追踪项时计算首次运行时间：下一个 run_hour 整点（服务器本地时区）"""
-    local = datetime.now(timezone.utc).astimezone()
-    candidate = local.replace(hour=run_hour, minute=0, second=0, microsecond=0)
-    if candidate <= local:
+    """新建/修改追踪项时计算首次运行时间：下一个 run_hour 整点（UTC 基准）
+
+    注意：run_hour 以 UTC 为基准。前端应将用户本地时区的小时转换为 UTC 小时传入。
+    """
+    utc_now = datetime.now(timezone.utc)
+    candidate = utc_now.replace(hour=run_hour, minute=0, second=0, microsecond=0)
+    if candidate <= utc_now:
         candidate += timedelta(days=1)
-    return candidate.astimezone(timezone.utc)
+    return candidate
 
 
 def advance_next_run(tracker: Tracker, now: datetime) -> datetime:

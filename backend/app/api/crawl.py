@@ -5,7 +5,7 @@ import logging
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -120,6 +120,8 @@ def get_crawl_status(
 @router.get("/{cid}/pages", response_model=list[CompetitorPageOut])
 def list_crawl_pages(
     cid: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -132,6 +134,8 @@ def list_crawl_pages(
         db.query(CompetitorPage)
         .filter(CompetitorPage.competitor_id == cid)
         .order_by(CompetitorPage.crawled_at.desc().nullslast(), CompetitorPage.discovered_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
     return pages

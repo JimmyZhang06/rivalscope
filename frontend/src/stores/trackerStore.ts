@@ -20,15 +20,24 @@ export const useTrackerStore = create<TrackerState>()(
       reload: async () => {
         set({ loading: true })
         try {
-          const me = await getOrgMe()
+          const [me, trackers] = await Promise.all([
+            getOrgMe(),
+            // persist 已缓存 hasOrg 时可并行；首次加载（null）走串行兜底
+            (async () => {
+              const state = useTrackerStore.getState()
+              if (state.hasOrg === true) return listTrackers()
+              // hasOrg 为 null/false 时不调 listTrackers
+              return [] as never[]
+            })(),
+          ])
           const hasOrg = !!me.org
-          set({ hasOrg })
-          if (hasOrg) {
-            const trackers = await listTrackers()
-            set({ trackers })
-          } else {
-            set({ trackers: [] })
-          }
+          set({
+            hasOrg,
+            // 若缓存判断为无企业但实际有企业，补拉一次
+            trackers: hasOrg && trackers.length === 0 && useTrackerStore.getState().hasOrg === false
+              ? await listTrackers()
+              : hasOrg ? trackers : [],
+          })
         } finally {
           set({ loading: false })
         }

@@ -126,8 +126,17 @@ def _migrate_legacy(db: Session, user: User) -> None:
 
 
 def _visible_completed(db: Session, user: User) -> list[ResearchTask]:
-    """用户可见的已完成报告（本人 + 同企业共享），最近优先"""
-    q = db.query(ResearchTask).filter(
+    """用户可见的已完成报告（本人 + 同企业共享），最近优先，只加载目录所需字段"""
+    from sqlalchemy.orm import load_only
+    cols = [
+        ResearchTask.id,
+        ResearchTask.product_name,
+        ResearchTask.tracker_id,
+        ResearchTask.competitors,
+        ResearchTask.change_summary,
+        ResearchTask.created_at,
+    ]
+    q = db.query(ResearchTask).options(load_only(*cols)).filter(
         ResearchTask.status == "completed", ResearchTask.report_markdown != ""
     )
     if user.org_id:
@@ -135,6 +144,19 @@ def _visible_completed(db: Session, user: User) -> list[ResearchTask]:
     else:
         q = q.filter(ResearchTask.user_id == user.id)
     return q.order_by(ResearchTask.created_at.desc()).limit(CATALOG_LIMIT).all()
+
+
+def _load_full_reports(db: Session, tasks: list[ResearchTask]) -> dict[str, str]:
+    """按需加载选中任务的完整报告正文（仅加载 report_markdown 列）"""
+    if not tasks:
+        return {}
+    ids = [t.id for t in tasks]
+    rows = (
+        db.query(ResearchTask.id, ResearchTask.report_markdown)
+        .filter(ResearchTask.id.in_(ids))
+        .all()
+    )
+    return {str(r.id): r.report_markdown for r in rows}
 
 
 def _catalog_line(t: ResearchTask) -> str:
@@ -306,15 +328,20 @@ async def ask_assistant(
         selected = await _select_tasks(question, tasks, user.id, user.org_id or "")
         refs = [{"task_id": t.id, "product_name": t.product_name} for t in selected]
 
+        # 按需加载选中任务的完整报告（目录查询未加载 report_markdown 大字段）
+        full_reports = _load_full_reports(db, selected)
+
         contexts = []
         for i, t in enumerate(selected, 1):
             kind = "追踪期次报告" if t.tracker_id else "调研报告"
+            report_md = full_reports.get(t.id, "") or ""
             block = (
                 f"【报告{i}】《{t.product_name}》（{kind}，{t.created_at:%Y-%m-%d}）\n"
-                f"{t.report_markdown[:REPORT_CHAR_LIMIT]}"
+                f"{report_md[:REPORT_CHAR_LIMIT]}"
             )
-            if t.change_summary:
-                block += f"\n\n本期变更摘要：\n{t.change_summary[:2000]}"
+            change = t.change_summary or ""
+            if change:
+                block += f"\n\n本期变更摘要：\n{change[:2000]}"
             contexts.append(block)
 
         from app.services.agent import _date_header

@@ -1,9 +1,6 @@
 # 竞品调研 Agent — 代码架构评审报告
 
-**评审日期：** 2026-08-02
-**代码分支：** agent-v5
-**评审范围：** 后端 (Python/FastAPI/SQLAlchemy) + 前端 (React/TypeScript)
-**更新说明：** 本报告基于 agent-v5 分支实际代码更新，反映 Agent 7 实现 + 爬虫多语言修复后的架构状态
+**版本：** v5.1.0 | **日期：** 2026-08-02 | **分支：** agent-v5 | **评审范围：** 后端 + 前端
 
 ---
 
@@ -37,6 +34,15 @@
 | SSE 断连后永久停止订阅 | P1 | ✅ 已修复 |
 | 爬虫零页问题（多语言站点） | P1 — insta360.com/cn 0/50 页 | ✅ 已修复（语言前缀感知 + consent overlay 移除） |
 | 引用编号排序后错位 | P1 | ✅ 已修复 |
+| SSE 轮询 O(n) offset 开销 | P1 | ✅ 已修复（单 session 复用 + seq 增量查询） |
+| 追踪列表 N+1 查询 | P1 | ✅ 已修复（窗口函数批量加载 _with_extras_batch） |
+| 账号注销逐行删除 | P2 | ✅ 已修复（批量 SQL DELETE） |
+| reset_code 列长度不足 | P2 | ✅ 已修复（VARCHAR(44) 适配 Fernet 输出） |
+| Git hash 每次 subprocess | P2 | ✅ 已修复（启动时缓存 _GIT_HASH） |
+| 审计日志无防篡改保护 | P2 | ✅ 已修复（DB 级触发器 prevent_audit_update/delete） |
+| 画像任务进程重启丢失 | P2 | ✅ 已修复（recover_stale_tasks 自动恢复） |
+| 调度器时区本地时间 | P2 | ✅ 已修复（UTC 基准 initial_next_run） |
+| 列表端点无分页 | P2 | ✅ 已修复（research/trackers/runs 支持 page/page_size） |
 
 ---
 
@@ -76,7 +82,7 @@
 
 ## 四、当前架构风险
 
-### 3.1 并发竞态：配额校验与任务创建之间有空窗
+### 4.1 并发竞态：配额校验与任务创建之间有空窗
 
 **位置：** `backend/app/api/research.py:45-57`
 **描述：** `check_quota_or_403(db, user)` 在事务外执行，然后 `db.add(task)` 写入。两个并发请求可能在各自的事务中同时通过配额检查，然后各自创建任务，导致超出配额。
@@ -89,36 +95,36 @@ with db.begin_nested():
     db.add(task)
 ```
 
-### 3.2 SSE 端点每轮询新建数据库连接
+### 4.2 SSE 端点轮询性能（已修复 ✅）
 
-**位置：** `backend/app/api/research.py:256`
-**描述：** SSE 长连接每秒轮询一次，每次 `with SessionLocal() as db` 新建连接。长时间运行会累积连接。
-**修复建议：** 复用单个会话，或使用 `@lru_cache` 限制轮询频率。
+**位置：** `backend/app/api/research.py:282-318`
+**原描述：** SSE 长连接每秒轮询一次，每次新建数据库连接。
+**修复状态：** ✅ 已修复 — `research_events` 使用单 session 复用（`try/finally` 确保关闭），鉴权使用独立临时 session；查询使用 `seq > sent` 替代 `offset(sent)`，利用索引避免 O(n) 开销。
 
-### 3.3 `parse_json` 正则存在潜在误匹配
+### 4.3 `parse_json` 正则存在潜在误匹配
 
 **位置：** `backend/app/services/llm.py:93-97`
 **描述：** `text.find("{")` 到 `text.rfind("}")` 截取逻辑会匹配到字符串中的非 JSON 花括号。
 **修复建议：** 使用 `json.JSONDecoder().raw_decode()` 从字符串起始尝试解析。
 
-### 3.4 内存限流在多 worker 部署下完全失效
+### 4.4 内存限流在多 worker 部署下完全失效
 
 **位置：** `backend/app/core/rate_limit.py`
 **描述：** `_buckets` 是进程内全局字典。Gunicorn/Uvicorn 多个 worker 各自维护独立限流表。
 **修复建议：** 生产环境替换为 Redis 实现（代码已预留接口注释）。
 
-### 3.5 调度器进程内 `_running` 集合不持久化
+### 4.5 调度器时区（已修复 ✅）
 
-**位置：** `backend/app/services/scheduler.py:25`
-**描述：** 服务重启后 `_running` 清空，可能导致同一个追踪项在同一周期被触发两次。
-**修复建议：** 在 `Tracker` 模型中加 `is_running` 字段，启动时恢复状态。
+**位置：** `backend/app/services/scheduler.py:73-84`
+**原描述：** 服务重启后 `_running` 清空，可能导致重复触发。
+**修复状态：** ✅ 时区已修复 — `initial_next_run()` 改为 UTC 基准，注释明确前端应传入 UTC 小时；`_running` 集合保持进程内防重入机制（next_run_at 持久化，重启不丢失调度计划）。git hash 启动时一次性缓存到 `_GIT_HASH`。
 
-### 3.6 CORS 配置允许所有方法和请求头
+### 4.6 CORS 配置允许所有方法和请求头
 
 **位置：** `backend/app/main.py:200-206`
 **描述：** `allow_methods=["*"]` 和 `allow_headers=["*"]` 在开发环境可以，但生产环境应限制为实际使用的方法。
 
-### 3.7 前端 Token 存储于 localStorage（XSS 风险）
+### 4.7 前端 Token 存储于 localStorage（XSS 风险）
 
 **位置：** `frontend/src/api/client.ts:43-46`
 **描述：** Access Token 和 Refresh Token 均存储在 `localStorage` 中。
@@ -229,7 +235,7 @@ SQLite 下 `pool_size` 等参数不适用，但切换到 PostgreSQL 时应配置
 
 ---
 
-## 八、结论
+## 九、结论
 
 当前代码在功能层面已经非常完整（竞品调研 Agent 流水线、企业协作、RBAC、定时追踪、审计日志、执行快照、竞品管理、竞品画像、来源存证），适合作为 MVP 或内部工具使用。
 

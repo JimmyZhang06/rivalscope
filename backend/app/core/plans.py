@@ -61,5 +61,12 @@ def effective_org_plan(org) -> str:
     return "free"
 
 
+def effective_org_plan_simple(plan: str, expires=None) -> str:
+    """仅传入 plan 字符串判断企业套餐是否有效"""
+    if plan in PAID_PLANS and not _expired(expires):
+        return plan
+    return "free"
+
+
 def plan_limits(plan: str) -> dict:
     return PLANS.get(plan, PLANS["free"])

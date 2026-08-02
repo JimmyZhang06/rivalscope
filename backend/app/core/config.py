@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # 前端基础 URL：邮件 / webhook 中「查看完整报告」链接前缀，生产环境需按实际域名配置
     frontend_base: str = "http://localhost:5173"
 
+    # CORS 允许的源（逗号分隔）
+    frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

@@ -12,9 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-path sitemap discovery**: The crawler now tries `/{lang}/sitemap.xml` in addition to `/sitemap.xml` for multi-language sites
 - **Privacy/consent overlay stripping**: Before readability extraction, the crawler strips common cookie/consent/privacy overlay HTML (OneTrust, CCPA, GDPR banners) using regex. If readability extracts less than 3000 chars and the content matches consent notice markers, it falls back to full body text extraction
 - **Chrome User-Agent**: Changed from `CompAgent-Crawler/1.0` to a Chrome browser UA to reduce bot detection
+- **Audit log DB-level trigger protection**: SQLite triggers prevent UPDATE/DELETE on `audit_logs` table (`backend/app/db/audit_triggers.py`)
+- **Profile extractor startup recovery**: `recover_stale_tasks()` restores interrupted profile extraction tasks after process restart
+- **SSE single-session with seq-based queries**: `research_events` endpoint reuses a single DB session and uses `seq > sent` instead of `offset(sent)` to avoid O(n) pagination cost
+- **List pagination**: `GET /api/research`, `GET /api/trackers`, and `GET /api/trackers/{id}/runs` now support `page`/`page_size` query parameters (default 20)
+- **Tracker batch extras loading**: `_with_extras_batch()` uses window function (row_number) to load at most 10 recent tasks per tracker in a single query, replacing N+1 per-tracker queries
+- **Git hash caching**: `_load_git_hash()` reads git HEAD once at startup and caches it in `_GIT_HASH`, replacing per-call subprocess invocation in `_snapshot_execution`
 
 ### Changed
 - `backend/app/services/crawler.py`: Core crawler engine rewritten with multi-language site support and consent overlay removal
+- `backend/app/main.py`: Lifespan now creates audit log triggers and recovers stale profile extract tasks on startup; production security warnings for weak JWT_SECRET
+- `backend/app/api/research.py`: SSE endpoint reuses single DB session with seq-based incremental queries; list endpoint paginated
+- `backend/app/api/trackers.py`: `_with_extras_batch()` with window function for efficient batch loading; list and runs endpoints paginated
+- `backend/app/api/auth.py`: Account deletion uses bulk `delete(synchronize_session=False)` instead of Python loop
+- `backend/app/services/scheduler.py`: `initial_next_run()` uses UTC timezone; git hash cached at startup via `_load_git_hash()`
+- `reset_code` column type corrected from VARCHAR(10) to VARCHAR(44) to accommodate Fernet-encrypted values
+
+### Performance
+- SSE long-polling eliminated O(n) offset cost — replaced with `seq > sent` index-friendly query
+- Tracker list N+1 fixed — window function batch loads max 10 tasks per tracker in one query
+- Account deletion batch cleanup — bulk SQL DELETE replaces per-row Python loop
+- Git hash computed once at startup instead of per-snapshot subprocess call
 
 ## [v5.0.0] - 2026-08-02
 

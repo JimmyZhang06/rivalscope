@@ -18,9 +18,10 @@ def _get_cipher() -> Fernet:
         from app.core.config import get_settings
         settings = get_settings()
         key = settings.master_key
-        if not key:
+        if not key or len(key) < 32:
             raise RuntimeError(
-                "MASTER_KEY 环境变量未设置。运行 scripts/generate_keys.py 生成密钥后写入 .env"
+                "MASTER_KEY 未配置或过短（需 32 字节 base64）。"
+                "生成方式: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
             )
         _cipher = Fernet(key.encode())
     return _cipher

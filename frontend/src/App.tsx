@@ -1,3 +1,4 @@
+import { lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { AuthProvider, RequireAdmin, RequireAuth } from './auth/AuthContext'
@@ -6,25 +7,26 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
-import AccountPage from './pages/app/AccountPage'
-import AdminPage from './pages/app/AdminPage'
-import AuditLogsPage from './pages/app/AuditLogsPage'
-import AssistantPage from './pages/app/AssistantPage'
-import ComparisonPage from './pages/app/ComparisonPage'
-import CompetitorsPage from './pages/app/CompetitorsPage'
-import DashboardPage from './pages/app/DashboardPage'
-import ProfileTemplatesPage from './pages/app/ProfileTemplatesPage'
-import ProfilesPage from './pages/app/ProfilesPage'
-import ProfileDetailPage from './pages/app/ProfileDetailPage'
-import ProfileTasksPage from './pages/app/ProfileTasksPage'
-import GraphDetailPage from './pages/app/GraphDetailPage'
-import GraphPage from './pages/app/GraphPage'
-import NewResearchPage from './pages/app/NewResearchPage'
-import PricingPage from './pages/app/PricingPage'
-import TaskDetailPage from './pages/app/TaskDetailPage'
-import TasksPage from './pages/app/TasksPage'
-import TrackerDetailPage from './pages/app/TrackerDetailPage'
-import TrackersPage from './pages/app/TrackersPage'
+
+const AccountPage = lazy(() => import('./pages/app/AccountPage'))
+const AdminPage = lazy(() => import('./pages/app/AdminPage'))
+const AuditLogsPage = lazy(() => import('./pages/app/AuditLogsPage'))
+const AssistantPage = lazy(() => import('./pages/app/AssistantPage'))
+const ComparisonPage = lazy(() => import('./pages/app/ComparisonPage'))
+const CompetitorsPage = lazy(() => import('./pages/app/CompetitorsPage'))
+const DashboardPage = lazy(() => import('./pages/app/DashboardPage'))
+const ProfileTemplatesPage = lazy(() => import('./pages/app/ProfileTemplatesPage'))
+const ProfilesPage = lazy(() => import('./pages/app/ProfilesPage'))
+const ProfileDetailPage = lazy(() => import('./pages/app/ProfileDetailPage'))
+const ProfileTasksPage = lazy(() => import('./pages/app/ProfileTasksPage'))
+const GraphDetailPage = lazy(() => import('./pages/app/GraphDetailPage'))
+const GraphPage = lazy(() => import('./pages/app/GraphPage'))
+const NewResearchPage = lazy(() => import('./pages/app/NewResearchPage'))
+const PricingPage = lazy(() => import('./pages/app/PricingPage'))
+const TaskDetailPage = lazy(() => import('./pages/app/TaskDetailPage'))
+const TasksPage = lazy(() => import('./pages/app/TasksPage'))
+const TrackerDetailPage = lazy(() => import('./pages/app/TrackerDetailPage'))
+const TrackersPage = lazy(() => import('./pages/app/TrackersPage'))
 
 export default function App() {
   return (

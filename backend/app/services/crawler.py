@@ -108,9 +108,10 @@ async def discover_urls(base_url: str, max_pages: int = _MAX_PAGES_DEFAULT) -> l
 async def _fetch_sitemap_urls(base: str, lang_prefix: str = "") -> list[str]:
     """尝试从多个路径获取 sitemap 并解析所有 <loc> URL"""
     urls: list[str] = []
-    candidates = ["/sitemap.xml"]
+    # 同时支持 sitemap.xml 和 sitemap_index.xml
+    candidates = ["/sitemap.xml", "/sitemap_index.xml"]
     if lang_prefix:
-        candidates = [f"/{lang_prefix}/sitemap.xml", "/sitemap.xml"]
+        candidates = [f"/{lang_prefix}/sitemap.xml", f"/{lang_prefix}/sitemap_index.xml", "/sitemap.xml", "/sitemap_index.xml"]
 
     for sm_path in candidates:
         sm_url = urljoin(base, sm_path)
@@ -151,16 +152,19 @@ async def _discover_from_homepage(base: str, max_depth: int = 2) -> list[str]:
 
     while queue and len(discovered) < 100:
         url, depth = queue.popleft()
+        # 在 popleft 后立即检查去重（而非在后续处理中）
         if url in discovered or depth > max_depth:
             continue
-        discovered.add(url)
+        discovered.add(url)  # ★ 先标记已访问，防止重复加入队列
 
         if depth >= max_depth:
             continue
 
         links = await _extract_links(url, parsed_base)
         for link in links:
-            queue.append((link, depth + 1))
+            # 只加入未访问的链接
+            if link not in discovered:
+                queue.append((link, depth + 1))
 
     return list(discovered)
 

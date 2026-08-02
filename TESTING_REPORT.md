@@ -1,6 +1,6 @@
 # 竞品调研 Agent — 功能测试与可用性评估报告
 
-> **版本**: v5.1（含爬虫多语言修复） | **日期**: 2026-08-02 | **分支**: agent-v5
+> **版本**: v5.1.0 | **日期**: 2026-08-02 | **分支**: agent-v5
 > **更新说明**：基于 agent-v5 实际代码更新，反映 Agent 7 全面实现 + 爬虫 v5.1 修复后的状态
 
 ---
@@ -29,7 +29,7 @@
 | 邮件 | Python smtplib (SSL/STARTTLS) |
 | 调度 | asyncio 60s 轮询（进程内线程） |
 | 安全 | JWT + Refresh Token + Fernet 加密 + 令牌桶限流 |
-| 审计 | AuditLog + ExecutionSnapshot + LLM 自动埋点 |
+| 审计 | AuditLog + ExecutionSnapshot + LLM 自动埋点 + DB 级触发器防篡改 |
 
 ### 1.2 核心模块
 
@@ -134,7 +134,9 @@
 | A-11: 调研失败不影响报告 | 洞察阶段 LLM 异常 | 报告仍生成, 仅无 insights | ✅ 已验证 | 低 |
 | A-12: 时间范围过滤 | 设置 time_range=day/week/month/year | Tavily 搜索使用对应时间参数 | ✅ 已验证 | 低 |
 | A-13: 竞品清单 LLM 生成 | 不指定竞品 | LLM 自动确定竞品 | ✅ 已验证 | 低 |
-| A-14: SSE 断线重连 | 关闭 SSE 再打开 | 前端轮询获取最新状态 | ✅ 已修复 | 低 |
+| A-14: SSE 断线重连 | 关闭 SSE 再打开 | 前端轮询获取最新状态 | ✅ 已修复（单 session 复用 + seq 增量查询） | 低 |
+| A-15: 批量账号注销 | 用户 500+ tasks 时注销 | 秒级完成 | ✅ 已修复（批量 SQL DELETE） | 低 |
+| A-16: reset_code 加密长度 | 检查列类型 | VARCHAR(44) 容纳 Fernet 44 字符 | ✅ 已修复 | 低 |
 | A-15: 来源置信度 | 检查 Source.confidence | 0~1 范围，基于层级权重×新鲜度衰减 | ✅ 已验证 | 低 |
 | A-16: 来源快照存档 | 检查 SourceArchive | 每条来源有对应快照记录 | ✅ 已验证 | 低 |
 
@@ -242,7 +244,9 @@
 | I-4: 密码重置 | 忘记密码流程 | 6 位 code → 重置 | ✅ 已验证 | 低 |
 | I-5: 登录日志 | 每次登录 | 记录 IP + UA | ✅ 已验证 | 低 |
 | I-6: 账号删除 | DELETE `/api/auth/account` | 级联删除关联数据 | ✅ 已验证 | 低 |
-| I-7: 审计日志 | LLM 调用 + 关键操作 | 记录 tokens/cost/model/IP | ✅ 已验证 | 低 |
+| I-7: 审计日志 | LLM 调用 + 关键操作 | 记录 tokens/cost/model/IP + DB 级防篡改 | ✅ 已验证 | 低 |
+| I-9: 审计日志防篡改 | 尝试修改 audit_logs | 数据库 abort 操作 | ✅ 已验证（触发器） | 低 |
+| I-10: 画像任务恢复 | 进程重启时未完成任务 | 自动恢复进度 | ✅ 已验证（recover_stale_tasks） | 低 |
 | I-8: RBAC 权限 | require_permission | 无权限 403 | ✅ 已验证 | 低 |
 | I-9: 权限缓存失效 | 修改权限后 | 60s 内生效 | ✅ 已验证 | 低 |
 | I-10: 执行快照 | 调度器触发 | 生成 config_hash + build_hash | ✅ 已验证 | 低 |
@@ -335,7 +339,7 @@
 | 6. 重置密码 | code 验证 | POST `/api/auth/reset` |
 | 7. 登出全部 | 所有 token 失效 | POST `/api/auth/logout-all` |
 | 8. 审计日志 | 完整操作记录 | GET `/api/admin/audit-logs` |
-| 9. 执行快照 | config_hash + build_hash | GET `/api/admin/execution-snapshots` |
+| 9. 执行快照 | config_hash + build_hash（`_GIT_HASH` 启动缓存） | GET `/api/admin/execution-snapshots` |
 
 ---
 

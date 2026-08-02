@@ -178,6 +178,7 @@ export interface CompetitorProfile {
   source_refs: Array<{ url: string; title: string; snippet: string }>
   status: 'draft' | 'reviewed' | 'frozen'
   frozen_at: string | null
+  generation_source: string
   created_at: string
   updated_at: string
 }

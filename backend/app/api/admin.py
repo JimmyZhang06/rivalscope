@@ -33,15 +33,27 @@ def stats(db: Session = Depends(get_db)):
     total_tasks = db.query(ResearchTask).count()
     tasks_this_month = db.query(ResearchTask).filter(ResearchTask.created_at >= month_start_utc()).count()
     total_revenue = db.query(func.coalesce(func.sum(Order.amount), 0)).filter(Order.status == "paid").scalar()
-    # 活跃付费用户：管理员视同付费；入企用户按企业有效套餐；个人按个人有效套餐
-    orgs = {o.id: o for o in db.query(Organization).all()}
-    paid_users = sum(
-        1
-        for u in db.query(User).all()
-        if (u.role == "admin")
-        or (u.org_id and u.org_id in orgs and effective_org_plan(orgs[u.org_id]) in PAID_PLANS)
-        or (not u.org_id and effective_plan(u) in PAID_PLANS)
+
+    # 付费用户：admin 视同付费；个人 plan 在 PAID_PLANS 中；企业用户的企业 plan 在 PAID_PLANS 中
+    admin_count = db.query(User).filter(User.role == "admin").count()
+
+    # 个人付费：无企业且 plan 为 pro/enterprise
+    personal_paid = (
+        db.query(User)
+        .filter(User.org_id == "", User.plan.in_(PAID_PLANS))
+        .count()
     )
+
+    # 企业付费：先批量取 org plan，再过滤出付费企业的用户
+    org_rows = db.query(Organization.id, Organization.plan).all()
+    paid_org_ids = [oid for oid, plan in org_rows if plan in PAID_PLANS]
+    org_paid = (
+        db.query(User)
+        .filter(User.org_id != "", User.role != "admin", User.org_id.in_(paid_org_ids))
+        .count()
+    ) if paid_org_ids else 0
+
+    paid_users = admin_count + personal_paid + org_paid
     return AdminStatsOut(
         total_users=total_users,
         total_tasks=total_tasks,
@@ -150,9 +162,53 @@ def list_orgs(
         query = query.filter(Organization.name.ilike(f"%{q.strip()}%"))
     total = query.count()
     orgs = query.order_by(Organization.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return AdminOrgListOut(
-        items=[_org_out(db, org) for org in orgs], total=total, page=page, page_size=page_size
+
+    if not orgs:
+        return AdminOrgListOut(items=[], total=total, page=page, page_size=page_size)
+
+    org_ids = [o.id for o in orgs]
+    start = month_start_utc()
+
+    # 批量查询：各企业成员数
+    member_counts = dict(
+        db.query(User.org_id, func.count(User.id))
+        .filter(User.org_id.in_(org_ids))
+        .group_by(User.org_id)
+        .all()
     )
+
+    # 批量查询：各企业本月任务数
+    org_task_counts = dict(
+        db.query(ResearchTask.org_id, func.count(ResearchTask.id))
+        .filter(
+            ResearchTask.org_id.in_(org_ids),
+            ResearchTask.created_at >= start,
+            ResearchTask.status != "failed",
+        )
+        .group_by(ResearchTask.org_id)
+        .all()
+    )
+
+    # 批量查询：各企业本月图谱数
+    org_graph_counts = dict(
+        db.query(GraphProject.org_id, func.count(GraphProject.id))
+        .filter(
+            GraphProject.org_id.in_(org_ids),
+            GraphProject.created_at >= start,
+            GraphProject.status != "failed",
+        )
+        .group_by(GraphProject.org_id)
+        .all()
+    )
+
+    items = []
+    for org in orgs:
+        out = AdminOrgOut.model_validate(org)
+        out.member_count = member_counts.get(org.id, 0)
+        out.month_used = org_task_counts.get(org.id, 0) + org_graph_counts.get(org.id, 0)
+        items.append(out)
+
+    return AdminOrgListOut(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.patch("/orgs/{org_id}", response_model=AdminOrgOut)
@@ -230,43 +286,56 @@ def audit_stats(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
 ):
-    """审计概览统计"""
+    """审计概览统计（SQL 聚合）"""
     from datetime import timedelta as _td
     since = datetime.now(timezone.utc) - _td(days=days)
-    q = db.query(AuditLog).filter(AuditLog.created_at >= since)
+
+    base_q = db.query(AuditLog).filter(AuditLog.created_at >= since)
     if org_id:
-        q = q.filter(AuditLog.org_id == org_id)
-    logs = q.all()
+        base_q = base_q.filter(AuditLog.org_id == org_id)
+
+    total_logs = base_q.count()
 
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    today_count = db.query(AuditLog).filter(AuditLog.created_at >= today_start).count()
+    today_logs = db.query(AuditLog).filter(AuditLog.created_at >= today_start).count()
 
-    success = sum(1 for l in logs if l.status == "success")
-    failed = sum(1 for l in logs if l.status != "success")
+    # SQL 聚合：成功/失败计数
+    success_count = base_q.filter(AuditLog.status == "success").count()
+    failed_count = total_logs - success_count
 
-    # action breakdown
-    action_counts: dict[str, int] = {}
-    for l in logs:
-        action_counts[l.action] = action_counts.get(l.action, 0) + 1
-    action_breakdown = [{"action": k, "count": v} for k, v in sorted(action_counts.items(), key=lambda x: -x[1])[:20]]
+    # SQL 聚合：action 分组
+    action_rows = (
+        base_q.with_entities(AuditLog.action, func.count(AuditLog.id).label("cnt"))
+        .group_by(AuditLog.action)
+        .order_by(func.count(AuditLog.id).desc())
+        .limit(20)
+        .all()
+    )
+    action_breakdown = [{"action": a, "count": c} for a, c in action_rows]
 
-    # top models by cost
-    model_costs: dict[str, float] = {}
-    model_calls: dict[str, int] = {}
-    for l in logs:
-        if l.model_name and l.cost > 0:
-            model_costs[l.model_name] = model_costs.get(l.model_name, 0) + l.cost
-            model_calls[l.model_name] = model_calls.get(l.model_name, 0) + 1
-    top_models = sorted(
-        [{"model": k, "total_cost": round(v, 6), "calls": model_calls[k]} for k, v in model_costs.items()],
-        key=lambda x: -x["total_cost"],
-    )[:10]
+    # SQL 聚合：top models by cost
+    model_rows = (
+        base_q.with_entities(
+            AuditLog.model_name,
+            func.sum(AuditLog.cost).label("total_cost"),
+            func.count(AuditLog.id).label("calls"),
+        )
+        .filter(AuditLog.model_name != "", AuditLog.cost > 0)
+        .group_by(AuditLog.model_name)
+        .order_by(func.sum(AuditLog.cost).desc())
+        .limit(10)
+        .all()
+    )
+    top_models = [
+        {"model": m, "total_cost": round(float(c), 6), "calls": n}
+        for m, c, n in model_rows
+    ]
 
     return AuditStatsOut(
-        total_logs=len(logs),
-        today_logs=today_count,
-        success_count=success,
-        failed_count=failed,
+        total_logs=total_logs,
+        today_logs=today_logs,
+        success_count=success_count,
+        failed_count=failed_count,
         action_breakdown=action_breakdown,
         top_models=top_models,
     )

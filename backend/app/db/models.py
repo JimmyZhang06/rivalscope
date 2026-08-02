@@ -37,12 +37,16 @@ class User(Base):
     plan: Mapped[str] = mapped_column(String(20), default="free")  # free / pro / enterprise
     plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     token_version: Mapped[int] = mapped_column(default=0)  # 修改密码/退出所有设备时 +1，旧 token 失效
-    reset_code: Mapped[str] = mapped_column(String(10), default="")  # 忘记密码验证码（演示用）
+    reset_code: Mapped[str] = mapped_column(String(44), default="")  # 忘记密码验证码（Fernet 加密后约 44 字符）
     reset_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     org_id: Mapped[str] = mapped_column(String(32), default="", index=True)  # 所属企业，一人一企，空串表示无
     org_role: Mapped[str] = mapped_column(String(10), default="")  # owner / admin / member，空串表示无企业
     org_monthly_limit: Mapped[int] = mapped_column(default=-1)  # 企业管理员设置的成员月调研额度，-1 不限
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    __table_args__ = (
+        Index("idx_user_org_role", "org_id", "role"),
+    )
 
     tasks: Mapped[list["ResearchTask"]] = relationship(back_populates="user")
     orders: Mapped[list["Order"]] = relationship(back_populates="user", order_by="Order.created_at.desc()")
@@ -58,6 +62,7 @@ class Competitor(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    user_id: Mapped[str] = mapped_column(String(32), default="", index=True)  # 创建人，用于个人用户隔离
     # 空 org_id 表示系统级模板竞品（仅管理员创建）
     name: Mapped[str] = mapped_column(String(200))
     alias: Mapped[str] = mapped_column(String(500), default="")
@@ -173,6 +178,12 @@ class ResearchTask(Base):
     change_summary: Mapped[str] = mapped_column(Text, default="")  # 与上一期报告对比的本期变更 markdown
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    __table_args__ = (
+        Index("idx_research_status_created", "status", "created_at"),
+        Index("idx_research_tracker_status", "tracker_id", "status", "created_at"),
+        Index("idx_research_user_created", "user_id", "created_at"),
+    )
 
     steps: Mapped[list["TaskStep"]] = relationship(
         back_populates="task", cascade="all, delete-orphan", order_by="TaskStep.seq"
@@ -290,6 +301,7 @@ class CompetitorProfile(Base):
     org_id: Mapped[str] = mapped_column(String(32), index=True)
     competitor_id: Mapped[str] = mapped_column(String(32), index=True)
     template_id: Mapped[str] = mapped_column(String(32), index=True)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)  # 创建人，用于个人用户隔离
 
     profile_data: Mapped[str] = mapped_column(Text)
     # JSON: {"dimension_key": {"field_key": "value", ...}, ...}
@@ -299,6 +311,8 @@ class CompetitorProfile(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")
     # draft / reviewed / frozen
     frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    generation_source: Mapped[str] = mapped_column(String(20), default="")
+    # 画像生成来源：research / product_intel / crawl
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
@@ -384,6 +398,10 @@ class Notification(Base):
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
+    __table_args__ = (
+        Index("idx_notif_user_read_created", "user_id", "read", "created_at"),
+    )
+
 
 class ServiceKey(Base):
     """外部服务 API 密钥（Fernet 加密存储）"""
@@ -449,6 +467,8 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     __table_args__ = (
+        Index("idx_audit_user_created", "user_id", "created_at"),
+        Index("idx_audit_org_created", "org_id", "created_at"),
         Index("idx_audit_action_resource", "action", "resource_type"),
         Index("idx_audit_created_at", "created_at"),
     )
@@ -548,6 +568,10 @@ class GraphProject(Base):
     )
     relations: Mapped[list["GraphRelation"]] = relationship(
         back_populates="project", cascade="all, delete-orphan", order_by="GraphRelation.id"
+    )
+
+    __table_args__ = (
+        Index("idx_graph_user_created", "user_id", "created_at"),
     )
 
 

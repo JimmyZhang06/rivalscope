@@ -54,11 +54,14 @@ async def generate_profile(competitor_id: str, template_id: str, user_id: str = 
         system = (
             "你是一名资深竞争情报分析师。基于给出的来源材料，为指定竞品生成结构化画像。\n"
             f"画像模板包含以下维度：\n" + "\n".join(dim_descriptions) + "\n"
-            "要求：\n"
-            "1. 每个维度只输出模板中定义的字段，来源不足的字段标注「信息不足」；\n"
-            "2. 只依据材料中的信息，不得编造，不确定的内容明确标注；\n"
-            '3. 输出 JSON：{"dimensions": {"dimension_key": {"field_key": "value", ...}}, "summary": "一句话总结"}\n'
-            "4. 直接输出 JSON，不要用代码块包裹。"
+            "严格要求：\n"
+            "1. 每个字段的值必须是纯文本字符串，不得使用对象、数组或其他复杂结构；\n"
+            "2. 如果需要列出多项，用顿号（、）分隔成一段话；\n"
+            "3. 只依据材料中的信息，不得编造，来源不足的字段填写「信息不足」；\n"
+            "4. summary 必须是对象格式 {\"key_points\": [\"要点1\", \"要点2\", \"要点3\"], \"data_quality\": \"high|medium|low\"}，"
+            "key_points 包含 3-5 条画像要点，data_quality 根据素材丰富度评估；\n"
+            '5. 输出 JSON：{"dimensions": {"dimension_key": {"field_key": "文本字符串", ...}}, "summary": {"key_points": [...], "data_quality": "..."}}\n'
+            "6. 直接输出 JSON，不要用代码块包裹，不要输出任何其他内容。"
         )
 
         source_materials = "\n".join(
@@ -69,19 +72,43 @@ async def generate_profile(competitor_id: str, template_id: str, user_id: str = 
 
         data = await llm.chat_json(system, user)
         data.setdefault("dimensions", {})
-        data.setdefault("summary", "")
+
+        # Ensure summary is structured (key_points list + data_quality)
+        raw_summary = data.get("summary", "")
+        if isinstance(raw_summary, str):
+            if raw_summary and raw_summary != "信息不足":
+                data["summary"] = {
+                    "key_points": [raw_summary],
+                    "data_quality": "medium",
+                }
+            else:
+                data["summary"] = {
+                    "key_points": [],
+                    "data_quality": "low",
+                }
+        elif isinstance(raw_summary, dict):
+            raw_summary.setdefault("key_points", [])
+            raw_summary.setdefault("data_quality", "medium")
 
         with SessionLocal() as db:
+            profile_data_str = json.dumps(data, ensure_ascii=False)
+            # Record related task/source IDs for traceable report generation
+            data["related_task_ids"] = [t.id for t in tasks]
+            data["related_source_ids"] = [s.id for s in sources[:10]]
+            final_data_str = json.dumps(data, ensure_ascii=False)
+
             profile = CompetitorProfile(
                 org_id=org_id,
+                user_id=user_id,
                 competitor_id=competitor_id,
                 template_id=template_id,
-                profile_data=json.dumps(data, ensure_ascii=False),
+                profile_data=final_data_str,
                 source_refs=json.dumps(
                     [{"url": s.url, "title": s.title, "snippet": s.snippet[:200]} for s in sources[:10]],
                     ensure_ascii=False,
                 ),
                 status="draft",
+                generation_source="research",
             )
             db.add(profile)
             db.commit()

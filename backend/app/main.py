@@ -36,6 +36,36 @@ if not settings.llm_api_key:
 if not settings.tavily_api_key:
     logger.warning("TAVILY_API_KEY 未配置，联网检索将不可用")
 
+# 生产环境安全警告
+_WEAK_JWT_SECRETS = ("", "changeme", "your-secret-key", "admin123", "123456")
+if settings.jwt_secret in _WEAK_JWT_SECRETS or len(settings.jwt_secret) < 32:
+    logger.warning("JWT_SECRET 过短或使用默认值，请立即修改！")
+if not settings.smtp_host and not settings.tavily_api_key:
+    logger.warning("SMTP 和 Tavily 均未配置，邮件推送和联网检索不可用")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """启动阶段：建表校验 + 迁移列 + 播种管理员 + 恢复画像任务 + 启动调度器"""
+    migrate_columns()
+    seed_admin()
+
+    # 审计日志数据库级触发器保护
+    from app.db.audit_triggers import create_audit_triggers
+    create_audit_triggers()
+
+    # 恢复进程重启前未完成的画像提取任务
+    from app.services.profile_extractor import recover_stale_tasks
+    from app.services.scheduler import scheduler_loop, _load_git_hash
+    _load_git_hash()
+    recovered = recover_stale_tasks()
+    if recovered:
+        logger.info("recovered %d stale profile extract tasks on startup", len(recovered))
+
+    scheduler_task = asyncio.create_task(scheduler_loop())
+    yield
+    scheduler_task.cancel()
+
 
 def migrate_columns() -> None:
     """轻量迁移：create_all 不会修改已存在的表，这里补充缺失的列（SQLite ALTER ADD COLUMN）"""
@@ -43,7 +73,8 @@ def migrate_columns() -> None:
         "users": {
             "avatar": "TEXT NOT NULL DEFAULT ''",
             "token_version": "INTEGER NOT NULL DEFAULT 0",
-            "reset_code": "VARCHAR(10) NOT NULL DEFAULT ''",
+            # Fernet 加密后约 44 字符，必须用 VARCHAR(44)
+            "reset_code": "VARCHAR(44) NOT NULL DEFAULT ''",
             "reset_code_expires_at": "DATETIME",
             "org_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "org_role": "VARCHAR(10) NOT NULL DEFAULT ''",
@@ -65,6 +96,10 @@ def migrate_columns() -> None:
         "graph_projects": {
             "report_markdown": "TEXT NOT NULL DEFAULT ''",
         },
+        # ⚠️ 列顺序必须与 ORM 模型 (models.py) 保持一致！
+        # SQLite ALTER TABLE ADD COLUMN 将列追加到表末尾。
+        # 如果此处顺序与模型声明的列顺序不一致，SQLAlchemy C 扩展的
+        # 行处理器会读到错误的数据类型，导致 IndexError 崩溃。
         "competitors": {
             "name": "VARCHAR(200) NOT NULL DEFAULT ''",
             "alias": "VARCHAR(500) NOT NULL DEFAULT ''",
@@ -72,12 +107,13 @@ def migrate_columns() -> None:
             "tech_focus": "TEXT NOT NULL DEFAULT ''",
             "keywords": "TEXT NOT NULL DEFAULT ''",
             "status": "VARCHAR(20) NOT NULL DEFAULT 'active'",
-            "created_at": "DATETIME NOT NULL DEFAULT (datetime('now', 'utc'))",
-            "updated_at": "DATETIME NOT NULL DEFAULT (datetime('now', 'utc'))",
             "crawl_config": "TEXT NOT NULL DEFAULT ''",
-            "last_crawled_at": "DATETIME",
             "crawl_status": "VARCHAR(20) NOT NULL DEFAULT 'idle'",
             "crawl_error": "TEXT NOT NULL DEFAULT ''",
+            "user_id": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "created_at": "DATETIME NOT NULL DEFAULT (datetime('now', 'utc'))",
+            "updated_at": "DATETIME NOT NULL DEFAULT (datetime('now', 'utc'))",
+            "last_crawled_at": "DATETIME",
         },
         "sources": {
             "score": "FLOAT NOT NULL DEFAULT 0",
@@ -106,10 +142,12 @@ def migrate_columns() -> None:
             "org_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "competitor_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "template_id": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "user_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "profile_data": "TEXT NOT NULL DEFAULT ''",
             "source_refs": "TEXT NOT NULL DEFAULT '[]'",
             "status": "VARCHAR(20) NOT NULL DEFAULT 'draft'",
             "frozen_at": "DATETIME",
+            "generation_source": "VARCHAR(20) NOT NULL DEFAULT ''",
         },
         "user_permissions": {
             "user_id": "VARCHAR(32) NOT NULL DEFAULT ''",
@@ -169,11 +207,27 @@ def migrate_columns() -> None:
     }
     with engine.connect() as conn:
         for table, columns in required.items():
-            existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            existing = {row[1]: row[2] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
             for col, ddl in columns.items():
                 if col not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
                     logger.info("migrated: %s.%s", table, col)
+
+        # 回填新增列的 NULL 值为 ''（SQLite ALTER TABLE 的 DEFAULT 不会回填已有行）
+        null_backfills = {
+            "competitors": "user_id",
+            "competitor_profiles": "user_id",
+        }
+        for table, col in null_backfills.items():
+            result = conn.execute(text(f"SELECT COUNT(*) FROM {table} WHERE {col} IS NULL"))
+            null_count = result.scalar()
+            if null_count:
+                conn.execute(text(f"UPDATE {table} SET {col} = '' WHERE {col} IS NULL"))
+                logger.info("backfilled %d NULL %s in %s", null_count, col, table)
+
+        # 列顺序校验：确保物理表列顺序与 ORM 模型一致
+        # 不一致会导致 SQLAlchemy C 扩展崩溃 (IndexError: tuple index out of range)
+        _fix_column_order_if_needed(conn)
         # 审计日志索引（只创建一次）
         existing_indexes = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='index'"))}
         audit_indexes = [
@@ -187,7 +241,91 @@ def migrate_columns() -> None:
         conn.commit()
 
 
-migrate_columns()
+def _fix_column_order_if_needed(conn) -> None:
+    """检测并修复所有表列顺序与 ORM 模型不一致的问题。
+
+    SQLite 的 ALTER TABLE ADD COLUMN 将新列追加到表末尾。如果模型演进过程中
+    列的声明顺序发生变化（例如在模型中插入了新列），物理表列顺序将与 ORM 模型
+    声明顺序不一致。SQLAlchemy C 扩展的行处理器按模型顺序取字段 → 读到错误的
+    数据类型 → IndexError 崩溃。此函数在启动时自动检测并修复。
+
+    同时检测列类型不匹配（如 reset_code VARCHAR(10) vs String(44)），
+    在类型不匹配时也触发重建。
+    """
+    from app.db.models import Base
+
+    for model in Base.registry.mappers:
+        cls = model.class_
+        if not hasattr(cls, '__tablename__'):
+            continue
+        table_name = cls.__tablename__
+        model_cols = [c.name for c in cls.__table__.columns]
+        actual_rows = conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+        actual_cols = [row[1] for row in actual_rows]
+
+        # 检查列是否匹配（名称 + 顺序）
+        if model_cols == actual_cols:
+            continue
+
+        # 即使列名相同，也检查是否有类型不匹配
+        model_types = {c.name: str(c.type) for c in cls.__table__.columns}
+        actual_types = {row[1]: row[2] for row in actual_rows}
+        type_mismatch = any(
+            model_types.get(c) and actual_types.get(c)
+            and model_types[c].upper() != actual_types[c].upper()
+            for c in model_cols
+            if c in actual_types
+        )
+
+        if model_cols == actual_cols and not type_mismatch:
+            continue
+
+        logger.warning("Column mismatch in %s: model=%s, actual=%s",
+                       table_name, model_cols, actual_cols)
+        logger.info("Rebuilding %s to fix column order/type...", table_name)
+
+        # 用 ORM 模型定义的列顺序重建表
+        col_defs = []
+        for c in cls.__table__.columns:
+            type_str = str(c.type.compile())
+            col_defs.append(f"{c.name} {type_str}")
+
+        create_sql = f"CREATE TABLE {table_name}_new ({', '.join(col_defs)})"
+        conn.execute(text(create_sql))
+
+        # 复制数据（只复制两边都有的列）
+        existing_in_both = [c for c in model_cols if c in set(actual_cols)]
+        src_cols = ", ".join(f'"{c}"' for c in existing_in_both)
+        dst_cols = ", ".join(existing_in_both)
+        conn.execute(text(
+            f"INSERT INTO {table_name}_new ({dst_cols}) SELECT {src_cols} FROM {table_name}"
+        ))
+
+        conn.execute(text(f"DROP TABLE {table_name}"))
+        conn.execute(text(f"ALTER TABLE {table_name}_new RENAME TO {table_name}"))
+
+        # 重建该表的索引
+        indexes = conn.execute(text(
+            f"SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='{table_name}'"
+        )).fetchall()
+        for idx_name, idx_sql in indexes:
+            if idx_sql:
+                try:
+                    conn.execute(text(idx_sql))
+                except Exception:
+                    pass
+            elif idx_name and not idx_name.startswith("sqlite_"):
+                # Rebuild without SQL (for auto-created indexes)
+                cols_in_idx = conn.execute(text(
+                    f"PRAGMA index_info({idx_name})"
+                )).fetchall()
+                if cols_in_idx:
+                    idx_cols = ", ".join(r[2] for r in cols_in_idx)
+                    conn.execute(text(
+                        f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table_name} ({idx_cols})"
+                    ))
+
+        logger.info("Fixed column order in %s", table_name)
 
 
 def seed_admin() -> None:
@@ -209,30 +347,14 @@ def seed_admin() -> None:
             logger.info("已创建默认管理员：admin@example.com / Admin123456")
 
 
-seed_admin()
-
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    """启动定时追踪调度器 + 恢复未完成的画像提取任务"""
-    from app.services.profile_extractor import recover_stale_tasks
-    from app.services.scheduler import scheduler_loop
-
-    # 恢复进程重启前未完成的画像提取任务
-    recovered = recover_stale_tasks()
-    if recovered:
-        logger.info("recovered %d stale profile extract tasks on startup", len(recovered))
-
-    scheduler_task = asyncio.create_task(scheduler_loop())
-    yield
-    scheduler_task.cancel()
-
-
 app = FastAPI(title="竞品调研 Agent", version="0.3.0", lifespan=lifespan)
+
+settings = get_settings()
+allow_origins = [o.strip() for o in settings.frontend_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

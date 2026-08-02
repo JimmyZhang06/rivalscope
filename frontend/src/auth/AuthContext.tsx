@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { ApiError, fetchMe, login as apiLogin, register as apiRegister, request, tokenStore } from '../api/client'
+import { ApiError, fetchMe, login as apiLogin, register as apiRegister, request, saveTokens, tokenStore, tryProactiveRefresh } from '../api/client'
 import type { User } from '../api/types'
 
 interface AuthState {
@@ -25,26 +25,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 启动时如有 token 则尝试恢复会话
   useEffect(() => {
-    if (!tokenStore.get()) {
+    const token = tokenStore.get()
+    if (!token) {
       setReady(true)
       return
     }
+
+    // 尝试恢复会话：access token 有效则直接登录，过期则尝试 refresh
     fetchMe()
       .then(setUser)
-      .catch(() => tokenStore.clear())
+      .catch(async () => {
+        // access token 失效，尝试 refresh
+        const refreshed = await tryProactiveRefresh().catch(() => false)
+        if (!refreshed) {
+          tokenStore.clear()
+          return
+        }
+        // refresh 成功，用新 token 重试
+        try {
+          setUser(await fetchMe())
+        } catch {
+          tokenStore.clear()
+        }
+      })
       .finally(() => setReady(true))
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
     const resp = await apiLogin(email, password)
-    tokenStore.set(resp.access_token)
+    saveTokens(resp)
     setUser(resp.user)
     return resp.user
   }, [])
 
   const register = useCallback(async (email: string, password: string, nickname: string) => {
     const resp = await apiRegister(email, password, nickname)
-    tokenStore.set(resp.access_token)
+    saveTokens(resp)
     setUser(resp.user)
     return resp.user
   }, [])
@@ -52,6 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     tokenStore.clear()
     setUser(null)
+    // Clear all persisted zustand stores to prevent data leakage
+    const STORE_KEYS = ['task-store', 'competitor-store', 'profile-store', 'graph-store', 'tracker-store']
+    STORE_KEYS.forEach(key => localStorage.removeItem(key))
+    // Clear any remaining transient state
+    sessionStorage.clear()
   }, [])
 
   const refreshUser = useCallback(async () => {

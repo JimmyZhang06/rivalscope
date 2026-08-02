@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus, Pencil, Trash2, Building2, Globe, RefreshCw, ChevronDown, ChevronUp, FileText, AlertCircle, Sparkles } from 'lucide-react'
 import { createCompetitor, deleteCompetitor, getCrawlStatus, generateProfileFromCrawl, getGenerateStatus, listCrawlPages, startCrawl, updateCompetitor } from '../../api/client'
 import type { Competitor, CrawlTask, CompetitorPage, GenerateTaskStatus } from '../../api/types'
@@ -67,6 +67,8 @@ export default function CompetitorsPage() {
   const [keywords, setKeywords] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleteId, setDeleteId] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
 
   // 从 store 读取
   const items = useCompetitorStore((s) => s.items)
@@ -76,6 +78,21 @@ export default function CompetitorsPage() {
 
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+
+  const filteredItems = useMemo(() => {
+    let list = items
+    if (statusFilter !== 'all') list = list.filter((c) => c.status === statusFilter)
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      list = list.filter((c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.alias && c.alias.toLowerCase().includes(q)) ||
+        c.keywords.some((kw) => kw.toLowerCase().includes(q)) ||
+        (c.tech_focus && c.tech_focus.toLowerCase().includes(q))
+      )
+    }
+    return list
+  }, [items, statusFilter, search])
 
   // 爬取展开状态：competitor_id -> boolean
   const [expandedCrawl, setExpandedCrawl] = useState<Record<string, boolean>>({})
@@ -308,27 +325,50 @@ export default function CompetitorsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">竞品管理</h1>
           <p className="mt-1 text-sm text-gray-500">管理监测竞品名单、别名、官网与技术主题</p>
         </div>
-        <button
-          onClick={() => { resetForm(); setShowForm(true) }}
-          className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" /> 新增竞品
-        </button>
+        <div className="flex items-center gap-3">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索竞品名称…"
+            className="w-48 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          />
+          <button
+            onClick={() => { resetForm(); setShowForm(true) }}
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> 新增竞品
+          </button>
+        </div>
       </div>
 
       {notice && <p className="mt-4 rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-700">{notice}</p>}
       {error && <p className="mt-4 rounded-md bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
+      {/* 状态筛选 */}
+      <div className="mt-3 flex w-fit gap-1 rounded-lg bg-gray-100 p-1">
+        {['all', 'active', 'paused', 'archived'].map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${
+              statusFilter === s ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {s === 'all' ? '全部' : STATUS_LABEL[s] || s}
+          </button>
+        ))}
+      </div>
+
       {storeLoading ? (
         <p className="mt-8 text-center text-sm text-gray-400">加载中…</p>
-      ) : items.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <div className="mt-12 rounded-lg border border-dashed border-gray-300 py-12 text-center">
           <Building2 className="mx-auto h-10 w-10 text-gray-300" />
-          <p className="mt-3 text-sm text-gray-400">还没有竞品，点击上方按钮添加</p>
+          <p className="mt-3 text-sm text-gray-400">{search || statusFilter !== 'all' ? '没有匹配的竞品' : '还没有竞品，点击上方按钮添加'}</p>
         </div>
       ) : (
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((c) => (
+          {filteredItems.map((c) => (
             <div key={c.id} className="rounded-lg border border-gray-200 bg-white shadow-sm">
               <div className="p-5">
                 <div className="flex items-start justify-between">

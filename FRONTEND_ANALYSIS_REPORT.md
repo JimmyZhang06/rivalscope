@@ -1,7 +1,6 @@
 # 竞品调研 Agent — 前端完整分析与改造方案
 
-> 分析日期：2026-08-02 | 分支：agent-v5 | 核查方式：逐文件回查验证
-> **版本**：v5.1 — 爬虫多语言站点修复
+> 版本：v5.1.0 | 分析日期：2026-08-02 | 分支：agent-v5 | 核查方式：逐文件回查验证
 
 ---
 
@@ -67,20 +66,32 @@
 | 14 | 管理后台 | `/app/admin` | 后台管理（管理员可见） |
 | 15 | 审计日志 | `/app/admin/audit-logs` | 审计日志（管理员可见） |
 
-> 入口定义在 `AppLayout.tsx:27-41`（平铺数组），14/15 通过 `user?.role === 'admin'` 条件渲染。
-
-### 1.3 技术栈
+### 1.3 当前技术栈
 
 | 维度 | 现状 |
 |------|------|
-| 状态管理 | 无外部库。纯 React Context（仅 `AuthContext`）+ 页面内 `useState` |
-| 数据获取 | 每个页面独立 `useEffect` → `fetch`。无缓存层 |
-| 实时更新 | SSE（TaskDetailPage）+ `setInterval` 轮询（3-5 秒） |
+| 状态管理 | **Zustand**（5 个 store，带 `persist` 中间件持久化到 localStorage） |
+| 数据获取 | 页面通过 Zustand store 读取数据，store 内调用 API |
+| 实时更新 | SSE（TaskDetailPage）+ `setInterval` 轮询（3-5 秒），轮询调用 `store.reload()` |
 | 路由 | React Router v6，嵌套路由 |
 | UI | Tailwind CSS + Lucide 图标 + react-markdown + ReactFlow |
 | 后端对齐 | 79/83 端点已接入；3 个未用 + 1 个前端死调用 |
 
-### 1.4 后端对齐缺口
+### 1.4 Zustand Store 落地情况
+
+已创建 5 个 store，6 个页面已接入：
+
+| Store | 文件 | 持久化 key | 已接入页面 |
+|-------|------|-----------|-----------|
+| `useTaskStore` | `stores/taskStore.ts` | `task-store` | TasksPage |
+| `useCompetitorStore` | `stores/competitorStore.ts` | `competitor-store` | CompetitorsPage |
+| `useProfileStore` | `stores/profileStore.ts` | `profile-store` | ProfilesPage, ComparisonPage, ProfileTasksPage |
+| `useGraphStore` | `stores/graphStore.ts` | `graph-store` | GraphPage |
+| `useTrackerStore` | `stores/trackerStore.ts` | `tracker-store` | TrackersPage |
+
+**未接入 store 的页面**：DashboardPage、NewResearchPage、TaskDetailPage、TrackerDetailPage、ProfileDetailPage、GraphDetailPage、AssistantPage、PricingPage、AccountPage、AdminPage、AuditLogsPage — 这些页面仍用页面内 `useState` + `useEffect` 直接调用 API。
+
+### 1.5 后端对齐缺口
 
 | 端点 | 位置 | 状态 |
 |------|------|------|
@@ -88,7 +99,7 @@
 | `GET /api/admin/audit-logs/export` | `admin.py:275` | 已实现（CSV，10000 条上限），前端未用 |
 | `GET /api/admin/execution-snapshots` | 无路由 | 前端 `client.ts:473` 有调用，后端无路由，DB 表已定义（`main.py:137`），半成品 |
 
-### 1.5 现有组件清单（27 个）
+### 1.6 现有组件清单（28 个）
 
 `AssistantChat`、`AssistantWidget`、`AuthShell`、`BackToTop`、`ChartCard`、`ConfirmDialog`、`ErrorBoundary`、`NotificationBell`、`OrgPanel`、`PhaseStepper`、`PlanBadge`、`ProfileGenProgress`、`QuotaErrorBanner`、`ReadingProgress`、`ReportToc`、`ReportView`、`RunHistoryItem`、`ScoreBars`、`ScoreRadar`、`ScoreTrend`、`Skeleton`（未使用）、`SourceCard`、`SourceDrawer`、`StatusBadge`、`StepTimeline`、`SwotGrid`、`TierBadge`、`TrackerForm`
 
@@ -98,79 +109,65 @@
 
 ### 2.1 DashboardPage（仪表盘）
 
-**功能**：4 个统计卡片（套餐、额度、完成数、进行中）+ 最近 5 条任务列表。单次 API 调用（`getQuota` + `listResearch`），无轮询。
-
+**功能**：4 个统计卡片（套餐、额度、完成数、进行中）+ 最近 5 条调研列表。直接调用 `getQuota()` + `listResearch()`，未接入 store。
 **评价**：功能完整但单薄。没有趋势图，没有快速操作区。
 
 ### 2.2 NewResearchPage（新建调研）
 
-**功能**：产品名（必填）+ 竞品 + 重点 + 时效 → 创建 → 跳转详情页。额度检查、路由 `location.state` 秒传任务概要避免加载闪屏。
-
+**功能**：填写产品名、竞品、重点、时效 → 创建任务 → 跳转详情页。额度检查、路由 `location.state` 秒传任务概要避免加载闪屏。
 **评价**：完善。
 
-### 2.3 TasksPage（调研记录）— 需要改进
+### 2.3 TasksPage（调研记录）— 已接入 Store，仍缺筛选
 
-**功能**：列表（3 秒轮询）+ 筛选（全部/我的/成员）+ 删除确认。
-
-**缺失**：
-- 无搜索框（按产品名称/竞品搜索）
+**功能**：通过 `useTaskStore` 读取任务列表。列表（3 秒轮询，轮询调用 `store.reload()`）+ 筛选（全部/我的/成员）+ 删除确认。
+**已改善**：数据通过 Zustand store 管理，切换页面返回时 store 数据仍在（persist 持久化），无需重新请求。
+**仍缺失**：
+- 无搜索框
 - 无状态筛选（只看进行中/已完成/失败）
-- 无分页（量大时撑爆页面）
-- 无排序
-
-**代码证据**：`Filter` 类型仅 `'all' | 'mine' | 'others'`（`TasksPage.tsx:13`）；`RUNNING` 集合定义了但仅用于轮询指示器，未用于筛选（`TasksPage.tsx:11`）。
+- 无分页
 
 ### 2.4 TaskDetailPage（调研详情）
 
-**功能**：最复杂的页面（875 行）。运行中展示 SSE 实时进度（PhaseStepper + StepTimeline + 计时器）；完成后 3 个 Tab：
-- **调研报告**：封面头 + Markdown 渲染（引用角标）+ TOC + 追问（AI Q&A，不持久化）
-- **数据洞察**：结论 + 雷达图 + 评分柱状图 + SWOT + 定位卡片 + 事件时间线
-- **信息来源**：统计卡 + 可信度分布 + 新鲜度 + 层级/维度筛选 + 排序 + SourceCard 网格 + SourceDrawer
-
-**附加**：导出（PDF/Word/MD/打印）、邮件发送、执行过程折叠展开。
-
-**评价**：旗舰页面，功能完善。
+**功能**：最复杂的页面（875 行）。运行中展示 SSE 实时进度；完成后 3 个 Tab（报告/洞察/来源）+ 导出 + 邮件发送 + 追问。
+**评价**：旗舰页面，功能完善。未接入 store（详情页不需要）。
 
 ### 2.5 TrackersPage + TrackerDetailPage（定时追踪）
 
 **功能**：
-- **列表**：卡片 + 启用/暂停 toggle + 立即运行 + 编辑 + 删除。「全部/我创建」筛选。5 秒轮询（仅运行中时）。无 org 用户看到空状态引导。
-- **详情**：评分趋势图（≥2 期渲染）+ 运行历史时间线。每期有「查看完整报告 →」链接（`RunHistoryItem.tsx:46`，跳转 `/app/tasks/{run.id}`）。
+- **列表**：通过 `useTrackerStore` 读取。卡片 + 启用/暂停 toggle + 立即运行 + 编辑 + 删除。「全部/我创建」筛选。5 秒轮询（仅运行中时）。
+- **详情**：评分趋势图（≥2 期渲染）+ 运行历史时间线。每期有「查看完整报告 →」链接（`RunHistoryItem.tsx:46`）。
 
-**缺失**：
+**已改善**：已接入 `useTrackerStore`，数据持久化。
+
+**仍缺失**：
 - 无按频率筛选（只看每日/每周/每月）
 - 无搜索
 
-### 2.6 CompetitorsPage（竞品管理）— 需要拆分
+### 2.6 CompetitorsPage（竞品管理）— 已接入 Store，仍缺筛选
 
-**功能**：卡片式 CRUD + 展开式爬取详情 + 批量画像生成。
-
-**内部状态**：9 个 useState（items、templates、expandedCrawl、crawling、crawlTasks、crawlPages、pollTimers、genTasks、genPollTimers），537 行单体。
-
-**爬取交互**：点击展开 → `getCrawlStatus` + `listCrawlPages` → 2 秒轮询 → 完成后自动收起刷新。
-
-**画像生成**：Sparkles 按钮 → `generateProfileFromCrawl`（异步）→ 2 秒轮询 `getGenerateStatus` → 完成后刷新。
-
-**缺失**：
-- 无状态筛选（`STATUS_BADGE`/`STATUS_LABEL` 已定义但仅用于卡片徽章，`CompetitorsPage.tsx:10-20`）
+**功能**：通过 `useCompetitorStore` 读取竞品列表和模板。卡片式 CRUD + 展开式爬取详情 + 批量画像生成。
+**内部状态**：7 个 useState（showForm、editing、submitting、name/alias/website/techFocus/keywords、confirmOpen/deleteId、expandedCrawl/crawling/crawlTasks/crawlPages/pollTimers、genTasks/genPollTimers）。
+**已改善**：基础数据（items、templates）从 store 读取，不再自己管理。
+**仍缺失**：
+- 无状态筛选（`STATUS_BADGE`/`STATUS_LABEL` 已定义但仅用于卡片徽章）
 - 无搜索
-- 内联展开在竞品多时页面过长
+- 内联展开的爬取页面列表在竞品多时体验差
 
 ### 2.7 ProfileTemplatesPage（画像模板）
 
 **功能**：模板 CRUD + 冻结/解冻。JSON 文本域编辑维度。
+**评价**：基本完善。JSON 编辑器门槛高。
 
-**缺失**：可视化编辑器（非技术用户难以理解 JSON 结构）。
+### 2.8 ProfilesPage（竞品画像）— 已接入 Store，仍有 Bug
 
-### 2.8 ProfilesPage（竞品画像）— 有 Bug
-
-**功能**：顶部生成器 + 下方画像卡片列表。
-
-**已确认 Bug**（`ProfilesPage.tsx:58-71`）：
+**功能**：通过 `useProfileStore` 读取 templates/competitors/profiles。顶部生成器 + 下方画像卡片列表。
+**已确认 Bug 仍然存在**（`ProfilesPage.tsx:47-60`）：
 
 ```tsx
-// handleGenerateFromCrawl — 实际调用的是同步接口
-await generateProfileApi({ competitor_id: selectedCompetitor, template_id: selectedTemplate })
+const handleGenerateFromCrawl = async () => {
+  await generateProfileApi({ competitor_id: selectedCompetitor, template_id: selectedTemplate })
+  // ↑ 调的是同步接口，不是异步的 generateProfileFromCrawl
+}
 ```
 
 后端两个端点的区别：
@@ -180,96 +177,85 @@ await generateProfileApi({ competitor_id: selectedCompetitor, template_id: selec
 | `POST /api/profiles/generate` | 201 + 完整画像 | 同步 `await generate_profile()` |
 | `POST /api/profiles/generate-from-crawl` | 202 + `{task_id, status}` | 异步后台任务，需轮询 |
 
-"基于爬取页面"按钮调的是同步接口，未利用爬取数据，也无进度跟踪。
-
-**缺失**：画像卡片无摘要预览。
+**仍缺失**：画像卡片无摘要预览。
 
 ### 2.9 ProfileDetailPage（画像详情）
 
 **功能**：维度数据展示 + 来源引用 + 冻结/重新生成/加入对比。
+**评价**：完善。
 
-**评价**：完善。一次性加载全部 profiles + competitors + templates 后本地查找。
+### 2.10 ComparisonPage（横向对比）— 已接入 Store
 
-### 2.10 ComparisonPage（横向对比）
-
-**功能**：选择模板 → 选 2+ 画像 → 对比矩阵表。
-
-**缺失**：无可视化图表（`ScoreRadar`/`ScoreBars` 已存在但未复用）。无导出。
+**功能**：通过 `useProfileStore` 读取 templates/profiles/competitors。选择模板 → 选 2+ 画像 → 对比矩阵表。
+**已改善**：数据从 store 读取。
+**仍缺失**：无可视化图表（`ScoreRadar`/`ScoreBars` 已存在但未复用）。无导出。
 
 ### 2.11 ProfileTasksPage（画像提取任务）
 
-**功能**：3 秒轮询监控异步画像提取任务状态。已完成任务可点击跳转。
-
-**缺失**：无「重新生成」「取消」按钮。
+**功能**：3 秒轮询监控异步画像提取任务状态。通过 `useProfileStore` 读取 competitors/templates。
+**评价**：功能单一但实用。缺少「重新生成」「取消」按钮。
 
 ### 2.12 GraphPage + GraphDetailPage（关系图谱）
 
-**功能**：列表 + ReactFlow 交互图谱 + 详情抽屉 + 分析报告抽屉 + 纳入追踪。
-
+**功能**：列表通过 `useGraphStore` 读取 + ReactFlow 交互图谱 + 详情抽屉 + 分析报告抽屉 + 纳入追踪。
 **评价**：非常完善。
 
 ### 2.13 AssistantPage（AI 助手）
 
 **功能**：左侧会话列表 + 右侧对话面板。
-
-**缺失**：移动端（`< md`）隐藏侧栏，无法新建/切换会话。
+**缺失**：移动端隐藏侧栏，无法新建/切换会话。
 
 ### 2.14 AccountPage（个人中心）
 
-**功能**：4 个 Tab（概览/安全/企业/订单）。URL 参数 `?tab=` 驱动。
-
+**功能**：4 个 Tab（概览/安全/企业/订单）。未接入 store。
 **评价**：功能完善。OrgPanel 嵌入企业 Tab，内容较重。
 
 ### 2.15 AdminPage（管理后台）
 
-**功能**：5 统计卡片 + 用户管理表格（搜索/分页/改套餐/改角色）+ 企业管理表格（搜索/分页/改套餐）。
-
-**Pagination 组件**：AdminPage 内定义了一套（第 13-39 行），用户表和企业表共用。`AuditLogsPage` 内有另一套独立实现（各约 26 行，代码几乎相同）。
-
-**缺失**：无审计日志入口（侧栏有但 AdminPage 内无引导）。
+**功能**：5 统计卡片 + 用户管理表格（搜索/分页/改套餐/改角色）+ 企业管理表格（搜索/分页/改套餐）。Pagination 组件在 AdminPage 内定义一套，AuditLogsPage 内有另一套独立实现。
+**缺失**：无审计日志入口。
 
 ### 2.16 AuditLogsPage（审计日志）
 
 **功能**：筛选栏 + 分页表格（20 条/页）。
-
 **未接入**：后端 `/audit-logs/stats` 和 `/audit-logs/export` 均未使用。
 
 ---
 
 ## 三、发现的问题
 
-### P0 — Bug 与阻塞性问题
+### P0 — Bug
 
 | # | 问题 | 位置 | 证据 |
 |---|------|------|------|
-| 1 | "基于爬取页面"按钮调错 API | `ProfilesPage.tsx:63` | 调用 `generateProfileApi`（同步 201）而非 `generateProfileFromCrawl`（异步 202） |
-| 2 | TasksPage 无搜索、无状态筛选、无分页 | `TasksPage.tsx:13-45` | `Filter` 类型仅 3 个值，无 `TaskStatus` 筛选 |
-| 3 | CompetitorsPage 无状态筛选、无搜索 | `CompetitorsPage.tsx:10-20` | `STATUS_BADGE` 仅用于卡片展示，无筛选逻辑 |
+| 1 | "基于爬取页面"按钮调错 API | `ProfilesPage.tsx:52` | 调用 `generateProfileApi`（同步 201）而非 `generateProfileFromCrawl`（异步 202）。**Zustand 迁移时未修复此 bug** |
 
-### P1 — 体验明显不足
+### P1 — 功能缺失
 
 | # | 问题 | 位置 | 说明 |
 |---|------|------|------|
-| 4 | ComparisonPage 仅表格无可视化 | `ComparisonPage.tsx:126-153` | `ScoreRadar`/`ScoreBars` 组件已存在但未复用 |
-| 5 | ProfilesPage 卡片无摘要预览 | `ProfilesPage.tsx:148-174` | 卡片只显示名称/模板/状态/时间 |
-| 6 | ProfileTemplatesPage JSON 编辑门槛高 | `ProfileTemplatesPage.tsx:151` | 纯文本域编辑 JSON |
-| 7 | AdminPage 无审计日志入口 | `AdminPage.tsx` | 全页无跳转链接 |
+| 2 | TasksPage 无状态筛选 | `TasksPage.tsx` | 已有「全部/我的/成员」，缺「进行中/已完成/失败」 |
+| 3 | CompetitorsPage 无状态筛选、无搜索 | `CompetitorsPage.tsx` | `STATUS_BADGE` 已定义但未用于筛选 |
+| 4 | ComparisonPage 仅表格无可视化 | `ComparisonPage.tsx:127-155` | `ScoreRadar`/`ScoreBars` 已存在但未复用 |
+| 5 | ProfilesPage 卡片无摘要预览 | `ProfilesPage.tsx` | 卡片只显示名称/模板/状态/时间 |
+| 6 | AdminPage 无审计日志入口 | `AdminPage.tsx` | 全页无跳转链接 |
 
 ### P2 — 体验优化
 
 | # | 问题 | 位置 |
 |---|------|------|
-| 8 | 侧栏 15 入口平铺无分组 | `AppLayout.tsx:27-41` |
-| 9 | DashboardPage 无趋势图 | `DashboardPage.tsx` |
-| 10 | ProfileTasksPage 无操作按钮 | `ProfileTasksPage.tsx` |
-| 11 | AuditLogsPage 导出未接 | `AuditLogsPage.tsx` |
-| 12 | Skeleton 组件定义了但未使用 | `components/Skeleton.tsx` |
+| 7 | 侧栏 15 入口平铺无分组 | `AppLayout.tsx:27-41` |
+| 8 | TrackersPage 无频率筛选 | `TrackersPage.tsx` |
+| 9 | ProfileTasksPage 无操作按钮 | `ProfileTasksPage.tsx` |
+| 10 | AuditLogsPage 导出未接 | `AuditLogsPage.tsx` |
+| 11 | Skeleton 组件定义了但未使用 | `components/Skeleton.tsx` |
 
 ### P3 — 架构层面
 
 | # | 问题 | 说明 |
 |---|------|------|
-| 13 | 无缓存层 | 每次导航重新请求，3-5s 轮询频繁 |
+| 12 | 未接入 store 的页面 | Dashboard、TaskDetail、Account、Admin、AuditLogs 等仍用 useState |
+| 13 | Pagination 组件重复 | AdminPage 和 AuditLogsPage 各有一套独立实现（~26 行/处） |
 | 14 | 移动端适配 | 侧栏固定 14rem，AI 助手移动端隐藏侧栏 |
 | 15 | 静默失败 | 多处 `.catch(() => {})` |
 
@@ -285,20 +271,19 @@ await generateProfileApi({ competitor_id: selectedCompetitor, template_id: selec
 ### 设计原则
 
 1. **每次改动独立可回滚** — 不搞大爆炸重写
-2. **优先复用已有组件** — `ScoreRadar`、`ScoreBars`、`Skeleton`、`ConfirmDialog`、`ChartCard` 都已写好
-3. **先补缺口再重构结构** — 先修 bug、补功能，再拆组件、加缓存
+2. **在 Zustand 迁移基础上继续推进** — store 已建立，后续页面继续接入
+3. **优先复用已有组件** — `ScoreRadar`、`ScoreBars`、`Skeleton`、`ConfirmDialog`、`ChartCard` 都已写好
+4. **先补缺口再重构结构** — 先修 bug、补功能，再拆组件
 
 ---
 
-## Phase 0：快速修复（~2 小时，6 项）
-
-所有改动各自独立，可同时合入。
+## Phase 0：快速修复（~1.5 小时，5 项）
 
 ### 0.1 修复 ProfilesPage "基于爬取页面" Bug
 
-**改**：`frontend/src/pages/app/ProfilesPage.tsx:58-71`
+**改**：`frontend/src/pages/app/ProfilesPage.tsx:47-60`
 
-将 `handleGenerateFromCrawl` 从调用 `generateProfileApi`（同步 201）改为调用 `generateProfileFromCrawl`（异步 202），并加入轮询逻辑。模式和 `CompetitorsPage` 的 `handleQuickGenerate`（`CompetitorsPage.tsx:190-242`）完全一致，已有成熟代码可复用。
+将 `handleGenerateFromCrawl` 从调用 `generateProfileApi`（同步 201）改为调用 `generateProfileFromCrawl`（异步 202），并加入轮询逻辑。模式和 `CompetitorsPage` 的 `handleQuickGenerate`（`CompetitorsPage.tsx:180-232`）完全一致。
 
 **关键改动**：
 - 调用 `generateProfileFromCrawl` 获取 `task_id`
@@ -310,13 +295,9 @@ await generateProfileApi({ competitor_id: selectedCompetitor, template_id: selec
 
 **改**：`frontend/src/pages/app/TasksPage.tsx`
 
-在现有「全部/我的/成员」筛选按钮组下方，增加状态筛选 pill 行：
+在现有「全部/我的/成员」筛选按钮组下方，增加状态筛选 pill 行：`全部 | 进行中 | 已完成 | 失败`。
 
-```
-全部 | 进行中 | 已完成 | 失败
-```
-
-复用现有按钮组样式（`bg-gray-100 p-1` 容器 + `rounded-md px-4 py-1.5` 按钮）。新增 `StatusFilter` 类型和 `statusFilter` state，筛选逻辑：
+复用现有按钮组样式。新增 `statusFilter` state（`'all' | 'running' | 'completed' | 'failed'`），筛选逻辑：
 
 ```tsx
 const statusFiltered = visible.filter(t => {
@@ -334,6 +315,7 @@ const statusFiltered = visible.filter(t => {
 - 标题行右侧增加搜索输入框（`placeholder="搜索竞品名称…"`），绑定 `search` state
 - 卡片列表上方增加状态筛选 pill：`全部 | 启用中 | 已暂停 | 已归档`
 - 筛选逻辑：`items.filter(c => statusFilter === 'all' || c.status === statusFilter).filter(c => matchSearch(c))`
+- 搜索匹配 `name`、`alias`、`keywords`（`keywords.some(kw => kw.includes(query))`）、`tech_focus`
 
 ### 0.4 侧栏导航分组
 
@@ -343,41 +325,22 @@ const statusFiltered = visible.filter(t => {
 
 ```tsx
 const NAV_GROUPS = [
-  { label: '调研', items: [
-    { to: '/app', label: '仪表盘', icon: LayoutDashboard, end: true },
-    { to: '/app/new', label: '新建调研', icon: Plus },
-    { to: '/app/tasks', label: '调研记录', icon: FileText },
-  ]},
-  { label: '追踪', items: [
-    { to: '/app/trackers', label: '定时追踪', icon: Clock },
-    { to: '/app/competitors', label: '竞品管理', icon: Building2 },
-  ]},
-  { label: '画像', items: [
-    { to: '/app/profiles/templates', label: '画像模板', icon: Layers, end: true },
-    { to: '/app/profiles', label: '竞品画像', icon: Sparkles, end: true },
-    { to: '/app/profiles/tasks', label: '画像任务', icon: ClipboardList },
-    { to: '/app/profiles/compare', label: '横向对比', icon: GitCompare },
-  ]},
-  { label: '图谱', items: [
-    { to: '/app/graph', label: '关系图谱', icon: Network },
-  ]},
-  { label: '助手', items: [
-    { to: '/app/assistant', label: 'AI 助手', icon: Bot },
-  ]},
-  { label: '系统', items: [
-    { to: '/app/pricing', label: '套餐升级', icon: Gem },
-    { to: '/app/account', label: '个人中心', icon: User },
-  ]},
+  { label: '调研', items: [仪表盘, 新建调研, 调研记录] },
+  { label: '追踪', items: [定时追踪, 竞品管理] },
+  { label: '画像', items: [画像模板, 竞品画像, 画像任务, 横向对比] },
+  { label: '图谱', items: [关系图谱] },
+  { label: '助手', items: [AI 助手] },
+  { label: '系统', items: [套餐升级, 个人中心] },
 ]
 ```
 
-渲染时每组先渲染 `<p className="px-3 text-xs text-slate-500 mt-4 mb-1 font-medium">{label}</p>`，然后 map items。管理员入口单独放在最底部。
+渲染时每组先渲染分组标题，然后 map items。管理员入口单独放在最底部。
 
 ### 0.5 AuditLogsPage 导出 CSV
 
 **改**：`frontend/src/pages/app/AuditLogsPage.tsx` + `frontend/src/api/client.ts`
 
-1. `client.ts` 新增 `exportAuditLogs` 函数 — 因为 CSV 返回的是 `text/csv` 而非 JSON，不能走通用 `request()`（它会 `resp.json()` 解析），需要单独处理：
+1. `client.ts` 新增 `exportAuditLogs` 函数 — CSV 返回 `text/csv` 而非 JSON，不能走通用 `request()`（会调 `resp.json()` 抛错），需独立 `fetch` + `blob`：
 
 ```ts
 export function exportAuditLogs(params: {
@@ -388,21 +351,14 @@ export function exportAuditLogs(params: {
   const token = tokenStore.get()
   return fetch(`/api/admin/audit-logs/export?${p}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
-  }).then(r => r.blob())
+  }).then(r => {
+    if (!r.ok) throw new Error('导出失败')
+    return r.blob()
+  })
 }
 ```
 
-2. `AuditLogsPage` 筛选栏右侧添加「导出 CSV」按钮，点击后用 `URL.createObjectURL(blob)` + `<a download>` 触发下载。
-
-### 0.6 Skeleton 组件投入使用
-
-**改**：`TasksPage.tsx`、`CompetitorsPage.tsx`、`TrackersPage.tsx`、`ProfilesPage.tsx`、`AdminPage.tsx`、`AuditLogsPage.tsx`
-
-将各页面 `加载中…` 文本替换为：
-- 列表页 → `<ListSkeleton count={5} />`
-- 卡片页 → 多列 `<CardSkeleton />`
-
-`Skeleton.tsx` 中两个组件已定义好，直接导入。
+2. `AuditLogsPage` 筛选栏右侧添加「导出 CSV」按钮，点击后用 `URL.createObjectURL(blob)` + `<a download="audit-logs-{date}.csv">` 触发下载。
 
 ---
 
@@ -412,7 +368,7 @@ export function exportAuditLogs(params: {
 
 **新建**：`frontend/src/components/Pagination.tsx`
 
-取 AdminPage（第 13-39 行）和 AuditLogsPage 两套实现的并集，支持 `page`、`totalPages`、`total`、`onChange`，以及可选的 `pageSize` 显示。
+取 AdminPage（第 13-39 行）和 AuditLogsPage 两套实现的并集，支持 `page`、`totalPages`、`total`、`onChange`。
 
 **删除**：AdminPage 和 AuditLogsPage 内的两套 Pagination 副本。
 
@@ -422,11 +378,11 @@ export function exportAuditLogs(params: {
 - `frontend/src/components/CompetitorCard.tsx` — 单张竞品卡片
 - `frontend/src/components/CrawlPanel.tsx` — 爬取进度展开区
 
-**修改**：`CompetitorsPage.tsx` 缩减为 ~100 行的容器，只保留列表状态管理和筛选逻辑。
+**修改**：`CompetitorsPage.tsx` 缩减为 ~120 行的容器，只保留列表状态管理、筛选逻辑和表单弹窗。
 
 **拆分边界**：
 - `CompetitorCard` 接收 `competitor` 对象 + `onEdit/onDelete/onStartCrawl/onToggleCrawl/onQuickGenerate` 回调
-- `CrawlPanel` 接收 `competitorId` + `crawlTask` + `pages` + `crawling` 状态，内部渲染爬取进度和页面列表
+- `CrawlPanel` 接收 `crawlTask`/`pages`/`crawling` 等 props，纯展示组件。轮询逻辑保留在父组件（避免展开/收起时定时器生命周期复杂化）
 
 ### 1.3 新建 CompetitorDetailPage
 
@@ -452,7 +408,6 @@ export function exportAuditLogs(params: {
 
 对比结果表格下方，将 matrix 数据转换为 `ReportData` 格式，复用 `ScoreRadar` 和 `ScoreBars`。
 
-**数据转换逻辑**：
 ```tsx
 const chartData: ReportData = {
   dimensions: result.dimensions,
@@ -469,13 +424,13 @@ const chartData: ReportData = {
 }
 ```
 
-**注意**：`compareProfiles` 返回的 `matrix` 中 `values` 可能是文本（如 "8/10"），需做解析。
+**注意**：`compareProfiles` 返回的 `matrix` 中 `values` 可能是文本，需做 `parseFloat` 容错。如果解析后全为 0，显示 fallback 提示。
 
 ### 2.2 ProfilesPage 卡片增加摘要预览
 
 **改**：`frontend/src/pages/app/ProfilesPage.tsx`
 
-从 `profile.profile_data.dimensions` 中提取前 2-3 个维度的关键字段值，以 `key: value` 迷你格式显示在卡片上。需处理 `profile_data` 可能是字符串（需 `JSON.parse`）的情况（`ProfileDetailPage.tsx:88` 已有这种处理模式）。
+从 `profile.profile_data.dimensions` 中提取前 2-3 个维度的关键字段值，以迷你格式显示在卡片上。复用 `ProfileDetailPage.tsx:86-117` 的解析逻辑（处理 `profile_data` 可能是字符串的情况）。
 
 ### 2.3 ProfileTemplatesPage 简化版可视化编辑器
 
@@ -483,56 +438,52 @@ const chartData: ReportData = {
 
 在弹窗中 JSON 文本域下方，增加「添加维度」和「添加字段」按钮。用户通过表单输入后自动追加到 JSON 中。底层仍序列化为 JSON 存储。
 
-**不做全功能可视化编辑器** — 保持 JSON 文本域作为高级模式，新增表单作为易用模式。
+**状态同步策略**：表单操作更新 JSON 文本域；JSON 文本域修改后重置表单状态（标记为"手动编辑"模式）。保存时以 JSON 文本域内容为准。
 
 ### 2.4 AdminPage 增加审计日志入口
 
-**改**：`frontend/src/pages/app/AdminPage.tsx`
+**改**：`frontend/src/pages/app/AdminPage.tsx` + `frontend/src/api/client.ts` + `frontend/src/api/types.ts`
 
-在统计卡片行增加审计概览卡片，调用 `GET /api/admin/audit-logs/stats` 显示：今日操作数、成功率、Top 模型成本。卡片点击跳转到 `/app/admin/audit-logs`。
+1. `types.ts` 新增 `AuditStatsOut` 类型
+2. `client.ts` 新增 `adminAuditStats()` 函数
+3. AdminPage 在统计卡片行增加审计概览卡片（今日操作数、成功率、Top 模型成本），点击跳转到 `/app/admin/audit-logs`
+4. 用户管理表格上方增加「查看审计日志 →」链接
 
-同时在用户管理表格上方增加「查看审计日志 →」链接。
+### 2.5 ProfileTasksPage 增加操作按钮
+
+**改**：`frontend/src/pages/app/ProfileTasksPage.tsx`
+
+在任务卡片上增加「重新生成」按钮（调用 `generateProfileFromCrawl` + 跳转到任务列表）和「取消」按钮（如后端支持取消接口）。
 
 ---
 
-## Phase 3：架构升级（3-5 天）
+## Phase 3：继续接入 Store + 架构升级（3-5 天）
 
-### 3.1 轻量缓存层（不引入新依赖）
+### 3.1 剩余页面接入 Store
 
-**改**：`frontend/src/api/client.ts`
+将 DashboardPage、NewResearchPage、AccountPage、AdminPage、AuditLogsPage 的数据层接入 Zustand。每个页面创建对应的 store（或合入已有 store）。
 
-在 `request()` 函数内为 GET 请求添加内存缓存：
+**建议**：
+- DashboardPage → 新建 `useDashboardStore`（quota + tasks 摘要）
+- AccountPage → 新建 `useAccountStore`（usage + orders + logins）
+- AdminPage → 新建 `useAdminStore`（stats + users + orgs）
+- AuditLogsPage → 合入 `useAdminStore` 或新建 `useAuditStore`
 
-```ts
-const GET_CACHE = new Map<string, { data: any; ts: number }>()
-const CACHE_TTL = 30_000 // 30 秒
+### 3.2 轻量缓存层验证
 
-// request() 中 GET 请求逻辑：
-if (init.method === undefined || init.method === 'GET') {
-  const cacheKey = url
-  const cached = GET_CACHE.get(cacheKey)
-  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data
-}
-// ... 正常 fetch ...
-// 成功后：
-if (init.method === undefined || init.method === 'GET') {
-  GET_CACHE.set(url, { data: result, ts: Date.now() })
-}
-```
+Zustand 的 `persist` 中间件已将数据持久化到 localStorage，切换页面时数据不丢失。这已经解决了"返回列表页时重新加载"的问题。
 
-POST/PATCH/DELETE 请求后使相关路径缓存失效（简单方案：清空全部缓存）。
+**剩余优化**：轮询间隔可配置（当前固定 3-5 秒），以及在页面不可见时暂停轮询（`document.hidden` API）。
 
-**效果**：切换页面返回时（如从 TaskDetail 返回 TasksPage），列表数据命中缓存，无需重新请求。
-
-### 3.2 移动端适配
+### 3.3 移动端适配
 
 - 侧栏添加折叠按钮，移动端默认折叠
-- AdminPage、AuditLogsPage 表格添加 `overflow-x-auto`
+- 表格添加 `overflow-x-auto`
 - AI 助手移动端增加会话切换下拉
 
-### 3.3 错误处理统一化
+### 3.4 错误处理统一化
 
-- 将各处 `.catch(() => {})` 替换为至少 `console.error`
+- 将各处 `.catch(() => {})` 分类处理
 - 引入 `react-hot-toast` 统一 toast 提示
 
 ---
@@ -540,13 +491,12 @@ POST/PATCH/DELETE 请求后使相关路径缓存失效（简单方案：清空�
 ## 实施顺序
 
 ```
-Phase 0（6 项，独立可并行）
-├── 0.1 修复 ProfilesPage bug          (~2 min)
+Phase 0（5 项，独立可并行，~1.5 小时）
+├── 0.1 修复 ProfilesPage Bug          (~2 min)
 ├── 0.2 TasksPage 状态筛选             (~5 min)
 ├── 0.3 CompetitorsPage 筛选+搜索      (~15 min)
 ├── 0.4 侧栏导航分组                   (~10 min)
-├── 0.5 AuditLogsPage CSV 导出         (~20 min)
-└── 0.6 Skeleton 投入使用              (~10 min)
+└── 0.5 AuditLogsPage CSV 导出         (~20 min)
 
 Phase 1（组件拆分，~1.5 天）
 ├── 1.1 抽离 Pagination 组件
@@ -557,74 +507,67 @@ Phase 2（功能增强，~2.5 天）
 ├── 2.1 ComparisonPage 可视化
 ├── 2.2 ProfilesPage 卡片摘要
 ├── 2.3 模板简化可视化编辑器
-└── 2.4 AdminPage 审计入口
+├── 2.4 AdminPage 审计入口
+└── 2.5 ProfileTasksPage 操作按钮
 
-Phase 3（架构升级，~3-5 天）
-├── 3.1 轻量缓存层
-├── 3.2 移动端适配
-└── 3.3 错误处理统一化
+Phase 3（Store 扩展 + 架构，~3-5 天）
+├── 3.1 剩余页面接入 Store
+├── 3.2 轮询优化（暂停/恢复）
+├── 3.3 移动端适配
+└── 3.4 错误处理统一化
 ```
 
 ---
 
 ## 五、技术评审
 
-### 评审方式
+### 当前状态变化对原方案的影响
 
-对方案中每个改动点，逐一从以下维度评估：
+Zustand 的引入改变了方案的多项结论：
 
-| 维度 | 评估内容 |
-|------|---------|
-| 可行性 | 改动是否与现有代码结构兼容？是否有隐藏依赖？ |
-| 风险 | 是否会影响现有功能？回滚难度？ |
-| 替代方案 | 是否有更简单的实现方式？ |
-| 遗漏 | 方案是否覆盖了所有发现的问题？是否有新增风险？ |
+| 原方案结论 | 当前状态 | 影响 |
+|-----------|---------|------|
+| Phase 3.1 轻量缓存层 | **已通过 Zustand persist 实现** | 缓存层需求已满足，Phase 3.1 降级为轮询优化 |
+| Phase 1.2 拆分 CompetitorsPage | 基础数据已从 store 读取 | 拆分收益降低（数据层已解耦），但仍需拆组件以改善可维护性 |
+| 5 个 store 已创建，6 个页面已接入 | 事实 | Phase 3.1 的"引入状态管理"不再需要 |
 
 ### 逐项评审
 
 #### Phase 0.1 — 修复 ProfilesPage Bug
 
-**可行性**：高。`CompetitorsPage.tsx:190-242` 的 `handleQuickGenerate` 已经实现了完全相同的异步轮询模式（调用 `generateProfileFromCrawl` → 获取 `task_id` → `setInterval` 轮询 `getGenerateStatus` → 完成后 `reload`）。直接复制该模式到 `ProfilesPage`。
+**可行性**：高。`CompetitorsPage.tsx:180-232` 的 `handleQuickGenerate` 已经实现了完全相同的异步轮询模式。
 
-**风险**：低。改动仅涉及一个函数体，不影响其他逻辑。原同步调用删掉，替换为异步模式。
+**风险**：低。改动仅涉及一个函数体。
 
-**替代方案**：无。只有修复这一条路。
-
-**结论**：**通过**，直接实施。
+**结论**：**通过**。
 
 ---
 
 #### Phase 0.2 — TasksPage 状态筛选
 
-**可行性**：高。现有代码已有筛选按钮组模式（`TasksPage.tsx:89-103`），只需在下方复制该模式，添加 `statusFilter` state 和筛选逻辑。`RUNNING` 集合已定义（`TasksPage.tsx:11`）。
+**可行性**：高。现有代码已有筛选按钮组模式，`RUNNING` 集合已定义。
 
-**风险**：极低。纯 UI 层过滤，不影响 API 和数据。
+**风险**：极低。纯 UI 层过滤。
 
-**遗漏注意**：方案未提及分页。状态筛选让列表更短，但搜索后如果结果仍多，仍会撑爆页面。建议 Phase 0 只做状态筛选，分页留到 Phase 1 或 Phase 3 一起做。
-
-**结论**：**通过**。建议加一句："状态筛选后如列表仍长，后续 Phase 补充分页"。
+**结论**：**通过**。
 
 ---
 
-#### Phase 0.3 — CompetitorsPage 状态筛选 + 搜索
+#### Phase 0.3 — CompetitorsPage 筛选 + 搜索
 
-**可行性**：高。搜索框和筛选按钮组是标准 UI 模式，代码中 TasksPage 和 TrackersPage 已有类似实现。`STATUS_BADGE`/`STATUS_LABEL` 已定义（`CompetitorsPage.tsx:10-20`），直接用。
+**可行性**：高。搜索框和筛选按钮组是标准 UI 模式。注意数据已从 `useCompetitorStore` 读取，`items` 是 store 中的全量数据。
 
-**风险**：低。但注意 `items` 是 `listCompetitors()` 的全量返回，筛选和搜索都在前端做。如果竞品数量很大（>100），前端筛选仍有性能问题。目前应用场景是团队级使用，竞品数量通常 <50，前端筛选够用。
+**风险**：低。前端筛选。竞品数量通常 <50，够用。
 
-**遗漏注意**：搜索仅匹配 `name` 和 `alias`，未匹配 `keywords` 数组和 `tech_focus`。建议也匹配 `keywords.some(kw => kw.includes(query))`。
-
-**结论**：**通过**，搜索范围建议扩大到 keywords 和 tech_focus。
+**结论**：**通过**。
 
 ---
 
 #### Phase 0.4 — 侧栏导航分组
 
-**可行性**：高。`NAV` 是硬编码数组（`AppLayout.tsx:27-41`），改为分组结构只需调整数据结构和渲染逻辑。
+**可行性**：高。`NAV` 是硬编码数组，改为分组结构只需调整数据结构和渲染逻辑。
 
-**风险**：极低。纯视觉改动，不影响路由和功能。
-
-**遗漏注意**：管理员入口（管理后台、审计日志）在方案中说是"单独放在最底部"。具体实现时需要注意：当前代码中管理员入口是单独的条件渲染块（`AppLayout.tsx:86-112`），需要移到分组渲染之后。另外 `end` 属性（用于精确匹配路由高亮）在分组后仍然需要保留。
+**风险**：极低。纯视觉改动。
 
 **结论**：**通过**。
 
@@ -632,41 +575,19 @@ Phase 3（架构升级，~3-5 天）
 
 #### Phase 0.5 — AuditLogsPage CSV 导出
 
-**可行性**：需评估。后端 CSV 导出已完整实现（`admin.py:275-325`），返回 `Response(content=buf.getvalue(), media_type="text/csv; charset=utf-8")`。
+**可行性**：需注意。CSV 返回 `text/csv`，通用 `request()` 会调 `resp.json()` 抛错，必须走独立 `fetch` + `blob`。
 
-**关键风险 — request() 函数兼容性**：通用 `request()` 函数（`client.ts:97-133`）会对所有非 204 响应调用 `resp.json()`（第 132 行）。CSV 返回 `text/csv`，`resp.json()` 会抛解析错误。所以**不能走通用 `request()`**，必须单独写 `fetch` + `blob` 处理。
+**风险**：低。独立 fetch 调用。但需处理 401（token 过期时 fetch 返回 401 不会被自动 refresh）。
 
-方案中已识别到这一点，建议用独立的 `exportAuditLogs` 函数直接 `fetch` + `blob`。**这个判断是正确的**。
-
-**风险**：低。独立的 fetch 调用，不走通用 request 函数，不会触发 401 refresh 流程。但如果 token 过期，fetch 会返回 401 但不会被自动处理。建议在 fetch 前检查 token 有效性，或者至少处理 401 响应（跳登录）。
-
-**遗漏注意**：
-- 导出按钮应仅在 `logs.length > 0` 时显示，或始终显示但空结果时导出空 CSV
-- CSV 文件命名建议包含日期：`audit-logs-{YYYY-MM-DD}.csv`
-
-**结论**：**有条件通过**。需确保 401 处理和文件命名。
+**结论**：**有条件通过**。需处理 401 响应。
 
 ---
 
-#### Phase 0.6 — Skeleton 投入使用
+#### Phase 1.1 — 抽离 Pagination
 
-**可行性**：高。`Skeleton.tsx` 中 `CardSkeleton` 和 `ListSkeleton` 已定义好，直接导入。
+**可行性**：高。两套实现各约 26 行，逻辑几乎相同。
 
-**风险**：极低。纯视觉替换。
-
-**遗漏注意**：当前所有页面使用统一的 "加载中…" 文本，替换为 Skeleton 后需要逐个页面调整。有些页面（如 TaskDetailPage）加载逻辑更复杂（有 `notFound` 状态），不应简单替换。
-
-**结论**：**通过**，建议列表页和卡片页优先替换，详情页暂不替换。
-
----
-
-#### Phase 1.1 — 抽离 Pagination 组件
-
-**可行性**：高。两套实现各约 26 行，逻辑几乎相同。AdminPage 的版本更完整（支持省略号），AuditLogsPage 的版本更简洁。合并取并集即可。
-
-**风险**：低。AdminPage 的 Pagination 定义在组件内部（`AdminPage.tsx:13-39`），需要提到组件外部。AuditLogsPage 的 Pagination 定义在文件顶部（`AuditLogsPage.tsx:8-20`），也需要提到共享位置。
-
-**遗漏注意**：AdminPage 的 Pagination 有 `total` 显示（"共 X 条"），AuditLogsPage 的没有。合并时应保留 `total` 显示。
+**风险**：低。
 
 **结论**：**通过**。
 
@@ -674,25 +595,19 @@ Phase 3（架构升级，~3-5 天）
 
 #### Phase 1.2 — 拆分 CompetitorsPage
 
-**可行性**：中高。但有一个技术细节需要注意。
+**可行性**：中高。数据层已从 store 读取，拆分主要是代码组织。
 
-**关键风险 — 轮询定时器的清理**：当前 `CompetitorsPage` 中 `pollTimers` 和 `genPollTimers` 是 state 对象（`CompetitorsPage.tsx:86-89`），清理逻辑在 `useEffect` 中（`CompetitorsPage.tsx:109-115`）。拆分后：
-- 如果 `CrawlPanel` 自己管理轮询，定时器需要在组件卸载时清理 — 但 `CrawlPanel` 是按竞品展开/收起的，不是一直挂载的
-- 如果轮询仍由父组件管理，`CrawlPanel` 变成纯展示组件，拆分收益降低
+**关键风险 — 轮询定时器**：当前 `pollTimers` 和 `genPollTimers` 是 state 对象（`CompetitorsPage.tsx:89-92`）。拆分后轮询逻辑保留在父组件，`CrawlPanel` 只做展示。这个判断正确。
 
-**建议**：`CrawlPanel` 接收 `crawlTask`/`pages`/`crawling` 等 props，轮询逻辑保留在父组件。`CrawlPanel` 只负责渲染。这样拆分主要是代码组织优化，不是功能拆分。
-
-**结论**：**有条件通过**。轮询逻辑保留在父组件，`CrawlPanel` 为展示组件。
+**结论**：**有条件通过**。轮询逻辑保留父组件，`CrawlPanel` 为展示组件。
 
 ---
 
 #### Phase 1.3 — 新建 CompetitorDetailPage
 
-**可行性**：高。标准详情页模式，已有 `TrackerDetailPage` 和 `ProfileDetailPage` 作为模板。
+**可行性**：高。标准详情页模式。
 
-**风险**：低。新路由不影响现有页面。
-
-**遗漏注意**：详情页的数据获取 — 需要调用 `getCrawlStatus` + `listCrawlPages`，这两个 API 在 `client.ts` 中已有（`client.ts` 中的 `getCrawlStatus` 和 `listCrawlPages`）。详情页还需要展示竞品基本信息，需要 `listCompetitors` 后本地查找，或者新增 `getCompetitor(id)` API。建议先用 `listCompetitors` 全量 + 本地查找，和 `ProfileDetailPage` 模式一致。
+**风险**：低。
 
 **结论**：**通过**。
 
@@ -700,156 +615,126 @@ Phase 3（架构升级，~3-5 天）
 
 #### Phase 2.1 — ComparisonPage 可视化
 
-**可行性**：中。`ScoreRadar` 和 `ScoreBars` 接受 `ReportData` 类型，需要做数据转换。
+**可行性**：中。`ScoreRadar` 和 `ScoreBars` 接受 `ReportData` 类型，需要数据转换。
 
-**风险**：中。`compareProfiles` 返回的 `matrix` 中 `values` 字段类型不确定 — 可能是数字字符串（如 "8"），也可能是文本（如 "8/10"）。直接 `parseFloat` 可能在文本格式上失败。需要在数据转换时做容错处理。
+**风险**：中。`compareProfiles` 返回的 `matrix` 中 `values` 可能是文本。需做 `parseFloat` 容错。
 
-**遗漏注意**：
-- `ScoreRadar` 需要 `data.competitors` 有 `name` 和 `scores`，`ScoreBars` 需要 `data.dimensions` 和 `data.competitors`。转换后的 `chartData` 中 `swot` 和 `verdict` 为空对象/字符串，组件会优雅降级（`TaskDetailPage.tsx:585` 中 `reportData` 的判断逻辑保证了这一点）。
-- 如果对比结果中没有数值型评分（全是文本描述），雷达图和柱状图无法渲染，需要做 fallback 显示。
-
-**结论**：**有条件通过**。需在数据转换时做数值解析容错，并添加 fallback 提示。
+**结论**：**有条件通过**。数值解析容错 + fallback。
 
 ---
 
 #### Phase 2.2 — ProfilesPage 卡片摘要
 
-**可行性**：中。需要从 `profile.profile_data` 中提取维度摘要。
+**可行性**：中。`profile_data` 结构不固定，需做通用解析。
 
-**风险**：低。但 `profile_data` 的结构不固定 — 它取决于模板定义的维度。不同模板的 `dimensions` 结构可能完全不同。需要做通用解析：
-
-```tsx
-const data = typeof profile.profile_data === 'string' ? JSON.parse(profile.profile_data) : profile.profile_data
-const dims = data?.dimensions || {}
-// 取前 2-3 个维度的第一个字段值
-```
-
-**遗漏注意**：`profile_data` 中 `dimensions` 的值可能是对象（含 fields）或纯文本。需要做 `typeof` 判断。`ProfileDetailPage.tsx:99-114` 已有这种递归渲染逻辑，可以复用其解析方式。
-
-**结论**：**通过**，复用 `ProfileDetailPage` 的解析逻辑。
-
----
-
-#### Phase 2.3 — 模板简化可视化编辑器
-
-**可行性**：中。在弹窗中增加表单操作。
-
-**风险**：中低。需要处理 JSON 与表单状态的双向同步。用户通过表单添加维度后，需要更新 `dimsJson` state（文本域内容），反之 JSON 文本域修改后需要更新表单状态。
-
-**简化方案风险**：如果用户同时使用表单和 JSON 文本域，可能出现状态不一致。建议方案：
-- 表单操作更新 JSON 文本域
-- JSON 文本域修改后重置表单状态（或标记为"手动编辑"）
-- 保存时以 JSON 文本域内容为准
-
-**结论**：**通过**，但状态同步需要仔细处理。建议先做"表单添加 → JSON 自动更新"的单向模式，JSON 文本域仍可手动编辑但会清除表单状态。
-
----
-
-#### Phase 2.4 — AdminPage 审计入口
-
-**可行性**：高。`GET /api/admin/audit-logs/stats` 已实现，返回 `AuditStatsOut`（`admin.py:227`，schema 在 `schemas/auth.py:202`）。但 `client.ts` 中**没有对应的 API 函数**，需要新增。
-
-**需要新增**：`client.ts` 中 `export function adminAuditStats(): Promise<AuditStatsOut>` — 但 `AuditStatsOut` 类型在 `schemas/auth.py` 中定义，`types.ts` 中没有。需要先在 `types.ts` 中添加该类型。
-
-**风险**：低。新增一个 API 函数和一个类型定义。
-
-**遗漏注意**：审计统计中的 `top_models` 包含 `total_cost`（USD），在 AdminPage 中展示时需要标注货币单位。
-
-**结论**：**通过**，需先在 `types.ts` 中补充 `AuditStatsOut` 类型。
-
----
-
-#### Phase 3.1 — 轻量缓存层
-
-**可行性**：中。方案建议在 `client.ts` 的 `request()` 函数内加内存缓存。
-
-**关键风险 — request() 的 401 refresh 流程与缓存的交互**：
-
-当前 `request()` 的流程是：
-1. fetch 请求
-2. 如果 401 → tryRefreshToken → retry
-3. 如果 retry 成功 → 返回数据
-
-如果 GET 请求命中缓存，直接返回缓存数据，不会经过 401 流程。这意味着：
-- 缓存中的数据可能是过期 token 获取的 — 但 token 过期不影响已获取的数据内容
-- 缓存命中时不会检查 token 是否仍然有效 — 对于公开数据（如自己的任务列表）没问题，但如果用户权限发生变化（如被移出企业），缓存数据会过时
-
-**建议调整**：
-- 缓存 key 加入用户标识：`const cacheKey = `${url}:${user_id}`` — 但 `request()` 函数没有 user_id 参数
-- 简化处理：缓存仅在同一个页面生命周期内有效（即组件 mount → unmount），配合 30 秒 TTL 够用
-- 更安全的做法：POST/PATCH/DELETE 后清空缓存（已在方案中提及）
-
-**另一个风险 — request() 返回 `undefined` 的场景**：401 refresh 失败时返回 `undefined as T`（`client.ts:109`）。如果缓存了这个 `undefined`，后续请求会命中缓存并返回 `undefined`。需要确保只有成功响应才缓存。
-
-**结论**：**有条件通过**。需修正缓存条件：仅缓存 `resp.ok === true` 的响应，跳过 401 重试路径。建议在 fetch 成功后才写入缓存。
-
----
-
-#### Phase 3.2 — 移动端适配
-
-**可行性**：高。标准响应式设计模式。
-
-**风险**：低。
-
-**遗漏注意**：侧栏折叠后，需要确保折叠按钮在所有页面可见，且折叠状态在页面切换时保持（或默认展开）。
+**风险**：低。复用 `ProfileDetailPage` 的解析逻辑。
 
 **结论**：**通过**。
 
 ---
 
-#### Phase 3.3 — 错误处理统一化
+#### Phase 2.3 — 模板可视化编辑器
 
-**可行性**：中。改动点多但每个改动简单。
+**可行性**：中。JSON 与表单状态双向同步需仔细处理。
 
-**风险**：低。但需要注意：`.catch(() => {})` 在有些场景下是故意的（如轮询中的单次请求失败不应阻断流程）。需要区分"可忽略的静默失败"和"应该上报的错误"。
-
-**建议分类**：
-- 轮询中的单次请求失败 → 可静默（已有）
-- 初始化加载失败 → 应上报
-- 用户操作失败 → 应 toast 提示
-
-**结论**：**通过**，需分类处理。
+**结论**：**通过**，先做单向（表单→JSON）。
 
 ---
 
-### 评审总结
+#### Phase 2.4 — AdminPage 审计入口
 
-| 改动 | 结论 | 需修正/补充 |
-|------|------|------------|
-| 0.1 修复 ProfilesPage Bug | 通过 | — |
-| 0.2 TasksPage 状态筛选 | 通过 | 补充分页计划 |
-| 0.3 CompetitorsPage 筛选+搜索 | 通过 | 搜索范围扩大到 keywords/tech_focus |
-| 0.4 侧栏导航分组 | 通过 | 注意管理员入口的 `end` 属性 |
-| 0.5 AuditLogsPage CSV 导出 | 有条件通过 | 401 处理 + 文件命名含日期 |
-| 0.6 Skeleton 投入使用 | 通过 | 详情页暂不替换 |
-| 1.1 抽离 Pagination | 通过 | 合并时保留 `total` 显示 |
-| 1.2 拆分 CompetitorsPage | 有条件通过 | 轮询逻辑保留父组件 |
-| 1.3 新建 CompetitorDetailPage | 通过 | 先用 listCompetitors + 本地查找 |
-| 2.1 ComparisonPage 可视化 | 有条件通过 | 数值解析容错 + fallback |
-| 2.2 ProfilesPage 卡片摘要 | 通过 | 复用 ProfileDetailPage 解析逻辑 |
-| 2.3 模板简化编辑器 | 通过 | 先做单向（表单→JSON），处理状态同步 |
-| 2.4 AdminPage 审计入口 | 通过 | 先在 types.ts 补充 AuditStatsOut |
-| 3.1 轻量缓存层 | 有条件通过 | 仅缓存成功响应，跳过 401 路径 |
-| 3.2 移动端适配 | 通过 | — |
-| 3.3 错误处理统一化 | 通过 | 分类处理（轮询/初始化/用户操作） |
+**可行性**：高。需先在 `types.ts` 补充 `AuditStatsOut`，`client.ts` 新增 `adminAuditStats()`。
 
-### 方案遗漏
-
-评审过程中发现以下方案未覆盖但应纳入的内容：
-
-1. **`client.ts` 中缺少 `adminAuditStats` 和 `exportAuditLogs` API 函数** — Phase 2.4 和 Phase 0.5 需要用到，需在 `client.ts` 中补充。且 `types.ts` 中缺少 `AuditStatsOut` 类型定义。
-
-2. **ProfileTasksPage 在 Phase 2 中遗漏** — 原方案 P2-12 提到 ProfileTasksPage 缺少操作按钮，但 Phase 2 的 4 项中未包含。建议在 Phase 2 增加第 5 项：ProfileTasksPage 增加「重新生成」按钮。
-
-3. **`compareProfiles` 返回类型为 `any`**（`client.ts:434`）— ComparisonPage 的可视化依赖 `result.matrix` 结构，但类型是 `any`，没有类型安全。建议在 `types.ts` 中定义 `ComparisonResult` 接口。
-
-4. **Phase 0 的改动没有 git commit 策略建议** — 6 项改动建议分两个 commit：bug fix（0.1）单独一个，其余 5 项 UI 改进合并为一个。Phase 1-3 各自独立 commit。
+**结论**：**通过**。
 
 ---
 
-## 实施建议
+#### Phase 2.5 — ProfileTasksPage 操作按钮
 
-- Phase 0 的 6 项可以一次性开发、分两个 commit 合入（bug fix + UI 改进）
-- Phase 1 的 3 项互相依赖（Pagination 抽离是基础，拆分 CompetitorsPage 依赖 Pagination），建议按顺序合入
-- Phase 2 的 4 项（+1 项遗漏）互相独立，可并行开发
-- Phase 3 的缓存层建议在 Phase 1 完成后就开始，因为拆分组件后缓存收益更明显
+**可行性**：高。标准按钮 + API 调用。
+
+**结论**：**通过**。
+
+---
+
+#### Phase 3.1 — Store 扩展
+
+**可行性**：高。Zustand 已引入，模式已建立（5 个 store 作为参考模板）。
+
+**风险**：低。每个 store 独立，互不影响。
+
+**结论**：**通过**。
+
+---
+
+#### Phase 3.2 — 轮询优化
+
+**可行性**：高。`document.hidden` API 检测页面可见性。
+
+**风险**：低。
+
+**结论**：**通过**。
+
+---
+
+#### Phase 3.3 — 移动端适配
+
+**可行性**：高。标准响应式设计。
+
+**结论**：**通过**。
+
+---
+
+#### Phase 3.4 — 错误处理统一化
+
+**可行性**：中。改动点多但每个简单。
+
+**结论**：**通过**，分类处理。
+
+---
+
+### 方案遗漏补充
+
+1. **`compareProfiles` 返回类型为 `any`**（`client.ts:434`）— 建议在 `types.ts` 中定义 `ComparisonResult` 接口。
+2. **Zustand persist 的 localStorage 可能膨胀** — 5 个 store 都持久化，每次 API 调用后全量写入。建议 `partialize` 只持久化必要字段（当前已做），并设置合理的序列化配置。
+3. **store 间数据冗余** — `useProfileStore` 同时持有 `profiles`、`templates`、`competitors`，而 `useCompetitorStore` 也持有 `items`（competitors）和 `templates`。同一份数据在两个 store 中各存一份，修改时需同步更新。建议：`useProfileStore` 只存 profiles，templates 和 competitors 从 `useCompetitorStore` 读取。
+
+---
+
+## 六、需要新建/拆分的子页面
+
+| 现有页面 | 建议拆分出的子页面 | 理由 |
+|---------|------------------|------|
+| `CompetitorsPage` | `/app/competitors/:id` | 爬取详情（页面列表、任务状态）从卡片内联展开拆分 |
+| `CompetitorsPage` | `/app/competitors/:id/crawl` | 爬取任务管理独立页面 |
+
+---
+
+## 七、改进优先级总览
+
+```
+Phase 0（P0 Bug + P1 功能，~1.5 小时）：
+  0.1 修复 ProfilesPage handleGenerateFromCrawl bug
+  0.2 TasksPage 添加状态筛选
+  0.3 CompetitorsPage 添加状态筛选 + 搜索
+  0.4 侧栏导航分组
+  0.5 AuditLogsPage 导出 CSV
+
+Phase 1（组件拆分，~1.5 天）：
+  1.1 抽离 Pagination 组件
+  1.2 拆分 CompetitorsPage 为 Card + CrawlPanel
+  1.3 新建 CompetitorDetailPage
+
+Phase 2（功能增强，~2.5 天）：
+  2.1 ComparisonPage 可视化图表
+  2.2 ProfilesPage 卡片摘要预览
+  2.3 模板简化可视化编辑器
+  2.4 AdminPage 审计日志入口
+  2.5 ProfileTasksPage 操作按钮
+
+Phase 3（Store 扩展 + 架构，~3-5 天）：
+  3.1 Dashboard/Account/Admin/AuditLogs 接入 Store
+  3.2 轮询优化（页面不可见时暂停）
+  3.3 移动端适配
+  3.4 错误处理统一化
+```
