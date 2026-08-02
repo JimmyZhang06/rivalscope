@@ -7,6 +7,7 @@ from app.api.deps import check_quota_or_403, get_current_user
 from app.db.database import get_db
 from app.db.models import GraphEntity, GraphProject, GraphRelation, User
 from app.schemas.graph import GraphCreate, GraphDetailOut, GraphProjectOut
+from app.services.audit import log_audit
 from app.services.graph_agent import build_graph
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
@@ -46,6 +47,15 @@ def create_graph(
     db.add(project)
     db.commit()
     db.refresh(project)
+    try:
+        log_audit(
+            user_id=user.id, org_id=user.org_id or "",
+            action="graph.create", resource_type="graph", resource_id=project.id,
+            input_data=payload.root_name,
+            status="success",
+        )
+    except Exception:
+        pass
     background.add_task(build_graph, project.id)
     return project
 
@@ -85,6 +95,14 @@ def refresh_graph(
     project.report_markdown = ""
     db.commit()
     db.refresh(project)
+    try:
+        log_audit(
+            user_id=user.id, org_id=user.org_id or "",
+            action="graph.refresh", resource_type="graph", resource_id=project_id,
+            status="success",
+        )
+    except Exception:
+        pass
     background.add_task(build_graph, project.id)
     return project
 
@@ -92,5 +110,14 @@ def refresh_graph(
 @router.delete("/{project_id}", status_code=204)
 def delete_graph(project_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = _get_owned_project(project_id, user, db)
+    pid = project.id
     db.delete(project)
     db.commit()
+    try:
+        log_audit(
+            user_id=user.id, org_id=user.org_id or "",
+            action="graph.delete", resource_type="graph", resource_id=pid,
+            status="success",
+        )
+    except Exception:
+        pass

@@ -5,6 +5,10 @@ import type {
   AdminUserListResponse,
   AssistantMessage,
   AssistantSession,
+  Competitor,
+  CompetitorPage,
+  CompetitorProfile,
+  CrawlTask,
   ForgotResponse,
   GraphCreate,
   GraphDetail,
@@ -17,6 +21,8 @@ import type {
   OrgMember,
   Plan,
   PlanInfo,
+  GenerateTaskStatus,
+  ProfileTemplate,
   Quota,
   ResearchCreate,
   Role,
@@ -35,11 +41,49 @@ import type {
 } from './types'
 
 const TOKEN_KEY = 'cr_token'
+const REFRESH_KEY = 'cr_refresh'
 
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
   set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  clear: () => localStorage.removeItem(TOKEN_KEY),
+  clear: () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY) },
+}
+
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_KEY)
+}
+
+export function setRefreshToken(token: string) {
+  localStorage.setItem(REFRESH_KEY, token)
+}
+
+let refreshPromise: Promise<void> | null = null
+
+async function tryRefreshToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise
+  const refresh = getRefreshToken()
+  if (!refresh) return false
+
+  refreshPromise = (async () => {
+    try {
+      const resp = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      })
+      if (!resp.ok) { tokenStore.clear(); return false }
+      const data = await resp.json() as TokenResponse
+      if (data.access_token) {
+        tokenStore.set(data.access_token)
+        if (data.refresh_token) setRefreshToken(data.refresh_token)
+        return true
+      }
+      return false
+    } catch { return false } finally {
+      refreshPromise = null
+    }
+  })()
+  return refreshPromise
 }
 
 export class ApiError extends Error {
@@ -50,7 +94,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) }
   const token = tokenStore.get()
   if (token) headers['Authorization'] = `Bearer ${token}`
@@ -58,9 +102,25 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
 
   const resp = await fetch(url, { ...init, headers })
   if (resp.status === 401) {
-    tokenStore.clear()
-    // 会话失效，回到登录页（登录/注册接口本身除外）
-    if (!url.startsWith('/api/auth/')) window.location.href = '/login'
+    const refreshed = await tryRefreshToken()
+    if (!refreshed) {
+      tokenStore.clear()
+      if (!url.startsWith('/api/auth/')) window.location.href = '/login'
+      return undefined as T
+    }
+    // retry with new token
+    const newToken = tokenStore.get()
+    if (newToken) headers['Authorization'] = `Bearer ${newToken}`
+    const retry = await fetch(url, { ...init, headers })
+    if (retry.status === 204) return undefined as T
+    if (!retry.ok) {
+      const body = await retry.json().catch(() => null)
+      let detail = body?.detail
+      if (Array.isArray(detail)) detail = detail[0]?.msg ?? '请求参数有误'
+      throw new ApiError(retry.status, detail ?? `请求失败 (${retry.status})`)
+    }
+    if (retry.status === 204) return undefined as T
+    return retry.json()
   }
   if (!resp.ok) {
     const body = await resp.json().catch(() => null)
@@ -294,6 +354,127 @@ export function listTrackers(): Promise<Tracker[]> {
   return request('/api/trackers')
 }
 
+// ---------- 竞品管理 ----------
+
+export function listCompetitors(): Promise<Competitor[]> {
+  return request('/api/competitors')
+}
+
+export function createCompetitor(payload: Omit<Competitor, 'id' | 'created_at' | 'updated_at'>): Promise<Competitor> {
+  return request('/api/competitors', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function updateCompetitor(id: string, payload: Omit<Competitor, 'id' | 'created_at' | 'updated_at'>): Promise<Competitor> {
+  return request(`/api/competitors/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function deleteCompetitor(id: string): Promise<void> {
+  return request(`/api/competitors/${id}`, { method: 'DELETE' })
+}
+
+// ---------- 画像模板 ----------
+
+export function listProfileTemplates(): Promise<ProfileTemplate[]> {
+  return request('/api/profiles/templates')
+}
+
+export function createProfileTemplate(payload: { name: string; dimensions: any[]; org_id: string }): Promise<ProfileTemplate> {
+  return request('/api/profiles/templates', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function updateProfileTemplate(id: string, payload: { name: string; dimensions: any[]; org_id: string }): Promise<ProfileTemplate> {
+  return request(`/api/profiles/templates/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function freezeProfileTemplate(id: string): Promise<{ id: string; frozen_at: string | null }> {
+  return request(`/api/profiles/templates/${id}/freeze`, { method: 'POST' })
+}
+
+export function deleteProfileTemplate(id: string): Promise<void> {
+  return request(`/api/profiles/templates/${id}`, { method: 'DELETE' })
+}
+
+// ---------- 画像 ----------
+
+export function generateProfileApi(payload: { competitor_id: string; template_id: string }): Promise<any> {
+  return request('/api/profiles/generate', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function generateProfileFromCrawl(payload: { competitor_id: string; template_id: string }): Promise<{ task_id: string; status: string }> {
+  return request('/api/profiles/generate-from-crawl', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function getGenerateStatus(taskId: string): Promise<GenerateTaskStatus> {
+  return request(`/api/profiles/generate-from-crawl/${taskId}`)
+}
+
+export function listProfiles(): Promise<CompetitorProfile[]> {
+  return request('/api/profiles')
+}
+
+export function listProfileExtractTasks(): Promise<Array<{
+  task_id: string
+  competitor_id: string
+  template_id: string
+  status: string
+  current_step: string
+  error: string
+  created_at: string | null
+  updated_at: string | null
+}>> {
+  return request('/api/profiles/tasks')
+}
+
+export function freezeProfileApi(id: string): Promise<{ id: string; status: string }> {
+  return request(`/api/profiles/${id}/freeze`, { method: 'POST' })
+}
+
+// ---------- 横向对比 ----------
+
+export function compareProfiles(payload: { template_id: string; competitor_ids: string[] }): Promise<any> {
+  return request('/api/profiles/compare', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+// ---------- RBAC 权限 ----------
+
+export function getMyPermissions(): Promise<{ permissions: string[] }> {
+  return request('/api/me/permissions')
+}
+
+export function setMemberPermissions(memberId: string, permissions: string[]): Promise<OrgMember> {
+  return request(`/api/org/members/${memberId}/permissions`, { method: 'POST', body: JSON.stringify({ permissions }) })
+}
+
+// ---------- 审计日志 ----------
+
+export function listAuditLogs(params?: {
+  action?: string
+  resource_type?: string
+  user_id?: string
+  start?: string
+  end?: string
+  page?: number
+  page_size?: number
+}): Promise<AdminUserListResponse> {
+  const p = new URLSearchParams()
+  if (params?.action) p.set('action', params.action)
+  if (params?.resource_type) p.set('resource_type', params.resource_type)
+  if (params?.user_id) p.set('user_id', params.user_id)
+  if (params?.start) p.set('start', params.start)
+  if (params?.end) p.set('end', params.end)
+  p.set('page', String(params?.page ?? 1))
+  p.set('page_size', String(params?.page_size ?? 20))
+  const qs = p.toString()
+  return request(`/api/admin/audit-logs?${qs}`)
+}
+
+// ---------- 执行快照 ----------
+
+export function listExecutionSnapshots(taskId?: string): Promise<any[]> {
+  const url = taskId ? `/api/admin/execution-snapshots?task_id=${taskId}` : '/api/admin/execution-snapshots'
+  return request(url)
+}
+
 export function getTracker(id: string): Promise<Tracker> {
   return request(`/api/trackers/${id}`)
 }
@@ -385,4 +566,21 @@ export function askAssistant(question: string, sessionId = ''): Promise<Assistan
     method: 'POST',
     body: JSON.stringify({ question, session_id: sessionId }),
   })
+}
+
+// ---------- 竞品爬取 ----------
+
+export function startCrawl(competitorId: string, maxPages = 50): Promise<{ task_id: string; competitor_id: string; status: string }> {
+  return request(`/api/competitors/${competitorId}/crawl`, {
+    method: 'POST',
+    body: JSON.stringify({ max_pages: maxPages }),
+  })
+}
+
+export function getCrawlStatus(competitorId: string): Promise<CrawlTask> {
+  return request(`/api/competitors/${competitorId}/crawl/status`)
+}
+
+export function listCrawlPages(competitorId: string): Promise<CompetitorPage[]> {
+  return request(`/api/competitors/${competitorId}/pages`)
 }

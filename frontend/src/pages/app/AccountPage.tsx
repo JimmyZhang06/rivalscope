@@ -26,9 +26,11 @@ import {
   updateProfile,
 } from '../../api/client'
 import type { LoginLog, Order, UsageStats } from '../../api/types'
+import { fmtDate, fmtDateTime } from '../../utils/time'
 import { useAuth } from '../../auth/AuthContext'
 import OrgPanel from '../../components/OrgPanel'
 import PlanBadge from '../../components/PlanBadge'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 const PLAN_NAMES: Record<string, string> = { free: '免费版', pro: '专业版', enterprise: '企业版' }
 
@@ -138,6 +140,7 @@ function SectionHeader({
 }
 
 export default function AccountPage() {
+  usePageTitle('个人中心')
   const { user } = useAuth()
   // Tab 由 URL 参数驱动（/app/account?tab=org），便于外部直达与刷新保持
   const [searchParams, setSearchParams] = useSearchParams()
@@ -322,7 +325,7 @@ function OverviewTab() {
             </div>
             <p className="mt-0.5 text-sm text-gray-500">{user.email}</p>
             <p className="mt-0.5 text-xs text-gray-400">
-              注册于 {new Date(user.created_at).toLocaleDateString('zh-CN')}
+              注册于 {fmtDate(user.created_at)}
             </p>
             {/* 头像：上传自定义图片 */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -434,7 +437,7 @@ function OverviewTab() {
             {user.plan === 'free'
               ? '长期有效'
               : user.plan_expires_at
-                ? `有效期至 ${new Date(user.plan_expires_at).toLocaleString('zh-CN')}`
+                ? `有效期至 ${fmtDateTime(user.plan_expires_at)}`
                 : '长期有效'}
           </span>
           {user.role === 'admin' && <span className="text-xs text-gray-400">（管理员享企业版权益）</span>}
@@ -597,7 +600,7 @@ function SecurityTab() {
                 >
                   {ACTION_LABELS[log.action] ?? log.action}
                 </span>
-                <span className="text-gray-900">{new Date(log.created_at).toLocaleString('zh-CN')}</span>
+                <span className="text-gray-900">{fmtDateTime(log.created_at)}</span>
                 <span className="text-gray-400">{log.ip || '—'}</span>
                 <span className="text-xs text-gray-400">{shortUA(log.user_agent)}</span>
               </li>
@@ -710,7 +713,7 @@ function OrdersTab() {
                     </span>
                   </td>
                   <td className="px-3 py-3 text-gray-500">
-                    {o.paid_at ? new Date(o.paid_at).toLocaleString('zh-CN') : '—'}
+                    {o.paid_at ? fmtDateTime(o.paid_at) : '—'}
                   </td>
                 </tr>
               ))}

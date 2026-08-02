@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AlertCircle, Clock, Crosshair, Gauge, Sparkles, Target, Users } from 'lucide-react'
 import { createResearch, getQuota } from '../../api/client'
 import type { Quota, TimeRange } from '../../api/types'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: '', label: '不限' },
@@ -12,8 +13,10 @@ const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
 ]
 
 export default function NewResearchPage() {
+  usePageTitle('新建调研')
   const navigate = useNavigate()
   const [quota, setQuota] = useState<Quota | null>(null)
+  const [quotaError, setQuotaError] = useState(false)
   const [productName, setProductName] = useState('')
   const [competitors, setCompetitors] = useState('')
   const [focus, setFocus] = useState('')
@@ -22,7 +25,7 @@ export default function NewResearchPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    getQuota().then(setQuota).catch(() => {})
+    getQuota().then(setQuota).catch(() => setQuotaError(true))
   }, [])
 
   const exhausted =
@@ -65,6 +68,12 @@ export default function NewResearchPage() {
       </div>
 
       {/* 额度提示 */}
+      {quotaError && (
+        <div className="mt-4 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          额度信息加载失败，提交时可能受限，请刷新重试
+        </div>
+      )}
       {quota && (
         <div
           className={`mt-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm ${

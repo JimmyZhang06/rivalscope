@@ -81,6 +81,31 @@ export default function SourceCard({
             </div>
             <span className="text-xs text-gray-500">{pct}%</span>
           </div>
+          {/* 置信度条 — 始终显示，0% 时灰色空条 */}
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="text-xs text-gray-400">可信度</span>
+            <div className="h-1.5 w-28 overflow-hidden rounded-full bg-gray-100">
+              <div
+                className={`h-full rounded-full ${
+                  source.confidence > 0
+                    ? source.confidence >= 0.7
+                      ? 'bg-emerald-500'
+                      : source.confidence >= 0.4
+                        ? 'bg-amber-400'
+                        : 'bg-red-400'
+                    : 'bg-transparent'
+                }`}
+                style={{ width: `${Math.round(source.confidence * 100)}%` }}
+              />
+            </div>
+            <span className="text-xs text-gray-500">{Math.round(source.confidence * 100)}%</span>
+          </div>
+          {source.is_duplicate && (
+            <span className="mt-1.5 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">转载</span>
+          )}
+          {source.conflict_status === 'pending' && (
+            <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-600" title="该维度存在多个来源，需人工复核一致性">⚠ 待复核</span>
+          )}
           {source.snippet && (
             <p
               className={`mt-2 text-xs leading-relaxed text-gray-500 ${expanded ? '' : 'line-clamp-2'} cursor-pointer`}

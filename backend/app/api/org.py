@@ -1,5 +1,7 @@
 """企业组织：创建/加入（邀请码）/成员管理，一人同时只属于一个企业"""
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -7,14 +9,9 @@ from app.api.deps import get_current_user, member_month_usage
 from app.db.database import get_db
 from app.db.models import Organization, Tracker, User, _invite_code
 from app.schemas.org import (
-    MemberOut,
-    MemberUpdateIn,
-    OrgCreateIn,
-    OrgJoinIn,
-    OrgMeOut,
-    OrgOut,
-    OrgUpdateIn,
+    MemberOut, MemberUpdateIn, OrgCreateIn, OrgJoinIn, OrgMeOut, OrgOut, OrgUpdateIn,
 )
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/org", tags=["org"])
 
@@ -44,6 +41,15 @@ def create_org(payload: OrgCreateIn, user: User = Depends(get_current_user), db:
     user.org_role = "owner"
     db.commit()
     db.refresh(org)
+    try:
+        log_audit(
+            user_id=user.id, org_id=org.id,
+            action="org.create", resource_type="organization", resource_id=org.id,
+            input_data=payload.name.strip(),
+            status="success",
+        )
+    except Exception:
+        pass
     return org
 
 
@@ -62,6 +68,15 @@ def update_org(payload: OrgUpdateIn, user: User = Depends(get_current_user), db:
     org.name = payload.name.strip()
     db.commit()
     db.refresh(org)
+    try:
+        log_audit(
+            user_id=user.id, org_id=org.id,
+            action="org.update", resource_type="organization", resource_id=org.id,
+            input_data=payload.name.strip(),
+            status="success",
+        )
+    except Exception:
+        pass
     return org
 
 
@@ -71,6 +86,14 @@ def reset_invite_code(user: User = Depends(get_current_user), db: Session = Depe
     org.invite_code = _invite_code()
     db.commit()
     db.refresh(org)
+    try:
+        log_audit(
+            user_id=user.id, org_id=org.id,
+            action="org.invite_code_reset", resource_type="organization", resource_id=org.id,
+            status="success",
+        )
+    except Exception:
+        pass
     return org
 
 
@@ -86,6 +109,14 @@ def join_org(payload: OrgJoinIn, user: User = Depends(get_current_user), db: Ses
     user.org_role = "member"
     db.commit()
     db.refresh(org)
+    try:
+        log_audit(
+            user_id=user.id, org_id=org.id,
+            action="org.join", resource_type="organization", resource_id=org.id,
+            status="success",
+        )
+    except Exception:
+        pass
     return org
 
 
@@ -99,6 +130,9 @@ def list_members(user: User = Depends(get_current_user), db: Session = Depends(g
     for m in members:
         out = MemberOut.model_validate(m)
         out.month_used = member_month_usage(db, m.id)
+        # 加载 RBAC 权限（Sprint 4）
+        from app.api.deps import _load_permissions
+        out.permissions = sorted(_load_permissions(db, m.id))
         result.append(out)
     return result
 
@@ -124,8 +158,59 @@ def update_member(
         member.org_monthly_limit = payload.org_monthly_limit
     db.commit()
     db.refresh(member)
+    try:
+        log_audit(
+            user_id=user.id, org_id=org.id,
+            action="org.member_update", resource_type="user", resource_id=member_id,
+            input_data=json.dumps({"org_role": payload.org_role, "org_monthly_limit": payload.org_monthly_limit}),
+            status="success",
+        )
+    except Exception:
+        pass
     out = MemberOut.model_validate(member)
     out.month_used = member_month_usage(db, member.id)
+    return out
+
+
+@router.post("/members/{member_id}/permissions", response_model=MemberOut)
+def set_member_permissions(
+    member_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """设置成员 RBAC 权限（企业管理员）"""
+    from app.api.deps import invalidate_perm_cache
+
+    org = _require_org_admin(db, user)
+    member = db.get(User, member_id)
+    if not member or member.org_id != org.id:
+        raise HTTPException(status_code=404, detail="成员不存在")
+    if member.org_role == "owner":
+        raise HTTPException(status_code=400, detail="不能修改企业所有者的权限")
+
+    perms = payload.get("permissions", [])
+    if not isinstance(perms, list):
+        raise HTTPException(status_code=400, detail="permissions 需为字符串数组")
+
+    # 删除旧权限，写入新权限
+    db.query(UserPermission).filter(UserPermission.user_id == member_id).delete()
+    if perms:
+        db.add(UserPermission(user_id=member_id, permissions=json.dumps(perms, ensure_ascii=False)))
+    db.commit()
+    invalidate_perm_cache(member_id)
+    try:
+        log_audit(
+            user_id=user.id, org_id=org.id,
+            action="org.permission_set", resource_type="user", resource_id=member_id,
+            input_data=json.dumps({"permissions": perms}),
+            status="success",
+        )
+    except Exception:
+        pass
+    out = MemberOut.model_validate(member)
+    out.month_used = member_month_usage(db, member.id)
+    out.permissions = sorted(perms)
     return out
 
 
@@ -143,11 +228,20 @@ def remove_member(member_id: str, user: User = Depends(get_current_user), db: Se
     member.org_role = ""
     member.org_monthly_limit = -1
     db.commit()
+    try:
+        log_audit(
+            user_id=user.id, org_id=org.id,
+            action="org.member_remove", resource_type="user", resource_id=member_id,
+            status="success",
+        )
+    except Exception:
+        pass
 
 
 @router.post("/leave", status_code=204)
 def leave_org(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     org = _require_org(db, user)
+    org_id = org.id
     if user.org_role == "owner":
         others = db.query(User).filter(User.org_id == org.id, User.id != user.id).count()
         if others:
@@ -159,3 +253,11 @@ def leave_org(user: User = Depends(get_current_user), db: Session = Depends(get_
     user.org_role = ""
     user.org_monthly_limit = -1
     db.commit()
+    try:
+        log_audit(
+            user_id=user.id, org_id=org_id,
+            action="org.leave", resource_type="organization", resource_id=org_id,
+            status="success",
+        )
+    except Exception:
+        pass

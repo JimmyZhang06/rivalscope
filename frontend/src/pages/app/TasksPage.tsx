@@ -1,31 +1,45 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { User } from 'lucide-react'
-import { deleteResearch, listResearch } from '../../api/client'
-import type { TaskBrief } from '../../api/types'
+import { deleteResearch } from '../../api/client'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import StatusBadge from '../../components/StatusBadge'
+import { fmtDateTime } from '../../utils/time'
+import { usePageTitle } from '../../hooks/usePageTitle'
+import { useTaskStore } from '../../stores/taskStore'
 
 const RUNNING = new Set(['pending', 'planning', 'searching', 'analyzing', 'reporting'])
 
 type Filter = 'all' | 'mine' | 'others'
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<TaskBrief[]>([])
   const [loaded, setLoaded] = useState(false)
-  const [filter, setFilter] = useState<Filter>('all')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleteId, setDeleteId] = useState('')
 
-  const refresh = useCallback(() => {
-    listResearch()
-      .then(setTasks)
-      .catch(() => {})
-      .finally(() => setLoaded(true))
-  }, [])
+  // 从 store 读取数据
+  const tasks = useTaskStore((s) => s.tasks)
+  const filter = useTaskStore((s) => s.filter)
+  const storeLoading = useTaskStore((s) => s.loading)
+  const setFilter = useTaskStore((s) => s.setFilter)
+  const reload = useTaskStore((s) => s.reload)
 
+  usePageTitle('调研记录')
+
+  // 轮询：有进行中任务时持续刷新
+  const hasRunning = tasks.some((t) => RUNNING.has(t.status))
+
+  // 首次挂载加载数据
   useEffect(() => {
-    refresh()
-    const timer = setInterval(refresh, 3000) // 轮询刷新列表状态
+    reload().finally(() => setLoaded(true))
+  }, [reload])
+
+  // 有运行中任务时轮询
+  useEffect(() => {
+    if (!hasRunning || !loaded) return
+    const timer = setInterval(reload, 3000)
     return () => clearInterval(timer)
-  }, [refresh])
+  }, [hasRunning, loaded, reload])
 
   // 他人创建的任务后端会填 creator_nickname，据此区分「我的/成员的」
   const hasShared = useMemo(() => tasks.some((t) => t.creator_nickname), [tasks])
@@ -36,9 +50,17 @@ export default function TasksPage() {
   }, [tasks, filter])
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定删除该调研任务？')) return
-    await deleteResearch(id).catch(() => {})
-    refresh()
+    setDeleteId(id)
+    setConfirmOpen(true)
+  }
+
+  const doDelete = async () => {
+    if (!deleteId) return
+    await deleteResearch(deleteId).catch(() => {})
+    // 删除后重新拉取列表
+    await reload()
+    setConfirmOpen(false)
+    setDeleteId('')
   }
 
   const FILTERS: { key: Filter; label: string }[] = [
@@ -51,7 +73,15 @@ export default function TasksPage() {
     <div className="mx-auto max-w-4xl px-6 py-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">调研记录</h1>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">调研记录</h1>
+            {hasRunning && (
+              <span className="flex items-center gap-1.5 text-xs text-blue-600">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                轮询中
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-sm text-gray-500">全部历史调研任务与报告</p>
         </div>
         <Link
@@ -79,7 +109,7 @@ export default function TasksPage() {
       )}
 
       <div className="mt-6">
-        {!loaded ? (
+        {!loaded || storeLoading ? (
           <p className="py-16 text-center text-sm text-gray-400">加载中…</p>
         ) : visible.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 py-16 text-center">
@@ -108,7 +138,7 @@ export default function TasksPage() {
                   <p className="mt-1 truncate text-xs text-gray-500">
                     {t.competitors && <>竞品：{t.competitors} · </>}
                     {t.focus && <>重点：{t.focus} · </>}
-                    {new Date(t.created_at).toLocaleString('zh-CN')}
+                    {fmtDateTime(t.created_at)}
                   </p>
                   {t.status === 'failed' && t.error && (
                     <p className="mt-1 truncate text-xs text-red-500">{t.error}</p>
@@ -129,6 +159,15 @@ export default function TasksPage() {
           </ul>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="确认删除"
+        message="删除该调研任务后将无法恢复，确定继续？"
+        danger
+        onConfirm={doDelete}
+        onCancel={() => { setConfirmOpen(false); setDeleteId('') }}
+      />
     </div>
   )
 }

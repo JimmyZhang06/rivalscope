@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ClipboardList, Gem, TrendingUp, Users, Wallet } from 'lucide-react'
-import { adminListOrgs, adminListUsers, adminStats, adminUpdateOrg, adminUpdateUser } from '../../api/client'
-import type { AdminOrg, AdminOrgListResponse, AdminStats, AdminUserListResponse, Plan, Role, User } from '../../api/types'
+import {
+  adminListOrgs, adminListUsers, adminStats, adminUpdateOrg, adminUpdateUser,
+} from '../../api/client'
+import type { AdminOrg, AdminStats, Plan, Role, User } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
+import { fmtDate } from '../../utils/time'
 import PlanBadge from '../../components/PlanBadge'
 
 const PLAN_NAMES: Record<Plan, string> = { free: '免费版', pro: '专业版', enterprise: '企业版' }
@@ -78,11 +81,6 @@ export default function AdminPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     loadUsers(q.trim(), 1)
-  }
-
-  const handleOrgSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    loadOrgs(orgQ.trim(), 1)
   }
 
   const handlePlanChange = async (u: User, plan: Plan) => {
@@ -209,10 +207,10 @@ export default function AdminPage() {
                     <PlanBadge plan={u.plan} />
                   </td>
                   <td className="px-3 py-3 text-xs text-gray-500">
-                    {u.plan_expires_at ? new Date(u.plan_expires_at).toLocaleDateString('zh-CN') : '—'}
+                    {u.plan_expires_at ? fmtDate(u.plan_expires_at) : '—'}
                   </td>
                   <td className="px-3 py-3 text-xs text-gray-500">
-                    {new Date(u.created_at).toLocaleDateString('zh-CN')}
+                    {fmtDate(u.created_at)}
                   </td>
                   <td className="px-3 py-3">
                     <select
@@ -255,7 +253,7 @@ export default function AdminPage() {
           <form
             onSubmit={(e) => {
               e.preventDefault()
-              loadOrgs(orgQ.trim())
+              loadOrgs(orgQ.trim(), 1)
             }}
             className="flex gap-2"
           >
@@ -302,12 +300,12 @@ export default function AdminPage() {
                     <PlanBadge plan={o.plan} />
                   </td>
                   <td className="px-3 py-3 text-xs text-gray-500">
-                    {o.plan_expires_at ? new Date(o.plan_expires_at).toLocaleDateString('zh-CN') : '—'}
+                    {o.plan_expires_at ? fmtDate(o.plan_expires_at) : '—'}
                   </td>
                   <td className="px-3 py-3 text-xs text-gray-500">{o.member_count}</td>
                   <td className="px-3 py-3 text-xs text-gray-500">{o.month_used} 次</td>
                   <td className="px-3 py-3 text-xs text-gray-500">
-                    {new Date(o.created_at).toLocaleDateString('zh-CN')}
+                    {fmtDate(o.created_at)}
                   </td>
                   <td className="px-3 py-3">
                     <select

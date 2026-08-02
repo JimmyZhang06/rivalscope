@@ -93,26 +93,37 @@ def _add_step(task_id: str, phase: str, title: str, detail: str = "") -> None:
         db.commit()
 
 
-def _save_sources(task_id: str, results: list[dict]) -> None:
+async def _save_sources(task_id: str, results: list[dict]) -> None:
     with SessionLocal() as db:
         for r in results:
             raw_pub = str(r.get("published_date") or "")
             parsed = parse_published(raw_pub)
             published_at = parsed.strftime("%Y-%m-%d") if parsed else raw_pub[:50]
-            db.add(
-                Source(
-                    task_id=task_id,
-                    title=r["title"][:500],
-                    url=r["url"][:1000],
-                    snippet=r["content"][:2000],
-                    score=round(float(r.get("score") or 0.0), 4),
-                    domain=r.get("domain", "")[:255],
-                    tier=r.get("tier", "other"),
-                    published_at=published_at,
-                    dimension=str(r.get("dimension") or "")[:100],
-                    raw_content=str(r.get("raw_content") or "")[:RAW_CONTENT_LIMIT],
-                )
+            raw_content = str(r.get("raw_content") or "")[:RAW_CONTENT_LIMIT]
+            source = Source(
+                task_id=task_id,
+                title=r["title"][:500],
+                url=r["url"][:1000],
+                snippet=r["content"][:2000],
+                score=round(float(r.get("score") or 0.0), 4),
+                domain=r.get("domain", "")[:255],
+                tier=r.get("tier", "other"),
+                published_at=published_at,
+                dimension=str(r.get("dimension") or "")[:100],
+                raw_content=raw_content,
+                confidence=round(float(r.get("confidence") or 0.0), 3),
+                conflict_status=str(r.get("conflict_status") or "none"),
+                conflict_note="",
+                is_duplicate=bool(r.get("is_duplicate")),
+                dedup_group=str(r.get("dedup_group") or ""),
+                access_status="",
+                access_error="",
+                collected_at=None,
             )
+            db.add(source)
+            db.flush()  # 获取 source.id 用于创建快照
+            from app.services.snapshot import save_archive
+            await save_archive(task_id, source.id, r["url"], raw_content=str(r.get("raw_content") or ""))
         db.commit()
 
 
@@ -419,14 +430,11 @@ async def run_research(task_id: str) -> None:
     from app.services.llm import LLMClient
     from app.services.search import SearchClient
 
-    llm = LLMClient()
-    searcher = SearchClient()
-
+    # 先加载 task，再创建 LLM 客户端（避免 Python 局部变量提前引用）
     with SessionLocal() as db:
         task = db.get(ResearchTask, task_id)
         if not task:
             return
-        # 按任务归属用户的会员等级确定检索关键词组数（入企用户按企业套餐）
         from app.core.plans import effective_org_plan, effective_plan, plan_limits
         from app.db.models import Organization, User
 
@@ -437,7 +445,12 @@ async def run_research(task_id: str) -> None:
             max_queries = plan_limits(plan)["max_queries"]
         else:
             max_queries = MAX_QUERIES
+        user_id_for_audit = task.user_id
+        org_id_for_audit = task.org_id or ""
         db.expunge(task)  # 后续只读使用
+
+    llm = LLMClient(user_id=user_id_for_audit, org_id=org_id_for_audit)
+    searcher = SearchClient()
 
     try:
         # 1. 规划
@@ -471,7 +484,26 @@ async def run_research(task_id: str) -> None:
             recency = recency_weight(parse_published(r.get("published_date")), now, RECENCY_HALF_LIFE_DAYS)
             r["combined"] = 0.6 * float(r.get("score") or 0.0) + 0.4 * recency
         results.sort(key=lambda r: r.get("combined", 0.0), reverse=True)
-        _save_sources(task_id, results)
+
+        # 去重、置信度、冲突检测
+        from app.services.dedup import dedup_by_content, detect_conflicts, estimate_confidence
+
+        results = dedup_by_content(results)
+        for r in results:
+            r["confidence"] = estimate_confidence(r)
+        dimensions = list({q.get("dimension", "") for q in queries if q.get("dimension")})
+        if not dimensions:
+            dimensions = ["综合"]
+        detect_conflicts(results, dimensions)
+
+        # 重新排序（去重后数量可能变化）
+        now = baseline_now()
+        for r in results:
+            recency = recency_weight(parse_published(r.get("published_date")), now, RECENCY_HALF_LIFE_DAYS)
+            r["combined"] = 0.6 * float(r.get("score") or 0.0) + 0.4 * recency
+        results.sort(key=lambda r: r.get("combined", 0.0), reverse=True)
+
+        await _save_sources(task_id, results)
         credibility = _credibility_summary(results, queries)
         _add_step(task_id, "searching", "检索完成", f"去重后共收集 {len(results)} 条信息来源\n{credibility}")
 

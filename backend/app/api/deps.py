@@ -2,13 +2,20 @@
 
 from datetime import datetime, timezone
 
-from fastapi import Depends, Header, HTTPException
+import json
+import logging
+import time
+
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.plans import UNLIMITED, effective_org_plan, effective_plan, plan_limits
+from app.core.rate_limit import check_rate_limit
 from app.core.security import decode_access_token
-from app.db.database import get_db
-from app.db.models import GraphProject, Organization, ResearchTask, User
+from app.db.database import SessionLocal, get_db
+from app.db.models import GraphProject, Notification, Organization, ResearchTask, User, UserPermission
+
+logger = logging.getLogger(__name__)
 
 
 def _get_user_by_token(token: str, db: Session) -> User:
@@ -131,3 +138,93 @@ def check_quota_or_403(db: Session, user: User) -> None:
             status_code=403,
             detail=f"您本月的成员额度（{quota['member_limit']} 次）已用完，请联系企业管理员调整",
         )
+    # 额度预警：达 80% 时推送通知（本月内不重复）
+    _notify_quota_warning(db, user, quota)
+
+
+def _notify_quota_warning(db: Session, user: User, quota: dict) -> None:
+    """额度达 80% 时推送预警通知"""
+    if quota["limit"] == UNLIMITED or quota["limit"] <= 0:
+        return
+    ratio = quota["used"] / quota["limit"]
+    if ratio < 0.8:
+        return
+    # 本月内不重复推送
+    start = month_start_utc()
+    exists = db.query(Notification).filter(
+        Notification.user_id == user.id,
+        Notification.title == "额度预警",
+        Notification.created_at >= start,
+    ).count()
+    if exists:
+        return
+    db.add(Notification(
+        user_id=user.id,
+        org_id=user.org_id,
+        title="额度预警",
+        body=f"本月额度已使用 {ratio:.0%}，请注意控制用量",
+        link="/app/account",
+    ))
+    db.commit()
+
+
+# ---------- RBAC 权限（Sprint 4） ----------
+
+# 权限缓存
+_PERM_CACHE: dict[str, set[str]] = {}
+_CACHE_TTL = 60  # 秒
+_last_refresh: float = 0
+
+
+def _load_permissions(db: Session, user_id: str) -> set[str]:
+    """从数据库加载用户权限集合（带简单缓存）"""
+    global _last_refresh
+    now = time.time()
+    if user_id in _PERM_CACHE and now - _last_refresh < _CACHE_TTL:
+        return _PERM_CACHE[user_id]
+
+    perms: set[str] = set()
+    user = db.get(User, user_id)
+    if user and user.role == "admin":
+        perms = {"*"}
+
+    rows = db.query(UserPermission).filter(UserPermission.user_id == user_id).all()
+    for row in rows:
+        try:
+            perms.update(json.loads(row.permissions or "[]"))
+        except (ValueError, TypeError):
+            pass
+
+    _PERM_CACHE[user_id] = perms
+    _last_refresh = now
+    return perms
+
+
+def invalidate_perm_cache(user_id: str = "") -> None:
+    """权限变更后调用，清除缓存"""
+    global _last_refresh
+    _last_refresh = 0
+    if user_id:
+        _PERM_CACHE.pop(user_id, None)
+    else:
+        _PERM_CACHE.clear()
+
+
+def require_permission(*permissions: str):
+    """依赖项：检查当前用户是否有任一指定权限"""
+    async def _check(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        user_perms = _load_permissions(db, user.id)
+        if "*" in user_perms or any(p in user_perms for p in permissions):
+            return user
+        raise HTTPException(status_code=403, detail=f"需要权限：{', '.join(permissions)}")
+    return _check
+
+
+async def rate_limit_dep(request: Request) -> None:
+    """限流依赖：按 IP + 端点路径判断，超过阈值抛 429"""
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(client_ip, request.url.path):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后重试")

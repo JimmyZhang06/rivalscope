@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import get_settings
@@ -11,6 +11,17 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_conn, _conn_record):
+    """SQLite: 启用 WAL 模式 + 外键约束 + 较大超时，减少并发写入锁冲突"""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=60000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
 
 
 class Base(DeclarativeBase):

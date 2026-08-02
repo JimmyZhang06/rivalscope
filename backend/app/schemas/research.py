@@ -48,13 +48,34 @@ class SourceOut(BaseModel):
     tier: str = "other"
     published_at: str = ""
     dimension: str = ""
-    age_days: int = -1  # 距今天数（按基准时间计算），无日期为 -1
+    age_days: int = -1
+    confidence: float = 0.0
+    conflict_status: str = "none"
+    conflict_note: str = ""
+    is_duplicate: bool = False
+    access_status: str = ""
 
 
 class SourceDetail(SourceOut):
     """来源详情，含原文摘录"""
 
     raw_content: str = ""
+
+
+class SourceArchiveOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    task_id: str
+    source_id: int
+    snapshot_html: str
+    snapshot_text: str
+    snapshot_format: str
+    published_at: str
+    collected_at: datetime | None
+    access_status: str
+    access_error: str
+    raw_content_full: str
 
 
 class TaskBrief(BaseModel):

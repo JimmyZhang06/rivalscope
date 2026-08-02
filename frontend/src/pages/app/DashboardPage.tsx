@@ -5,15 +5,18 @@ import { getQuota, listResearch } from '../../api/client'
 import type { Quota, TaskBrief } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import StatusBadge from '../../components/StatusBadge'
+import { fmtDateTime } from '../../utils/time'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 export default function DashboardPage() {
   const { user } = useAuth()
+  usePageTitle('工作台')
   const [quota, setQuota] = useState<Quota | null>(null)
   const [tasks, setTasks] = useState<TaskBrief[]>([])
 
   useEffect(() => {
-    getQuota().then(setQuota).catch(() => {})
-    listResearch().then(setTasks).catch(() => {})
+    getQuota().then(setQuota).catch((e) => console.warn('额度加载失败:', e))
+    listResearch().then(setTasks).catch((e) => console.warn('任务列表加载失败:', e))
   }, [])
 
   const unlimited = quota?.limit === -1
@@ -132,7 +135,7 @@ export default function DashboardPage() {
                     </div>
                     <p className="mt-1 truncate text-xs text-gray-500">
                       {t.competitors && <>竞品：{t.competitors} · </>}
-                      {new Date(t.created_at).toLocaleString('zh-CN')}
+                      {fmtDateTime(t.created_at)}
                     </p>
                   </div>
                   <span className="text-gray-300">→</span>

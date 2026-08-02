@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import ReactFlow, {
   Background,
@@ -120,6 +120,8 @@ export default function GraphDetailPage() {
   const [trackSubmitting, setTrackSubmitting] = useState(false)
   const [trackError, setTrackError] = useState('')
   const [trackNotice, setTrackNotice] = useState('')
+  // 存储 ReactFlow 实例（用于"重置布局"按钮）
+  const flowApiRef = useRef<any>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -288,6 +290,15 @@ export default function GraphDetailPage() {
           <RefreshCw className="h-3.5 w-3.5" />
           {refreshing ? '重建中…' : '重建图谱'}
         </button>
+        <button
+          onClick={() => flowApiRef.current?.fitView({ padding: 0.2, duration: 300 })}
+          disabled={!detail || detail.status !== 'completed'}
+          className="flex items-center gap-1.5 rounded-md border border-gray-200 px-4 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
+          title="重置布局"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          重置布局
+        </button>
       </div>
 
       {error && (
@@ -347,6 +358,7 @@ export default function GraphDetailPage() {
             nodeTypes={nodeTypes}
             fitView
             minZoom={0.2}
+            onInit={(instance) => { flowApiRef.current = instance as any }}
             onNodeClick={(_, node) => {
               setSelectedEntity(entityById[node.id] ?? null)
               setSelectedRelation(null)

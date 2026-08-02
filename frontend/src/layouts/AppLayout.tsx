@@ -2,15 +2,20 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Bot,
+  Building2,
   Clock,
   FileText,
   Gem,
+  GitCompare,
   LayoutDashboard,
+  Layers,
   Network,
   Plus,
   Search,
   Shield,
+  Sparkles,
   User,
+  ClipboardList,
 } from 'lucide-react'
 import { getQuota } from '../api/client'
 import type { Plan } from '../api/types'
@@ -24,6 +29,11 @@ const NAV = [
   { to: '/app/new', label: '新建调研', icon: Plus },
   { to: '/app/tasks', label: '调研记录', icon: FileText },
   { to: '/app/trackers', label: '定时追踪', icon: Clock },
+  { to: '/app/competitors', label: '竞品管理', icon: Building2 },
+  { to: '/app/profiles/templates', label: '画像模板', icon: Layers, end: true },
+  { to: '/app/profiles', label: '竞品画像', icon: Sparkles, end: true },
+  { to: '/app/profiles/tasks', label: '画像任务', icon: ClipboardList },
+  { to: '/app/profiles/compare', label: '横向对比', icon: GitCompare },
   { to: '/app/graph', label: '关系图谱', icon: Network },
   { to: '/app/assistant', label: 'AI 助手', icon: Bot },
   { to: '/app/pricing', label: '套餐升级', icon: Gem },
@@ -76,6 +86,7 @@ export default function AppLayout() {
           {user?.role === 'admin' && (
             <NavLink
               to="/app/admin"
+              end
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition ${
                   isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
@@ -84,6 +95,19 @@ export default function AppLayout() {
             >
               <Shield className="h-4 w-4 shrink-0" />
               管理后台
+            </NavLink>
+          )}
+          {user?.role === 'admin' && (
+            <NavLink
+              to="/app/admin/audit-logs"
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition ${
+                  isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`
+              }
+            >
+              <ClipboardList className="h-4 w-4 shrink-0" />
+              审计日志
             </NavLink>
           )}
         </nav>

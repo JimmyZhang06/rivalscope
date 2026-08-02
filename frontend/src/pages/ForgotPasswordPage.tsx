@@ -6,15 +6,14 @@ import AuthShell from '../components/AuthShell'
 const INPUT_CLS =
   'w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
 
-/** 忘记密码：两步式（获取演示验证码 → 重置密码） */
 export default function ForgotPasswordPage() {
   const navigate = useNavigate()
   const [step, setStep] = useState<1 | 2>(1)
   const [email, setEmail] = useState('')
-  const [demoCode, setDemoCode] = useState('')
   const [code, setCode] = useState('')
   const [newPwd, setNewPwd] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
+  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -22,9 +21,10 @@ export default function ForgotPasswordPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setMessage('')
     try {
       const resp = await forgotPassword(email.trim())
-      setDemoCode(resp.demo_code)
+      setMessage(resp.message)
       setStep(2)
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取验证码失败')
@@ -86,17 +86,16 @@ export default function ForgotPasswordPage() {
             disabled={loading}
             className="w-full rounded-md bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? '获取中…' : '获取验证码'}
+            {loading ? '发送中…' : '发送验证码'}
           </button>
         </form>
       ) : (
         <form onSubmit={handleReset} className="space-y-5">
-          {/* 演示模式：无邮件服务，验证码直接展示 */}
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            演示模式：未接入邮件服务，你的验证码是{' '}
-            <span className="font-mono text-base font-bold tracking-widest">{demoCode}</span>
-            （10 分钟内有效）
-          </div>
+          {message && (
+            <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              {message} 请查看邮箱中的验证码。
+            </div>
+          )}
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">验证码</label>
             <input

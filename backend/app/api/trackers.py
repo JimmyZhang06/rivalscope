@@ -1,5 +1,6 @@
 """定时追踪项：CRUD + 立即运行 + 运行历史（企业维度共享）"""
 
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -11,6 +12,7 @@ from app.db.database import get_db
 from app.db.models import Organization, ResearchTask, Tracker, User
 from app.schemas.tracker import TrackerCreateIn, TrackerOut, TrackerRunOut, TrackerUpdateIn
 from app.services.agent import run_research
+from app.services.audit import log_audit
 from app.services.scheduler import initial_next_run
 
 router = APIRouter(prefix="/api/trackers", tags=["trackers"])
@@ -89,6 +91,15 @@ def create_tracker(payload: TrackerCreateIn, user: User = Depends(get_current_us
     db.add(tracker)
     db.commit()
     db.refresh(tracker)
+    try:
+        log_audit(
+            user_id=user.id, org_id=org.id,
+            action="tracker.create", resource_type="tracker", resource_id=tracker.id,
+            input_data=json.dumps({"product_name": payload.product_name, "frequency": payload.frequency}),
+            status="success",
+        )
+    except Exception:
+        pass
     return _with_extras(db, tracker, user)
 
 
@@ -128,6 +139,15 @@ def update_tracker(
         tracker.next_run_at = initial_next_run(tracker.frequency, tracker.run_hour)
     db.commit()
     db.refresh(tracker)
+    try:
+        log_audit(
+            user_id=user.id, org_id=user.org_id or "",
+            action="tracker.update", resource_type="tracker", resource_id=tracker_id,
+            input_data=json.dumps(list(data.keys())),
+            status="success",
+        )
+    except Exception:
+        pass
     return _with_extras(db, tracker, user)
 
 
@@ -135,9 +155,17 @@ def update_tracker(
 def delete_tracker(tracker_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     tracker = _get_org_tracker(tracker_id, user, db)
     _require_manage(tracker, user)
-    # 保留历史任务（tracker_id 悬空不影响查看报告），仅删除追踪项本身
+    tid = tracker.id
     db.delete(tracker)
     db.commit()
+    try:
+        log_audit(
+            user_id=user.id, org_id=user.org_id or "",
+            action="tracker.delete", resource_type="tracker", resource_id=tid,
+            status="success",
+        )
+    except Exception:
+        pass
 
 
 @router.post("/{tracker_id}/run-now", response_model=TrackerRunOut, status_code=201)
@@ -174,6 +202,15 @@ def run_now(
     tracker.last_run_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(task)
+    try:
+        log_audit(
+            user_id=user.id, org_id=tracker.org_id,
+            action="tracker.run", resource_type="tracker", resource_id=tracker.id,
+            input_data=json.dumps({"task_id": task.id}),
+            status="success",
+        )
+    except Exception:
+        pass
     background.add_task(run_research, task.id)
     return task
 

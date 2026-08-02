@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Network } from 'lucide-react'
-import { createGraph, deleteGraph, listGraphs } from '../../api/client'
+import { createGraph, deleteGraph } from '../../api/client'
 import type { GraphProject, GraphStatus, TimeRange } from '../../api/types'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import QuotaErrorBanner from '../../components/QuotaErrorBanner'
+import { fmtDateTime } from '../../utils/time'
+import { usePageTitle } from '../../hooks/usePageTitle'
+import { useGraphStore } from '../../stores/graphStore'
 
 const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: '', label: '不限' },
@@ -20,27 +24,22 @@ const STATUS_META: Record<GraphStatus, { label: string; cls: string }> = {
 }
 
 export default function GraphPage() {
-  const [projects, setProjects] = useState<GraphProject[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  usePageTitle('关系图谱')
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [rootName, setRootName] = useState('')
   const [industry, setIndustry] = useState('')
   const [competitors, setCompetitors] = useState('')
   const [timeRange, setTimeRange] = useState<TimeRange>('year')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleteId, setDeleteId] = useState('')
 
-  const reload = useCallback(async () => {
-    try {
-      setProjects(await listGraphs())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // 从 store 读取
+  const projects = useGraphStore((s) => s.projects)
+  const storeLoading = useGraphStore((s) => s.loading)
+  const reload = useGraphStore((s) => s.reload)
 
+  // 首次挂载加载数据
   useEffect(() => {
     reload()
   }, [reload])
@@ -51,6 +50,9 @@ export default function GraphPage() {
     const timer = setInterval(reload, 4000)
     return () => clearInterval(timer)
   }, [projects, reload])
+
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,16 +82,26 @@ export default function GraphPage() {
   }
 
   const handleDelete = async (p: GraphProject) => {
-    if (!window.confirm(`确认删除「${p.root_name}」的关系图谱？`)) return
+    setDeleteId(p.id)
+    setConfirmOpen(true)
+  }
+
+  const doDelete = async () => {
+    if (!deleteId) return
+    setSubmitting(true)
     try {
-      await deleteGraph(p.id)
+      await deleteGraph(deleteId)
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除失败')
+    } finally {
+      setSubmitting(false)
+      setConfirmOpen(false)
+      setDeleteId('')
     }
   }
 
-  if (loading) {
+  if (storeLoading) {
     return <div className="mx-auto max-w-5xl px-6 py-8 text-sm text-gray-400">加载中…</div>
   }
 
@@ -143,7 +155,7 @@ export default function GraphPage() {
                 {p.status === 'failed' && p.error && (
                   <p className="mt-2 line-clamp-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600">{p.error}</p>
                 )}
-                <p className="mt-2 text-xs text-gray-400">创建于 {new Date(p.created_at).toLocaleString()}</p>
+                <p className="mt-2 text-xs text-gray-400">创建于 {fmtDateTime(p.created_at)}</p>
               </>
             )
             return (
@@ -177,6 +189,16 @@ export default function GraphPage() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="确认删除"
+        message="删除该关系图谱后将无法恢复，确定继续？"
+        danger
+        loading={submitting}
+        onConfirm={doDelete}
+        onCancel={() => { setConfirmOpen(false); setDeleteId('') }}
+      />
 
       {/* 新建弹窗 */}
       {showForm && (

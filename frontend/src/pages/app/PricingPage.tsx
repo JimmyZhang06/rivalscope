@@ -3,8 +3,11 @@ import { Check, CheckCircle2, X } from 'lucide-react'
 import { listPlans, upgradePlan } from '../../api/client'
 import type { Plan, PlanInfo } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
+import { fmtDate } from '../../utils/time'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 export default function PricingPage() {
+  usePageTitle('套餐升级')
   const { user, refreshUser } = useAuth()
   const [plans, setPlans] = useState<PlanInfo[]>([])
   const [paying, setPaying] = useState<PlanInfo | null>(null) // 模拟支付弹窗
@@ -38,7 +41,7 @@ export default function PricingPage() {
       <p className="mt-1 text-sm text-gray-500">
         当前套餐：<span className="font-medium text-gray-900">{plans.find((p) => p.key === user?.plan)?.name ?? user?.plan}</span>
         {user?.plan_expires_at && (
-          <> · 有效期至 {new Date(user.plan_expires_at).toLocaleDateString('zh-CN')}</>
+          <> · 有效期至 {fmtDate(user.plan_expires_at)}</>
         )}
       </p>
 

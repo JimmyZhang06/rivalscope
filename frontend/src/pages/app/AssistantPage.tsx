@@ -7,15 +7,20 @@ import {
   renameAssistantSession,
 } from '../../api/client'
 import type { AssistantSession } from '../../api/types'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 /** 全局 AI 助手独立页：左侧会话历史 + 右侧对话面板 */
 export default function AssistantPage() {
+  usePageTitle('AI 助手')
   const [sessions, setSessions] = useState<AssistantSession[]>([])
   // null 表示「新会话」（尚未落库）
   const [currentId, setCurrentId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleteId, setDeleteId] = useState('')
 
   const refreshSessions = () => listAssistantSessions().then(setSessions).catch(() => {})
 
@@ -62,16 +67,24 @@ export default function AssistantPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('确认删除该会话及其全部消息？')) return
+    setDeleteId(id)
+    setConfirmOpen(true)
+  }
+
+  const doDelete = async () => {
+    if (!deleteId) return
     try {
-      await deleteAssistantSession(id)
+      await deleteAssistantSession(deleteId)
       setSessions((prev) => {
-        const next = prev.filter((s) => s.id !== id)
-        if (currentId === id) setCurrentId(next[0]?.id ?? null)
+        const next = prev.filter((s) => s.id !== deleteId)
+        if (currentId === deleteId) setCurrentId(next[0]?.id ?? null)
         return next
       })
     } catch {
       /* 忽略删除失败 */
+    } finally {
+      setConfirmOpen(false)
+      setDeleteId('')
     }
   }
 
@@ -181,6 +194,15 @@ export default function AssistantPage() {
           />
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="确认删除"
+        message="删除该会话及其全部消息后将无法恢复，确定继续？"
+        danger
+        onConfirm={doDelete}
+        onCancel={() => { setConfirmOpen(false); setDeleteId('') }}
+      />
     </div>
   )
 }

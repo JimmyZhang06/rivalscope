@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import html2pdf from 'html2pdf.js'
 import type { Source, TaskDetail } from '../api/types'
 import { TIER_LABELS } from '../components/TierBadge'
+import { fmtDateTime } from './time'
 import { splitSourcesSection } from './reportSections'
 
 /**
@@ -87,7 +88,7 @@ function renderCoverHtml(task: TaskDetail, sources: Source[]) {
       <h1>${escapeHtml(task.product_name)} 竞品调研报告</h1>
       ${competitors ? `<p class="exp-meta">对比竞品：${escapeHtml(competitors)}</p>` : ''}
       ${task.focus ? `<p class="exp-meta">调研重点：${escapeHtml(task.focus)}</p>` : ''}
-      <p class="exp-meta">生成时间：${new Date(task.created_at).toLocaleString('zh-CN')} · 信息来源 ${sources.length} 条</p>
+      <p class="exp-meta">生成时间：${fmtDateTime(task.created_at)} · 信息来源 ${sources.length} 条</p>
     </div>`
 }
 

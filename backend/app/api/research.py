@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import asyncio
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
@@ -14,20 +16,30 @@ from app.schemas.research import (
     AskOut,
     EmailReportOut,
     ResearchCreate,
+    SourceArchiveOut,
     SourceDetail,
     StepOut,
     TaskBrief,
     TaskDetail,
 )
 from app.services.agent import run_research
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 
 FINAL_STATUSES = {"completed", "failed"}
 
 
+async def _run_research_bg(task_id: str) -> None:
+    """BackgroundTasks 包装器：async 函数作为 coroutine 直接 await"""
+    try:
+        await run_research(task_id)
+    except Exception:
+        logger.exception("research bg task %s failed", task_id)
+
+
 @router.post("", response_model=TaskBrief, status_code=201)
-def create_research(
+async def create_research(
     payload: ResearchCreate,
     background: BackgroundTasks,
     user: User = Depends(get_current_user),
@@ -46,7 +58,16 @@ def create_research(
     db.add(task)
     db.commit()
     db.refresh(task)
-    background.add_task(run_research, task.id)
+    try:
+        log_audit(
+            user_id=user.id, org_id=user.org_id or "",
+            action="task.create", resource_type="research_task", resource_id=task.id,
+            input_data=json.dumps({"product_name": payload.product_name, "competitors": payload.competitors}),
+            status="success",
+        )
+    except Exception:
+        pass
+    background.add_task(_run_research_bg, task.id)
     return task
 
 
@@ -106,6 +127,14 @@ def delete_research(task_id: str, user: User = Depends(get_current_user), db: Se
     task = _get_owned_task(task_id, user, db)
     db.delete(task)
     db.commit()
+    try:
+        log_audit(
+            user_id=user.id, org_id=user.org_id or "",
+            action="task.delete", resource_type="research_task", resource_id=task_id,
+            status="success",
+        )
+    except Exception:
+        pass
 
 
 ASK_SOURCE_LIMIT = 15  # 追问上下文最多附带的来源条数
@@ -127,8 +156,8 @@ async def ask_research(
     from app.core.config import get_settings
 
     settings = get_settings()
-    if not settings.llm_api_key or settings.llm_api_key == "your-llm-api-key":
-        raise HTTPException(status_code=503, detail="缺少 LLM 配置，请在 backend/.env 中填写")
+    if not settings.llm_api_key:
+        raise HTTPException(status_code=503, detail="缺少 LLM 配置，请联系管理员")
 
     # 高分来源材料（编号与报告 [n] 一致：入库顺序即优先级顺序）
     sources = db.query(Source).filter(Source.task_id == task_id).order_by(Source.id).all()
@@ -137,7 +166,6 @@ async def ask_research(
         for i, s in enumerate(sources[:ASK_SOURCE_LIMIT], 1)
     )
 
-    from app.services.agent import _date_header
     from app.services.llm import LLMClient
 
     system = (
@@ -155,7 +183,7 @@ async def ask_research(
         f"用户问题：{payload.question.strip()}"
     )
     try:
-        answer = await LLMClient().chat(system, prompt)
+        answer = await LLMClient(user_id=user.id, org_id=user.org_id).chat(system, prompt)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"回答生成失败：{str(exc)[:200]}") from exc
     return AskOut(answer=answer)

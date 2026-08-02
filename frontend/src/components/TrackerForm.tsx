@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { Bot, Mail } from 'lucide-react'
 import type { Frequency, TimeRange, Tracker, TrackerCreate, WebhookType } from '../api/types'
 
+const inputCls =
+  'w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+
 const FREQ_OPTIONS: { value: Frequency; label: string }[] = [
   { value: 'daily', label: '每日' },
   { value: 'weekly', label: '每周' },
@@ -22,20 +25,19 @@ const WEBHOOK_OPTIONS: { value: WebhookType; label: string }[] = [
   { value: 'generic', label: '通用 JSON' },
 ]
 
-const inputCls =
-  'w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-
-/** 追踪项新建 / 编辑表单（弹窗内使用）；initial 可传部分字段用于外部预填（如图谱实体纳入追踪） */
+/** 追踪项新建 / 编辑表单（弹窗内使用） */
 export default function TrackerForm({
   initial,
   submitting,
   onSubmit,
   onCancel,
+  hasOrg = true,
 }: {
   initial?: Partial<Tracker>
   submitting: boolean
   onSubmit: (payload: TrackerCreate) => void
   onCancel: () => void
+  hasOrg?: boolean
 }) {
   const [productName, setProductName] = useState(initial?.product_name ?? '')
   const [competitors, setCompetitors] = useState(initial?.competitors ?? '')
@@ -43,7 +45,8 @@ export default function TrackerForm({
   const [timeRange, setTimeRange] = useState<TimeRange>(initial?.time_range ?? 'year')
   const [frequency, setFrequency] = useState<Frequency>(initial?.frequency ?? 'daily')
   const [runHour, setRunHour] = useState(initial?.run_hour ?? 9)
-  const [pushEmail, setPushEmail] = useState(initial?.push_email ?? true)
+  // 无企业时邮件推送不生效，默认关闭并提示
+  const [pushEmail, setPushEmail] = useState(initial?.push_email ?? (hasOrg && true))
   const [pushWebhook, setPushWebhook] = useState(initial?.push_webhook ?? false)
   const [webhookType, setWebhookType] = useState<WebhookType>(initial?.webhook_type ?? 'wecom')
   const [webhookUrl, setWebhookUrl] = useState(initial?.webhook_url ?? '')
@@ -140,10 +143,14 @@ export default function TrackerForm({
             type="checkbox"
             checked={pushEmail}
             onChange={(e) => setPushEmail(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            disabled={!hasOrg}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
           />
           <Mail className="h-4 w-4 text-gray-400" /> 邮件推送（发送至企业成员邮箱）
         </label>
+        {!hasOrg && (
+          <p className="mt-1 text-xs text-amber-600">需加入企业后邮件推送才生效</p>
+        )}
         <label className="mt-2 flex items-center gap-2 text-sm text-gray-600">
           <input
             type="checkbox"

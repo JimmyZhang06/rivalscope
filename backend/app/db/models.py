@@ -3,7 +3,7 @@ import string
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -49,6 +49,76 @@ class User(Base):
     login_logs: Mapped[list["LoginLog"]] = relationship(
         back_populates="user", order_by="LoginLog.created_at.desc()"
     )
+
+
+class Competitor(Base):
+    """竞品：结构化注册竞品信息，企业维度隔离"""
+
+    __tablename__ = "competitors"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    # 空 org_id 表示系统级模板竞品（仅管理员创建）
+    name: Mapped[str] = mapped_column(String(200))
+    alias: Mapped[str] = mapped_column(String(500), default="")
+    website: Mapped[str] = mapped_column(String(500), default="")
+    tech_focus: Mapped[str] = mapped_column(Text, default="")
+    keywords: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    crawl_config: Mapped[str] = mapped_column(Text, default="")
+    crawl_status: Mapped[str] = mapped_column(String(20), default="")
+    crawl_error: Mapped[str] = mapped_column(Text, default="")
+    last_crawled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class CompetitorPage(Base):
+    """竞品网站爬取页面：存储从竞品官网爬取到的单页内容"""
+
+    __tablename__ = "competitor_pages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    competitor_id: Mapped[str] = mapped_column(String(32), index=True)
+    url: Mapped[str] = mapped_column(String(1000))
+    page_type: Mapped[str] = mapped_column(String(50), default="other")
+    # sitemap / pricing / features / product / about / docs / blog / other
+    title: Mapped[str] = mapped_column(String(500), default="")
+    content_text: Mapped[str] = mapped_column(Text, default="")
+    # readability 提取的正文
+    content_html: Mapped[str] = mapped_column(Text, default="")
+    # 原始 HTML（截断）
+
+    access_status: Mapped[str] = mapped_column(String(20), default="")
+    # success / failed / skipped
+    access_error: Mapped[str] = mapped_column(Text, default="")
+
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    crawled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CrawlTask(Base):
+    """竞品爬取任务：跟踪一次全站爬取的进度"""
+
+    __tablename__ = "crawl_tasks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    competitor_id: Mapped[str] = mapped_column(String(32), index=True)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    # pending / running / done / error
+    total_pages: Mapped[int] = mapped_column(default=0)
+    crawled_pages: Mapped[int] = mapped_column(default=0)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+    crawl_config: Mapped[str] = mapped_column(Text, default="")
+    # JSON: {"max_pages": 50, "discover": true, "heuristics": true}
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Order(Base):
@@ -149,7 +219,17 @@ class Source(Base):
     tier: Mapped[str] = mapped_column(String(20), default="other")  # official / media / community / other
     published_at: Mapped[str] = mapped_column(String(50), default="")  # 来源发布时间（原始字符串，可空）
     dimension: Mapped[str] = mapped_column(String(100), default="")  # 来自哪组检索维度
-    raw_content: Mapped[str] = mapped_column(Text, default="")  # 原文摘录（截断保存）
+    raw_content: Mapped[str] = mapped_column(Text, default="")  # 原文摘录（截断保存，供列表展示）
+
+    # 来源存证与置信度（Agent 7 新增）
+    confidence: Mapped[float] = mapped_column(default=0.0)
+    conflict_status: Mapped[str] = mapped_column(String(20), default="none")
+    conflict_note: Mapped[str] = mapped_column(Text, default="")
+    is_duplicate: Mapped[bool] = mapped_column(Boolean, default=False)
+    dedup_group: Mapped[str] = mapped_column(String(32), default="")
+    access_status: Mapped[str] = mapped_column(String(20), default="")
+    access_error: Mapped[str] = mapped_column(Text, default="")
+    collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     task: Mapped[ResearchTask] = relationship(back_populates="sources")
 
@@ -159,6 +239,97 @@ class Source(Base):
         from app.core.timeutil import age_days_of, parse_published
 
         return age_days_of(parse_published(self.published_at))
+
+
+class SourceArchive(Base):
+    """来源存证快照：页面 HTML + 纯文本 + 采集元数据"""
+
+    __tablename__ = "source_archives"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    source_id: Mapped[int] = mapped_column(index=True)
+
+    snapshot_html: Mapped[str] = mapped_column(Text, default="")
+    snapshot_text: Mapped[str] = mapped_column(Text, default="")
+    snapshot_format: Mapped[str] = mapped_column(String(20), default="html")
+
+    published_at: Mapped[str] = mapped_column(String(50), default="")
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    access_status: Mapped[str] = mapped_column(String(20), default="success")
+    access_error: Mapped[str] = mapped_column(Text, default="")
+
+    raw_content_full: Mapped[str] = mapped_column(Text, default="")
+
+
+class ProfileTemplate(Base):
+    """画像模板：固定维度定义，冻结后不可修改"""
+
+    __tablename__ = "profile_templates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    dimensions: Mapped[str] = mapped_column(Text)
+    # JSON: [{"key": "product_overview", "label": "产品概况",
+    #         "fields": [{"key": "name", "label": "名称", "type": "text"},
+    #                    {"key": "price", "label": "价格区间", "type": "text"}]}]
+    version: Mapped[int] = mapped_column(default=1)
+    frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class CompetitorProfile(Base):
+    """竞品画像：按模板维度生成的结构化数据"""
+
+    __tablename__ = "competitor_profiles"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(String(32), index=True)
+    competitor_id: Mapped[str] = mapped_column(String(32), index=True)
+    template_id: Mapped[str] = mapped_column(String(32), index=True)
+
+    profile_data: Mapped[str] = mapped_column(Text)
+    # JSON: {"dimension_key": {"field_key": "value", ...}, ...}
+    source_refs: Mapped[str] = mapped_column(Text, default="[]")
+    # JSON: [{"url": "...", "title": "...", "snippet": "..."}] — 快照副本，避免悬空引用
+
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    # draft / reviewed / frozen
+    frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class ProfileExtractTask(Base):
+    """画像提取后台任务（持久化到数据库，避免进程重启丢失）"""
+
+    __tablename__ = "profile_extract_tasks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # task_id 与 CompetitorProfile 复用 UUID 格式
+
+    competitor_id: Mapped[str] = mapped_column(String(32), index=True)
+    template_id: Mapped[str] = mapped_column(String(32), index=True)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    # pending / running / done / error
+
+    current_step: Mapped[str] = mapped_column(String(50), default="")
+    # 当前阶段描述（如 "正在分析页面..."）
+
+    result: Mapped[str] = mapped_column(Text, default="")
+    # JSON：完成时保存结果
+
+    error: Mapped[str] = mapped_column(Text, default="")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
 class Organization(Base):
@@ -211,6 +382,103 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")  # 前端路由，如 /app/tasks/{id}
     read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ServiceKey(Base):
+    """外部服务 API 密钥（Fernet 加密存储）"""
+
+    __tablename__ = "service_keys"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    service: Mapped[str] = mapped_column(String(50))  # llm / tavily / smtp
+    encrypted_value: Mapped[str] = mapped_column(Text)
+    label: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    @property
+    def value(self) -> str:
+        from app.core.crypto import decrypt
+        return decrypt(self.encrypted_value)
+
+    @value.setter
+    def value(self, plaintext: str) -> None:
+        from app.core.crypto import encrypt
+        self.encrypted_value = encrypt(plaintext) if plaintext else ""
+
+
+class UserPermission(Base):
+    """用户权限：JSON 数组存储，轻量实现"""
+
+    __tablename__ = "user_permissions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    permissions: Mapped[str] = mapped_column(Text, default="[]")
+    # JSON: ["source:register", "profile:generate", ...]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AuditLog(Base):
+    """审计日志：关键操作 + 模型调用 + 来源访问"""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+
+    action: Mapped[str] = mapped_column(String(50))
+    resource_type: Mapped[str] = mapped_column(String(50))
+    resource_id: Mapped[str] = mapped_column(String(32), default="")
+
+    input: Mapped[str] = mapped_column(Text, default="")
+    result: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20))
+    error: Mapped[str] = mapped_column(Text, default="")
+
+    model_name: Mapped[str] = mapped_column(String(100), default="")
+    tokens_prompt: Mapped[int] = mapped_column(default=0)
+    tokens_completion: Mapped[int] = mapped_column(default=0)
+    cost: Mapped[float] = mapped_column(default=0.0)
+
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    user_agent: Mapped[str] = mapped_column(String(300), default="")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    __table_args__ = (
+        Index("idx_audit_action_resource", "action", "resource_type"),
+        Index("idx_audit_created_at", "created_at"),
+    )
+
+
+@event.listens_for(AuditLog, "before_update")
+@event.listens_for(AuditLog, "before_delete")
+def _prevent_audit_modification(_mapper, _connection, _target):
+    """审计日志写入后不可修改或删除（应用层保护）"""
+    raise RuntimeError("审计日志不可修改或删除")
+
+
+class ExecutionSnapshot(Base):
+    """执行快照：记录调研任务的运行时环境与配置哈希"""
+
+    __tablename__ = "execution_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(String(32), index=True)
+    tracker_id: Mapped[str] = mapped_column(String(32), index=True)
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+
+    config_hash: Mapped[str] = mapped_column(String(64))
+    model_params: Mapped[str] = mapped_column(Text)
+    kb_version: Mapped[str] = mapped_column(String(50), default="")
+    deployment_env: Mapped[str] = mapped_column(String(100), default="")
+    candidate_version: Mapped[str] = mapped_column(String(50), default="")
+    build_hash: Mapped[str] = mapped_column(String(64), default="")
+
+    created_by: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

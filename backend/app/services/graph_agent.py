@@ -339,6 +339,8 @@ async def build_graph(project_id: str) -> None:
         project = db.get(GraphProject, project_id)
         if not project:
             return
+        project_user_id = project.user_id
+        project_org_id = project.org_id or ""
         db.expunge(project)
 
     try:
@@ -346,7 +348,7 @@ async def build_graph(project_id: str) -> None:
         from app.services.llm import LLMClient
         from app.services.search import SearchClient
 
-        llm = LLMClient()
+        llm = LLMClient(user_id=project_user_id, org_id=project_org_id)
         searcher = SearchClient()
         queries = await _plan_queries(llm, project)
         results = await _collect(searcher, queries, (project.time_range or "").strip())

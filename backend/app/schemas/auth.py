@@ -1,7 +1,19 @@
 import re
 from datetime import datetime
 
+from typing import Generic, TypeVar
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from typing import Any
+
+T = TypeVar("T")
+
+
+class AdminListOut(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    page: int
+    page_size: int
 
 
 class RegisterIn(BaseModel):
@@ -38,6 +50,7 @@ class UserOut(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str = ""
     user: UserOut
 
 
@@ -81,20 +94,6 @@ class AdminStatsOut(BaseModel):
     paid_users: int
 
 
-class AdminListOut(BaseModel):
-    items: list[UserOut]
-    total: int
-    page: int
-    page_size: int
-
-
-class AdminOrgListOut(BaseModel):
-    items: list[AdminOrgOut]
-    total: int
-    page: int
-    page_size: int
-
-
 class AdminOrgOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -105,11 +104,18 @@ class AdminOrgOut(BaseModel):
     invite_code: str
     created_at: datetime
     member_count: int = 0
-    month_used: int = 0  # 本月已消耗额度（调研 + 图谱，失败不计）
+    month_used: int = 0
 
 
 class AdminOrgUpdate(BaseModel):
-    plan: str | None = None  # free / pro / enterprise
+    plan: str | None = None
+
+
+class AdminOrgListOut(BaseModel):
+    items: list[AdminOrgOut]
+    total: int
+    page: int
+    page_size: int
 
 
 def _validate_password_strength(v: str) -> str:
@@ -174,7 +180,6 @@ class ForgotIn(BaseModel):
 
 class ForgotOut(BaseModel):
     message: str
-    demo_code: str  # 演示模式：无邮件服务，验证码直接返回
 
 
 class ResetIn(BaseModel):
@@ -186,3 +191,70 @@ class ResetIn(BaseModel):
     @classmethod
     def password_strength(cls, v: str) -> str:
         return _validate_password_strength(v)
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+
+# ---------- 审计日志（Sprint 4） ----------
+
+class AuditStatsOut(BaseModel):
+    """审计统计概览"""
+    total_logs: int
+    today_logs: int
+    success_count: int
+    failed_count: int
+    action_breakdown: list[dict[str, int]]
+    top_models: list[dict[str, Any]]
+
+
+class AuditLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    org_id: str
+    action: str
+    resource_type: str
+    resource_id: str
+    input: str
+    result: str
+    status: str
+    error: str
+    model_name: str
+    tokens_prompt: int
+    tokens_completion: int
+    cost: float
+    ip: str
+    user_agent: str
+    created_at: datetime
+
+
+class AuditLogQuery(BaseModel):
+    action: str = ""
+    resource_type: str = ""
+    user_id: str = ""
+    start: str = ""
+    end: str = ""
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+
+
+# ---------- 执行快照（Sprint 4） ----------
+
+class ExecutionSnapshotOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    org_id: str
+    tracker_id: str
+    task_id: str
+    config_hash: str
+    model_params: str
+    kb_version: str
+    deployment_env: str
+    candidate_version: str
+    build_hash: str
+    created_by: str
+    created_at: datetime

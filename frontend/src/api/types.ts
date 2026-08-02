@@ -46,6 +46,10 @@ export interface Source {
   published_at: string
   dimension: string
   age_days: number // 距今天数，无日期为 -1
+  confidence: number // 0~1，来源可信度评分
+  conflict_status: string // none / pending
+  is_duplicate: boolean
+  access_status: string // '' / success / failed
 }
 
 export interface SourceDetail extends Source {
@@ -109,9 +113,93 @@ export interface User {
   created_at: string
 }
 
+export interface Competitor {
+  id: string
+  org_id: string
+  name: string
+  alias: string
+  website: string
+  tech_focus: string
+  keywords: string[]
+  status: 'active' | 'paused' | 'archived'
+  created_at: string
+  updated_at: string
+  crawl_status: string // idle / running / done / error
+  last_crawled_at: string | null
+  crawl_error: string
+}
+
+export type CrawlTaskStatus = 'pending' | 'running' | 'done' | 'error'
+
+export interface CrawlTask {
+  id: string
+  competitor_id: string
+  org_id: string
+  user_id: string
+  status: CrawlTaskStatus
+  total_pages: number
+  crawled_pages: number
+  error: string
+  crawl_config: string
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+}
+
+export interface CompetitorPage {
+  id: string
+  competitor_id: string
+  url: string
+  page_type: string
+  title: string
+  access_status: string
+  access_error: string
+  discovered_at: string
+  crawled_at: string | null
+}
+
+export interface ProfileTemplate {
+  id: string
+  org_id: string
+  name: string
+  dimensions: Array<{ key: string; label: string; fields: Array<{ key: string; label: string; type: string }> }>
+  version: number
+  frozen_at: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface CompetitorProfile {
+  id: string
+  org_id: string
+  competitor_id: string
+  template_id: string
+  profile_data: Record<string, any>
+  source_refs: Array<{ url: string; title: string; snippet: string }>
+  status: 'draft' | 'reviewed' | 'frozen'
+  frozen_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface GenerateTaskStatus {
+  task_id: string
+  competitor_id: string
+  template_id: string
+  status: string
+  current_step: string
+  error: string
+  created_at: string | null
+  updated_at: string | null
+  result?: any
+}
+
+export type ProfileTaskStatus = 'pending' | 'running' | 'done' | 'error'
+
 export interface TokenResponse {
   access_token: string
   token_type: string
+  refresh_token: string
   user: User
 }
 
@@ -204,7 +292,6 @@ export interface UsageStats {
 
 export interface ForgotResponse {
   message: string
-  demo_code: string
 }
 
 // ---------- 企业组织 ----------
@@ -383,4 +470,46 @@ export interface AssistantSession {
   title: string
   created_at: string
   updated_at: string
+}
+
+export interface UserPermission {
+  id: string
+  user_id: string
+  permissions: string[]
+  created_at: string
+}
+
+export interface AuditLog {
+  id: string
+  user_id: string
+  org_id: string
+  action: string
+  resource_type: string
+  resource_id: string
+  input: string
+  result: string
+  status: string
+  error: string
+  model_name: string
+  tokens_prompt: number
+  tokens_completion: number
+  cost: number
+  ip: string
+  user_agent: string
+  created_at: string
+}
+
+export interface ExecutionSnapshot {
+  id: string
+  org_id: string
+  tracker_id: string
+  task_id: string
+  config_hash: string
+  model_params: string
+  kb_version: string
+  deployment_env: string
+  candidate_version: string
+  build_hash: string
+  created_by: string
+  created_at: string
 }

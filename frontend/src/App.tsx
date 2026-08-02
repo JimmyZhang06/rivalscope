@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { AuthProvider, RequireAdmin, RequireAuth } from './auth/AuthContext'
 import AppLayout from './layouts/AppLayout'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
@@ -7,8 +8,15 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import AccountPage from './pages/app/AccountPage'
 import AdminPage from './pages/app/AdminPage'
+import AuditLogsPage from './pages/app/AuditLogsPage'
 import AssistantPage from './pages/app/AssistantPage'
+import ComparisonPage from './pages/app/ComparisonPage'
+import CompetitorsPage from './pages/app/CompetitorsPage'
 import DashboardPage from './pages/app/DashboardPage'
+import ProfileTemplatesPage from './pages/app/ProfileTemplatesPage'
+import ProfilesPage from './pages/app/ProfilesPage'
+import ProfileDetailPage from './pages/app/ProfileDetailPage'
+import ProfileTasksPage from './pages/app/ProfileTasksPage'
 import GraphDetailPage from './pages/app/GraphDetailPage'
 import GraphPage from './pages/app/GraphPage'
 import NewResearchPage from './pages/app/NewResearchPage'
@@ -20,7 +28,8 @@ import TrackersPage from './pages/app/TrackersPage'
 
 export default function App() {
   return (
-    <AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
       <Routes>
         {/* 公开页面 */}
         <Route path="/" element={<LandingPage />} />
@@ -43,6 +52,12 @@ export default function App() {
           <Route path="tasks/:id" element={<TaskDetailPage />} />
           <Route path="trackers" element={<TrackersPage />} />
           <Route path="trackers/:id" element={<TrackerDetailPage />} />
+          <Route path="competitors" element={<CompetitorsPage />} />
+          <Route path="profiles/templates" element={<ProfileTemplatesPage />} />
+          <Route path="profiles" element={<ProfilesPage />} />
+          <Route path="profiles/:id" element={<ProfileDetailPage />} />
+          <Route path="profiles/compare" element={<ComparisonPage />} />
+          <Route path="profiles/tasks" element={<ProfileTasksPage />} />
           <Route path="graph" element={<GraphPage />} />
           <Route path="graph/:id" element={<GraphDetailPage />} />
           <Route path="assistant" element={<AssistantPage />} />
@@ -58,6 +73,14 @@ export default function App() {
               </RequireAdmin>
             }
           />
+          <Route
+            path="admin/audit-logs"
+            element={
+              <RequireAdmin>
+                <AuditLogsPage />
+              </RequireAdmin>
+            }
+          />
         </Route>
 
         {/* 兼容旧链接与未知路径 */}
@@ -65,5 +88,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
+    </ErrorBoundary>
   )
 }

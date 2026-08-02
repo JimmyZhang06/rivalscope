@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { ChevronRight, Inbox } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
-import { Inbox } from 'lucide-react'
 import { getTracker, listTrackerRuns, runTrackerNow } from '../../api/client'
 import type { Tracker, TrackerRun } from '../../api/types'
 import RunHistoryItem from '../../components/RunHistoryItem'
@@ -76,9 +76,11 @@ export default function TrackerDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <Link to="/app/trackers" className="text-sm text-gray-400 hover:text-blue-600">
-        ← 返回定时追踪
-      </Link>
+      <nav className="flex items-center gap-1.5 text-sm text-gray-500">
+        <Link to="/app/trackers" className="hover:text-blue-600">定时追踪</Link>
+        <ChevronRight className="h-3.5 w-3.5" />
+        <span className="text-gray-900 font-medium">{tracker?.product_name ?? '加载中'}</span>
+      </nav>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900">{tracker.product_name}</h1>

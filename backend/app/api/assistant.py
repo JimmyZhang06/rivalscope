@@ -153,14 +153,14 @@ def _catalog_line(t: ResearchTask) -> str:
     return " | ".join(parts)
 
 
-async def _select_tasks(question: str, tasks: list[ResearchTask]) -> list[ResearchTask]:
+async def _select_tasks(question: str, tasks: list[ResearchTask], user_id: str = "", org_id: str = "") -> list[ResearchTask]:
     """让 LLM 从目录中挑选相关报告，失败时回退关键词匹配，兜底取最新一份"""
     from app.services.llm import LLMClient
 
     by_id = {t.id: t for t in tasks}
     catalog = "\n".join(_catalog_line(t) for t in tasks)
     try:
-        data = await LLMClient().chat_json(
+        data = await LLMClient(user_id=user_id, org_id=org_id).chat_json(
             "你是检索助手。根据用户问题从报告目录中挑选最相关的报告，"
             f"最多 {SELECT_LIMIT} 份，输出 JSON：{{\"ids\": [\"报告id\"]}}。"
             "问题与目录都不相关时返回空数组。",
@@ -303,7 +303,7 @@ async def ask_assistant(
         answer = "暂无已完成的调研报告可供问答。请先在「新建调研」发起一次调研，或等待定时追踪产出报告后再来提问。"
         refs: list[dict] = []
     else:
-        selected = await _select_tasks(question, tasks)
+        selected = await _select_tasks(question, tasks, user.id, user.org_id or "")
         refs = [{"task_id": t.id, "product_name": t.product_name} for t in selected]
 
         contexts = []
@@ -348,7 +348,7 @@ async def ask_assistant(
             }
         )
         try:
-            answer = await LLMClient().chat_messages(messages)
+            answer = await LLMClient(user_id=user.id, org_id=user.org_id or "").chat_messages(messages)
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"回答生成失败：{str(exc)[:200]}") from exc
 

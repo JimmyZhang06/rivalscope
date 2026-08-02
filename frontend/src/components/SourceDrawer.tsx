@@ -92,6 +92,13 @@ export default function SourceDrawer({
               {source.domain && <span>{source.domain}</span>}
               {source.published_at && <span>发布于 {source.published_at.slice(0, 10)}</span>}
               <span>相关度 {pct}%</span>
+              {source.confidence > 0 && <span>可信度 {Math.round(source.confidence * 100)}%</span>}
+              {source.access_status === 'failed' && (
+                <span className="text-amber-600">快照获取失败</span>
+              )}
+              {source.access_status === '' && !loading && (
+                <span className="text-gray-400">快照加载中…</span>
+              )}
             </div>
           </div>
           <button

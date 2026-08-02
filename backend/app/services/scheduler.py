@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 
 from app.db.database import SessionLocal
-from app.db.models import Notification, ResearchTask, Tracker, User
+from app.db.models import ExecutionSnapshot, Notification, ResearchTask, Tracker, User
 from app.services.agent import run_research
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,39 @@ PERIOD_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 QUOTA_SKIP_TITLE = "定时追踪因额度不足跳过本期"
 
 _running: set[str] = set()  # 正在执行的 tracker_id，防重入
+
+
+def _snapshot_execution(db, task: ResearchTask) -> None:
+    """生成执行快照"""
+    import hashlib
+    import json
+    from app.core.config import get_settings
+
+    config_str = json.dumps({
+        "competitors": task.competitors,
+        "focus": task.focus,
+        "time_range": task.time_range,
+    }, sort_keys=True)
+    config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:64]
+
+    try:
+        import subprocess
+        build_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, timeout=5).strip()[:64]
+    except Exception:
+        build_hash = ""
+
+    snapshot = ExecutionSnapshot(
+        org_id=task.org_id,
+        tracker_id=task.tracker_id or "",
+        task_id=task.id,
+        config_hash=config_hash,
+        model_params=json.dumps({"model": get_settings().llm_model}),
+        build_hash=build_hash,
+        deployment_env="development",
+        created_by=task.user_id,
+    )
+    db.add(snapshot)
+    db.commit()
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -121,6 +154,7 @@ def _scan_once() -> None:
             tracker.next_run_at = advance_next_run(tracker, now)
             db.commit()
             db.refresh(task)
+            _snapshot_execution(db, task)
             _running.add(tracker.id)
             asyncio.get_running_loop().create_task(_run_and_release(tracker.id, task.id))
             logger.info("scheduler triggered tracker %s -> task %s", tracker.id, task.id)

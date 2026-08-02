@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Clock,
   FileDown,
+  Timer,
   FileText,
   Lightbulb,
   Link2,
@@ -16,7 +17,6 @@ import {
   Printer,
   RefreshCw,
   Target,
-  Timer,
   X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -36,7 +36,7 @@ import StepTimeline from '../../components/StepTimeline'
 import SwotGrid from '../../components/SwotGrid'
 import { TIER_LABELS } from '../../components/TierBadge'
 import { buildReportPdfBlob, exportMarkdown, exportPdf, exportWord } from '../../utils/exportReport'
-import { parseUtc } from '../../utils/time'
+import { parseUtc, fmtDateTime } from '../../utils/time'
 
 const RUNNING = new Set<TaskStatus>(['pending', 'planning', 'searching', 'analyzing', 'reporting'])
 const TIER_ORDER: SourceTier[] = ['official', 'media', 'community', 'other']
@@ -142,7 +142,7 @@ export default function TaskDetailPage() {
 
   // 任务运行中时订阅 SSE 实时进度
   useEffect(() => {
-    if (!id || !task || subscribed.current || !RUNNING.has(task.status)) return
+    if (!id || !task || subscribed.current || !RUNNING.has(status)) return
     subscribed.current = true
     const unsubscribe = subscribeEvents(
       id,
@@ -154,8 +154,11 @@ export default function TaskDetailPage() {
         if (s === 'completed' || s === 'failed') loadDetail() // 结束后拉取完整报告与来源
       },
     )
-    return unsubscribe
-  }, [id, task, loadDetail])
+    return () => {
+      unsubscribe()
+      subscribed.current = false // SSE 断开后重置，允许重连
+    }
+  }, [id, status, loadDetail]) // 依赖 status 而非整个 task，断连后 status 变化可触发重连
 
   const sources = task?.sources ?? []
   const stats = useSourceStats(sources)
@@ -183,15 +186,6 @@ export default function TaskDetailPage() {
   // 事件时间线独立于洞察评分数据（洞察失败时时间线仍可展示）
   const timeline = task?.report_data?.timeline ?? []
 
-  // 引用编号 = 来源列表顺序（与后端材料编号一致）
-  const openCite = useCallback(
-    (n: number) => {
-      const source = sources[n - 1]
-      if (source) setDrawer({ source, index: n })
-    },
-    [sources],
-  )
-
   // 筛选后仍保留原始引用编号，支持三种排序
   const filteredSources = useMemo(() => {
     const list = sources
@@ -207,6 +201,15 @@ export default function TaskDetailPage() {
         return list.sort((a, b) => b.source.score - a.source.score)
     }
   }, [sources, tierFilter, dimFilter, sourceSort])
+
+  // 引用编号 = 来源列表原始顺序（与后端材料编号一致），filteredSources 携带原始 index
+  const openCite = useCallback(
+    (n: number) => {
+      const item = filteredSources.find((s) => s.index === n)
+      if (item) setDrawer({ source: item.source, index: n })
+    },
+    [filteredSources],
+  )
 
   // 导出下拉：点击外部关闭
   useEffect(() => {
@@ -379,7 +382,7 @@ export default function TaskDetailPage() {
         <p className="mt-1 text-sm text-gray-500">
           {task.competitors && <>竞品：{task.competitors} · </>}
           {task.focus && <>调研重点：{task.focus} · </>}
-          创建于 {new Date(task.created_at).toLocaleString('zh-CN')}
+          创建于 {fmtDateTime(task.created_at)}
         </p>
 
         {/* 执行进度：运行中为一体化执行视图（状态头 + 阶段步骤条 + 实时时间线）；完成后由按钮折叠展开 */}
@@ -473,7 +476,7 @@ export default function TaskDetailPage() {
                       </h2>
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                         <span className="rounded-full bg-white/10 px-2.5 py-1 print:border print:border-gray-200 print:bg-transparent">
-                          生成于 {new Date(task.created_at).toLocaleDateString('zh-CN')}
+                          生成于 {fmtDateTime(task.created_at)}
                         </span>
                         {task.competitors &&
                           task.competitors

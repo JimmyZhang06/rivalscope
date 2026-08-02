@@ -49,6 +49,7 @@ class MemberOut(BaseModel):
     created_at: datetime
     # 端点手动填充
     month_used: int = 0  # 本月本人发起的调研次数
+    permissions: list[str] = []  # RBAC 权限列表（Sprint 4）
 
 
 class MemberUpdateIn(BaseModel):

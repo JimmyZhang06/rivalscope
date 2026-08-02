@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Bot, Building2, CheckCircle2, Clock, Mail, User } from 'lucide-react'
-import { createTracker, deleteTracker, getOrgMe, listTrackers, runTrackerNow, updateTracker } from '../../api/client'
+import { createTracker, deleteTracker, runTrackerNow, updateTracker } from '../../api/client'
 import type { Tracker, TrackerCreate } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import QuotaErrorBanner from '../../components/QuotaErrorBanner'
 import TrackerForm from '../../components/TrackerForm'
 import { parseUtc } from '../../utils/time'
+import { useTrackerStore } from '../../stores/trackerStore'
 
 const FREQ_LABELS: Record<string, string> = { daily: '每日', weekly: '每周', monthly: '每月' }
 const WEBHOOK_LABELS: Record<string, string> = {
@@ -31,16 +35,22 @@ function nextRunText(tracker: Tracker): string {
 export default function TrackersPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [hasOrg, setHasOrg] = useState<boolean | null>(null)
-  const [trackers, setTrackers] = useState<Tracker[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Tracker | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [runningId, setRunningId] = useState('')
   const [filter, setFilter] = useState<'all' | 'mine'>('all')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleteId, setDeleteId] = useState('')
+
+  // 从 store 读取
+  const trackers = useTrackerStore((s) => s.trackers)
+  const hasOrg = useTrackerStore((s) => s.hasOrg)
+  const storeLoading = useTrackerStore((s) => s.loading)
+  const storeReload = useTrackerStore((s) => s.reload)
+
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   // 「我创建的」= creator_id 为当前用户
   const visible = useMemo(
@@ -48,28 +58,19 @@ export default function TrackersPage() {
     [trackers, filter, user],
   )
 
-  const reload = useCallback(async () => {
-    try {
-      const me = await getOrgMe()
-      setHasOrg(!!me.org)
-      setTrackers(me.org ? await listTrackers() : [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // 首次挂载加载数据
+  useEffect(() => {
+    storeReload()
+  }, [storeReload])
+
+  // 有运行中的追踪项时轮询刷新
+  const hasRunning = trackers.some((t) => t.running)
 
   useEffect(() => {
-    reload()
-  }, [reload])
-
-  // 有运行中的追踪项时轮询刷新，运行结束后自动恢复按钮
-  useEffect(() => {
-    if (!trackers.some((t) => t.running)) return
-    const timer = setInterval(reload, 5000)
+    if (!hasRunning) return
+    const timer = setInterval(storeReload, 5000)
     return () => clearInterval(timer)
-  }, [trackers, reload])
+  }, [hasRunning, storeReload])
 
   const handleSubmit = async (payload: TrackerCreate) => {
     setSubmitting(true)
@@ -85,7 +86,7 @@ export default function TrackersPage() {
       }
       setShowForm(false)
       setEditing(null)
-      await reload()
+      await storeReload()
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
     } finally {
@@ -96,7 +97,7 @@ export default function TrackersPage() {
   const handleToggle = async (t: Tracker) => {
     try {
       await updateTracker(t.id, { enabled: !t.enabled })
-      await reload()
+      await storeReload()
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败')
     }
@@ -116,16 +117,25 @@ export default function TrackersPage() {
   }
 
   const handleDelete = async (t: Tracker) => {
-    if (!window.confirm(`确认删除「${t.product_name}」追踪项？历史报告将保留。`)) return
+    setDeleteId(t.id)
+    setConfirmOpen(true)
+  }
+
+  const doDelete = async () => {
+    if (!deleteId) return
+    setError('')
     try {
-      await deleteTracker(t.id)
-      await reload()
+      await deleteTracker(deleteId)
+      await storeReload()
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除失败')
+    } finally {
+      setConfirmOpen(false)
+      setDeleteId('')
     }
   }
 
-  if (loading) {
+  if (storeLoading) {
     return <div className="mx-auto max-w-5xl px-6 py-8 text-sm text-gray-400">加载中…</div>
   }
 
@@ -133,7 +143,15 @@ export default function TrackersPage() {
     <div className="mx-auto max-w-5xl px-6 py-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">定时追踪</h1>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">定时追踪</h1>
+            {hasRunning && (
+              <span className="flex items-center gap-1.5 text-xs text-blue-600">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                轮询中
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-sm text-gray-500">按日/周/月自动调研目标产品，每期产出变更摘要并推送企业成员</p>
         </div>
         {hasOrg && (
@@ -258,8 +276,11 @@ export default function TrackersPage() {
                   className="mt-3 block rounded-md bg-blue-50/60 px-4 py-3 text-sm leading-relaxed text-gray-600 transition hover:bg-blue-50"
                 >
                   <span className="font-medium text-blue-700">最近变更：</span>
-                  {t.last_change_summary.replace(/[#*>`-]/g, '').slice(0, 120)}
-                  {t.last_change_summary.length > 120 ? '…' : ''}
+                  <span className="prose prose-sm prose-p:my-0 prose-ul:my-0 prose-headings:my-1">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {t.last_change_summary.slice(0, 200)}
+                    </ReactMarkdown>
+                  </span>
                 </Link>
               )}
 
@@ -317,7 +338,14 @@ export default function TrackersPage() {
         </>
       )}
 
-      {/* 新建 / 编辑弹窗 */}
+      <ConfirmDialog
+        open={confirmOpen}
+        title="确认删除"
+        message={`删除追踪项后历史报告仍将保留，确定继续？`}
+        danger
+        onConfirm={doDelete}
+        onCancel={() => { setConfirmOpen(false); setDeleteId('') }}
+      />
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
           <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
@@ -331,6 +359,7 @@ export default function TrackersPage() {
                   setShowForm(false)
                   setEditing(null)
                 }}
+                hasOrg={!!hasOrg}
               />
             </div>
           </div>

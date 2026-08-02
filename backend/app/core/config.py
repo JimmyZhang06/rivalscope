@@ -20,9 +20,13 @@ class Settings(BaseSettings):
     # 数据库
     database_url: str = "sqlite:///./research.db"
 
-    # JWT 认证
-    jwt_secret: str = "change-me-in-production-9f8e7d6c5b4a"
-    jwt_expire_days: int = 7
+    # JWT 认证（必须通过环境变量设置，不可使用默认值）
+    jwt_secret: str = ""
+    jwt_expire_days: int = 1  # access token 有效期（天）
+    jwt_issuer: str = "comp-agent"
+
+    # Fernet 加密主密钥（用于加密数据库中敏感字段）
+    master_key: str = ""
 
     # SMTP 邮件推送（可选，不配置则邮件走演示模式落库 email_logs）
     smtp_host: str = ""

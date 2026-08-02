@@ -13,6 +13,7 @@ import {
 } from '../api/client'
 import type { OrgMe, OrgMember } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { fmtDate } from '../utils/time'
 import PlanBadge from './PlanBadge'
 
 const ROLE_LABELS: Record<string, string> = { owner: '所有者', admin: '管理员', member: '成员' }
@@ -220,7 +221,7 @@ export default function OrgPanel() {
                 <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
                   <PlanBadge plan={me.org.plan} />
                   {me.org.plan_expires_at && (
-                    <span>有效期至 {new Date(me.org.plan_expires_at).toLocaleDateString('zh-CN')}</span>
+                    <span>有效期至 {fmtDate(me.org.plan_expires_at)}</span>
                   )}
                   <span>· {me.member_count} 名成员</span>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ROLE_BADGE[me.org_role] ?? ''}`}>

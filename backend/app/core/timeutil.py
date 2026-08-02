@@ -89,3 +89,8 @@ def age_days_of(published: datetime | None, now: datetime | None = None) -> int:
     if now is None:
         now = baseline_now()
     return max(0, int((now - published).total_seconds() // 86400))
+
+
+def utcnow() -> datetime:
+    """当前 UTC 时间（tz-aware）。与 baseline_now 相同，但名称更短，适合作为通用工具。"""
+    return baseline_now()

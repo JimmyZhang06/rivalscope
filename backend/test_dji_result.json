@@ -1,0 +1,35 @@
+{
+  "urls_discovered": 50,
+  "pages_crawled": 0,
+  "pages_success": 0,
+  "pages_failed": 0,
+  "crawl_time": 5.1,
+  "current_kept": 0,
+  "optimized_kept": 0,
+  "optimized_dropped": 0,
+  "filter_reduction_pct": 0.0,
+  "valuable_count": 0,
+  "valuable_ratio": 0.0,
+  "useless_count": 0,
+  "useless_ratio": 0.0,
+  "field_coverage": 0.0,
+  "key_info_pages": 0,
+  "key_info_coverage": 0.0,
+  "storage_current_kb": 0.0,
+  "storage_optimized_kb": 0.0,
+  "acceptance_results": {
+    "字段覆盖率 >= 60%": "FAIL",
+    "无效页面占比 <= 10%": "PASS",
+    "高价值页面 >= 40%": "FAIL",
+    "无内容过短页面": "PASS",
+    "爬取耗时 <= 60s": "PASS",
+    "过滤效率 >= 20%": "FAIL",
+    "关键信息覆盖 >= 50%": "PASS"
+  },
+  "all_passed": false,
+  "page_types": {
+    "home": 1,
+    "other": 49
+  },
+  "dropped_details": []
+}
