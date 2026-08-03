@@ -1,7 +1,7 @@
 # 02. 系统架构
 
 > **竞品调研 Agent**
-> 版本：v6.0.0 · 日期：2026-08-03 · 分支：agent-v6
+> 版本：v5.5.0 · 日期：2026-08-03 · 分支：agent-v5
 
 ## 2.1 分层架构
 
@@ -12,16 +12,17 @@
 ├─────────────────────────────────────────────────────────────────┤
 │  API 层 (FastAPI Routers)                                       │
 │  鉴权依赖 → 业务端点 → 响应序列化 (Pydantic Schemas)            │
-│  ├─ 限流依赖 (rate_limit_dep)                                   │
-│  ├─ 认证依赖 (get_current_user)                                 │
-│  │   └─ decode_access_token → token_version 校验                │
-│  ├─ 配额依赖 (check_quota_or_403)                               │
-│  └─ RBAC 依赖 (require_permission)                              │
+│  ├─ 限流依赖 (rate_limit_dep — 同步返回 bool) │
+│  ├─ 认证依赖 (get_current_user) │
+│  │   └─ decode_access_token → token_version 校验 │
+│  ├─ 配额依赖 (check_quota_or_403) │
+│  └─ RBAC 依赖 (require_permission) │
+│  └─ 统一权限 (check_access / is_admin) │ v5.5.0 新增
 ├─────────────────────────────────────────────────────────────────┤
 │  服务层 (Services)                                              │
 │  Agent 编排 → LLM 调用 → 搜索 → 去重/置信度/快照 → 通知        │
 │  ├─ 审计日志 (audit.py)                                         │
-│  ├─ 竞品画像 (profiles.py + profile_extractor.py)               │
+│  ├─ 竞品画像 (profiles.py + profile_extractor.py + profile_report.py) │
 │  ├─ 横向对比 (comparison.py)                                    │
 │  └─ 竞品爬虫 (crawler.py) ── v5 新增语言感知 + consent 剥离    │
 ├─────────────────────────────────────────────────────────────────┤
@@ -82,7 +83,8 @@ Request
   │   ├─ 认证依赖 (get_current_user)
   │   │   └─ decode_access_token → token_version 校验
   │   ├─ 配额依赖 (check_quota_or_403)
-  │   └─ RBAC 依赖 (require_permission)
+  │   ├─ RBAC 依赖 (require_permission)
+  │   └─ 统一权限 (check_access / is_admin)          ← v5.5.0
   │
   ├─ 服务层调用
   │   ├─ LLM 调用 → audit 记录

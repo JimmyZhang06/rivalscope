@@ -56,7 +56,7 @@ export default function ReportToc({ markdown }: { markdown: string }) {
   if (items.length === 0) return null
 
   return (
-    <nav className="no-print sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+    <nav className="no-print max-h-[calc(100vh-6rem)] overflow-y-auto">
       <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />

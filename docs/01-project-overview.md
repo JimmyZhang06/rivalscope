@@ -1,7 +1,7 @@
 # 01. 项目概览
 
 > **竞品调研 Agent** / Competitive Research Agent
-> 版本：v6.0.0 | 日期：2026-08-03 | 分支：agent-v6
+> 版本：v5.5.0 | 日期：2026-08-03 | 分支：agent-v5
 
 ## 1.1 定位
 
@@ -15,11 +15,11 @@
 | **定时追踪** | 按日/周/月频率自动执行调研，期次间自动生成"变更摘要"，支持站内通知、邮件与 Webhook（企业微信/钉钉/飞书/通用）推送 | `/app/trackers` |
 | **关系图谱** | 以任意企业/产品为根对象，联网抽取产业链关系网络（上下游/竞争/合作/投资/母子公司），可视化画布展示 | `/app/graph` |
 | **竞品管理** | 结构化注册竞品信息（名称/别名/官网/技术主题/关键词），企业级隔离，支持官网爬虫 | `/app/competitors` |
-| **竞品画像** | 结构化画像模板 → 基于已有来源生成竞品画像 → 冻结锁定 → 多份画像横向对比 | `/app/profiles` |
+| **竞品画像** | 结构化画像模板 → 基于已有来源生成竞品画像 → 冻结锁定 → 多份画像横向对比 → 画像报告/洞察 + 信息来源查阅 | `/app/profiles` |
 | **AI 问答** | 单报告追问 + 全局 AI 助手（悬浮球/独立页），自动定位最相关的报告作为上下文并附引用链接，不占调研额度 | `/app/assistant` |
 | **企业组织** | 邀请码加入、owner/admin/member 三级企业角色、企业套餐共享配额、成员月额度管控、RBAC 细粒度权限、任务/追踪/图谱企业内共享可见 | `/app/account?tab=org` |
 | **管理后台** | 运营统计 + 用户管理 + 企业管理 + 审计日志 + 执行快照 | `/app/admin` |
-| **安全增强** | JWT + Refresh Token（Access 8h / Refresh 30d）、会话版本控制、令牌桶限流（按 IP+端点）、Fernet 加密、审计日志、执行快照 | 全局 |
+| **安全增强** | JWT + Refresh Token（Access 8h / Refresh 30d）、会话版本控制、令牌桶限流（按 IP+端点）、Fernet 加密、审计日志、执行快照、统一访问校验（`check_access`） | 全局 |
 
 ## 1.3 设计原则
 
@@ -88,7 +88,7 @@ comp-agent/
 │     │  ├─ graph.py                # 关系图谱 schemas
 │     │  ├─ org.py                  # 企业组织 schemas
 │     │  ├─ competitor.py           # 竞品管理 schemas
-│     │  ├─ profiles.py             # 竞品画像 schemas
+│     │  ├─ profiles.py             # 竞品画像 schemas（含 template_version 等新增字段）
 │     │  └─ crawl.py                # 竞品爬虫 schemas
 │     ├─ api/                       # FastAPI 路由
 │     │  ├─ deps.py                 # 共享依赖（认证 / 配额 / 权限 / 限流）
@@ -116,8 +116,9 @@ comp-agent/
 │        ├─ notify.py               # 通知分发（站内 / 邮件 / Webhook）
 │        ├─ scheduler.py            # ★ 定时追踪调度器
 │        ├─ audit.py                # 审计日志写入
-│        ├─ profiles.py             # 竞品画像生成 + 冻结
-│        ├─ profile_extractor.py    # 竞品画像结构化信息提取
+│        ├─ profiles.py             # 竞品画像生成 + 冻结 + 访问校验
+│        ├─ profile_extractor.py    # 竞品画像结构化信息提取（异步任务 + DB 持久化 + 锁重试）
+│        ├─ profile_report.py       # 画像报告/洞察预生成（独立列 + 兜底洞察）
 │        ├─ comparison.py           # 画像横向对比
 │        └─ crawler.py              # 竞品官网爬虫核心逻辑
 │

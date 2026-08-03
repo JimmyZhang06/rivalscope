@@ -1,7 +1,7 @@
 # 05. 后端服务层
 
 > **竞品调研 Agent**
-> 版本：v6.0.0 · 日期：2026-08-03 · 分支：agent-v6
+> 版本：v5.5.0 · 日期：2026-08-03 · 分支：agent-v5
 
 ## 5.1 Service 层职责总览
 
@@ -15,9 +15,62 @@
 | 快照存档 | `snapshot.py` | 网页 HTML/纯文本抓取与存档 |
 | 变更摘要 | `digest.py` | 期次报告对比 + LLM 生成变更摘要 |
 | 通知 | `notify.py` | 站内通知 + SMTP 邮件 + Webhook 推送 |
-| 调度器 | `scheduler.py` | 60 秒扫描到期追踪项 + 触发执行 + 执行快照 |
-| 竞品画像 | `profiles.py` | 基于来源生成画像 + 冻结 |
-| 画像提取 | `profile_extractor.py` | 竞品官网信息结构化提取（含启动恢复） |
+| 调度器 | `scheduler.py` | 60 秒扫描到期追踪项 + 触发执行 + 执行快照；启动时恢复未完成画像任务 |
+| 竞品画像 | `profiles.py` | 基于来源生成画像 + 冻结 + 访问校验（`check_access`） |
+| 画像提取 | `profile_extractor.py` | 竞品官网信息结构化提取（异步任务 + DB 持久化 + SQLite 锁重试 + 维度级错误隔离） |
+
+### 画像提取流程（`profile_extractor.py`）
+
+```
+Stage 1: 数据加载
+  │  Competitor + CompetitorPage（已爬取的页面） + ProfileTemplate
+  ▼
+Stage 2: 页面摘要
+  │  每页截取前 3000 字符 + 保留完整内容（Stage 3 用）
+  ▼
+Stage 3: 维度提取（并行）
+  │  asyncio.gather + return_exceptions=True
+  │  单个维度失败 → 标记为空，不中断整个流程（v5.5.0 新增容错）
+  ▼
+Stage 4: 聚合
+  │  LLM 汇总各维度提取结果为 summary
+  │  生成 source_refs（URL + 置信度）
+  ▼
+Stage 5: 持久化
+  │  写入 CompetitorProfile（status=draft）
+  │  写入 ProfileGenerationTask（DB + 内存双写，SQLite 锁重试）
+  │  模板版本号记录（template_version）
+```
+
+### 关键特性
+
+- **DB 写入重试**：`_db_write_retry()` — SQLite "database is locked" 时自动重试 5 次（每次间隔 3s）
+- **进程重启恢复**：`get_profile_generation_task()` 优先内存缓存，回退数据库查询
+- **维度级错误隔离**：Stage 2 中单个维度 LLM 失败不影响其他维度
+- **模板版本追踪**：记录生成时的模板版本号（`template_version`），支持后续版本对比
+| 画像报告 | `profile_report.py` | 画像报告/洞察预生成（独立列存储 + 兜底洞察 + 置信度兼容） |
+
+### 画像报告生成（`profile_report.py`）
+
+#### 报告预生成
+
+- 画像创建/更新后异步调用 `generate_profile_report()`
+- 报告内容存储到 `competitor_profiles.report_markdown` 独立列（不再仅存在 `profile_data` JSON 中）
+- 来源索引存储到 `source_index_json` 独立列
+- 洞察 JSON 存储到 `insights_json` 独立列
+
+#### 洞察生成
+
+- 调用 LLM 生成结构化洞察（评分/SWOT/定位/结论）
+- **兜底机制**（v5.5.0）：LLM 失败时，基于已有维度数据自动生成最简洞察
+  - 填充率 ≥70% → 评分 7
+  - 填充率 >0% → 评分 4
+  - 无数据 → 评分 1
+
+#### 置信度兼容
+
+- 来源置信度可能为字符串（"high"/"medium"/"low"）或浮点数
+- 自动映射：high=0.9, medium=0.6, low=0.3
 | 对比 | `comparison.py` | 多份冻结画像横向对比矩阵 |
 | 审计 | `audit.py` | 审计日志写入（fire-and-forget） |
 | 用户限流 | `rate_limit_user.py` | 用户级令牌桶限流（补充 IP 级限流） |
@@ -235,13 +288,20 @@ _scan_once()
 
 ## 5.7 profiles.py — 竞品画像生成
 
+### 访问校验（v5.5.0）
+
+- 所有画像访问通过 `check_access()` 统一校验（`system_access="admin_only"`）
+- 企业隔离 + 个人资源隔离
+
 ### 生成流程
 
 1. 加载 Competitor + ProfileTemplate（必须已冻结）
 2. 搜索已完成任务中包含该竞品名称的来源（LIKE 匹配 product_name/competitors 字段）
 3. 取前 20 条 Source，按 confidence DESC 排序
-4. LLM 按模板维度生成结构化数据
-5. 创建 CompetitorProfile（status=draft）
+4. 调用 `create_profile_generation_task()` 创建异步任务（v5.5.0 重命名）
+5. 后台执行 `generate_profile_from_crawl_data()`（v5.5.0 重命名）
+6. 创建 CompetitorProfile（status=draft，记录 template_version）
+7. 异步预生成报告 + 洞察（`generate_profile_report()` / `generate_profile_insights()`）
 
 ### 冻结流程
 
@@ -296,7 +356,11 @@ confidence = tier_weight × freshness_factor
 3. **多路径 sitemap 发现**：优先尝试 `/{lang}/sitemap.xml`，回退 `/sitemap.xml`
 4. **命名空间容错**：使用 `{*}loc` 通配符匹配 sitemap XML 命名空间
 5. **Consent overlay 移除**：regex 剥离常见 cookie/consent/GDPR/OneTrust banner 的 HTML
-6. **Readability 降级**：若提取内容 < 3000 chars 且匹配 consent 标记，回退到完整 body 文本
+6. **内容提取回退链**（v5.5.0 新增）：
+   - readability → 正文提取
+   - 若 consent overlay → 回退完整 body 文本
+   - 若 < 500 chars → 尝试 meta 标签提取
+   - 若仍不足 → 尝试 jina.ai 摘要 API
 7. BeautifulSoup 解析 HTML，提取结构化信息
 8. 返回结构化 JSON，存储到 `crawl_tasks` 表
 
@@ -310,8 +374,46 @@ confidence = tier_weight × freshness_factor
 | Consent overlay regex 剥离 | OneTrust/CCPA/GDPR banner 干扰 readability | 正文提取内容从 consent 文本切换到实际页面内容 |
 | Readability 降级检测 | 某些页面 readability 只提取到 consent 层 | 内容长度和质量显著提升 |
 | Chrome User-Agent | `CompAgent-Crawler/1.0` 被部分站点拦截 | 减少 bot 检测，提高成功率 |
+| meta 标签回退 | readability 对 JS 渲染站点提取不足 | 补充 OpenGraph/Twitter 元数据 |
+| jina.ai 回退 | 静态页面 + meta 仍不足时 | 通过 jina.ai 提取完整页面文本 |
+| 内部页排除 | /h-cookie / h-login 等功能页被 sitemap 收录 | 正则过滤排除 |
 
-## 5.11 audit.py — 审计日志
+## 5.12 deps.py — 统一权限与访问控制
+
+### 新增工具函数（v5.5.0）
+
+| 函数/类 | 用途 |
+|---------|------|
+| `is_admin(user)` | 统一管理员判断（纯函数，任何上下文可用） |
+| `check_access(org_id, user_id, user, ...)` | 统一资源访问校验，支持三种模式：`admin_only` / `owner_or_admin` / `any_authenticated` |
+| `AccessDenied` | 403 异常基类 |
+| `ResourceNotFound` | 403 伪装 404（安全最佳实践） |
+
+### 访问校验逻辑
+
+```
+check_access(resource_org_id, resource_user_id, user):
+  if resource_org_id == "":
+    ├─ admin_only  →  仅 admin 可访问
+    ├─ owner_or_admin → 企业用户需 admin，个人用户需 resource_user_id == user.id
+    └─ any_authenticated → 所有登录用户可访问
+  else:
+    ├─ resource_org_id != user.org_id → 拒绝（跨企业）
+    └─ 无企业用户 → 需 resource_user_id == user.id（个人资源隔离）
+```
+
+### 各模块迁移状态
+
+- `profiles.py`：已迁移到 `check_access()`
+- 其他模块逐步迁移中
+
+## 5.13 llm.py — LLM 客户端
+
+### 超时与重试（v5.5.0 新增）
+
+- LLM 调用加入 `asyncio.wait_for(timeout=settings.llm_timeout_seconds)`
+- 超时后指数退避重试（2s → 4s → 失败）
+- 最多 3 次尝试
 
 ### log_audit()
 

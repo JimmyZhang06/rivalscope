@@ -215,6 +215,7 @@ class AuditLogOut(BaseModel):
     id: str
     user_id: str
     org_id: str
+    session_id: str
     action: str
     resource_type: str
     resource_id: str
@@ -222,12 +223,15 @@ class AuditLogOut(BaseModel):
     result: str
     status: str
     error: str
+    changes: str
     model_name: str
     tokens_prompt: int
     tokens_completion: int
     cost: float
     ip: str
     user_agent: str
+    prev_hash: str
+    checksum: str
     created_at: datetime
 
 

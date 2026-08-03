@@ -76,7 +76,7 @@ def classify_source(url: str, competitors: list[str], product_name: str = "") ->
 # 数据库辅助：后台任务中使用独立的短生命周期会话
 # ---------------------------------------------------------------------------
 
-def _update_status(task_id: str, status: str, error: str = "") -> None:
+def _do_update_status(task_id: str, status: str, error: str = "") -> None:
     with SessionLocal() as db:
         task = db.get(ResearchTask, task_id)
         if task:
@@ -86,14 +86,24 @@ def _update_status(task_id: str, status: str, error: str = "") -> None:
             db.commit()
 
 
-def _add_step(task_id: str, phase: str, title: str, detail: str = "") -> None:
+async def _update_status(task_id: str, status: str, error: str = "") -> None:
+    await asyncio.to_thread(_do_update_status, task_id, status, error)
+
+
+def _do_add_step(task_id: str, phase: str, title: str, detail: str = "") -> None:
     with SessionLocal() as db:
         seq = db.query(TaskStep).filter(TaskStep.task_id == task_id).count() + 1
         db.add(TaskStep(task_id=task_id, seq=seq, phase=phase, title=title, detail=detail))
         db.commit()
 
 
-async def _save_sources(task_id: str, results: list[dict]) -> None:
+async def _add_step(task_id: str, phase: str, title: str, detail: str = "") -> None:
+    await asyncio.to_thread(_do_add_step, task_id, phase, title, detail)
+
+
+def _do_save_sources(task_id: str, results: list[dict]) -> list[int]:
+    """同步 DB 块：创建 Source 记录并 flush 获取 id"""
+    source_ids = []
     with SessionLocal() as db:
         for r in results:
             raw_pub = str(r.get("published_date") or "")
@@ -122,12 +132,21 @@ async def _save_sources(task_id: str, results: list[dict]) -> None:
             )
             db.add(source)
             db.flush()  # 获取 source.id 用于创建快照
-            from app.services.snapshot import save_archive
-            await save_archive(task_id, source.id, r["url"], raw_content=str(r.get("raw_content") or ""))
+            source_ids.append(source.id)
         db.commit()
+    return source_ids
 
 
-def _save_insights(task_id: str, data: dict) -> None:
+async def _save_sources(task_id: str, results: list[dict]) -> None:
+    # 同步 DB 操作放到线程池
+    source_ids = await asyncio.to_thread(_do_save_sources, task_id, results)
+    # async I/O 在事件循环中正常执行
+    from app.services.snapshot import save_archive
+    for source_id, r in zip(source_ids, results):
+        await save_archive(task_id, source_id, r["url"], raw_content=str(r.get("raw_content") or ""))
+
+
+def _do_save_insights(task_id: str, data: dict) -> None:
     with SessionLocal() as db:
         task = db.get(ResearchTask, task_id)
         if task:
@@ -135,7 +154,11 @@ def _save_insights(task_id: str, data: dict) -> None:
             db.commit()
 
 
-def _merge_report_data(task_id: str, patch: dict) -> None:
+async def _save_insights(task_id: str, data: dict) -> None:
+    await asyncio.to_thread(_do_save_insights, task_id, data)
+
+
+def _do_merge_report_data(task_id: str, patch: dict) -> None:
     """把补充数据合并进 report_data（保留已有洞察，不覆盖）。"""
     with SessionLocal() as db:
         task = db.get(ResearchTask, task_id)
@@ -152,13 +175,21 @@ def _merge_report_data(task_id: str, patch: dict) -> None:
         db.commit()
 
 
-def _save_report(task_id: str, markdown: str) -> None:
+async def _merge_report_data(task_id: str, patch: dict) -> None:
+    await asyncio.to_thread(_do_merge_report_data, task_id, patch)
+
+
+def _do_save_report(task_id: str, markdown: str) -> None:
     with SessionLocal() as db:
         task = db.get(ResearchTask, task_id)
         if task:
             task.report_markdown = markdown
             task.status = "completed"
             db.commit()
+
+
+async def _save_report(task_id: str, markdown: str) -> None:
+    await asyncio.to_thread(_do_save_report, task_id, markdown)
 
 
 # ---------------------------------------------------------------------------
@@ -205,11 +236,11 @@ async def _search_all(searcher, task_id: str, queries: list[dict], time_range: s
             )
             for r in results:
                 r["dimension"] = dimension
-            _add_step(task_id, "searching", f"检索「{query}」", f"获取到 {len(results)} 条结果")
+            await _add_step(task_id, "searching", f"检索「{query}」", f"获取到 {len(results)} 条结果")
             return results
-        except Exception as exc:  # 单条搜索失败不中断整体流程
+        except Exception as exc:
             logger.warning("search failed for %r: %s", query, exc)
-            _add_step(task_id, "searching", f"检索「{query}」失败", str(exc)[:300])
+            await _add_step(task_id, "searching", f"检索「{query}」失败", str(exc)[:300])
             return []
 
     grouped = await asyncio.gather(*(one(q) for q in queries))
@@ -423,8 +454,8 @@ async def run_research(task_id: str) -> None:
         missing.append("TAVILY_API_KEY")
     if missing:
         msg = f"缺少配置项 {', '.join(missing)}，请在 backend/.env 中填写（参考 .env.example）"
-        _add_step(task_id, "error", "配置检查失败", msg)
-        _update_status(task_id, "failed", msg)
+        await _add_step(task_id, "error", "配置检查失败", msg)
+        await _update_status(task_id, "failed", msg)
         return
 
     from app.services.llm import LLMClient
@@ -454,12 +485,12 @@ async def run_research(task_id: str) -> None:
 
     try:
         # 1. 规划
-        _update_status(task_id, "planning")
-        _add_step(task_id, "planning", "开始规划调研方案", "分析调研对象，确定竞品与搜索策略")
+        await _update_status(task_id, "planning")
+        await _add_step(task_id, "planning", "开始规划调研方案", "分析调研对象，确定竞品与搜索策略")
         plan = await _plan(llm, task, max_queries)
         competitors = [str(c) for c in plan.get("competitors", [])]
         queries = plan["queries"]
-        _add_step(
+        await _add_step(
             task_id,
             "planning",
             "调研方案已生成",
@@ -469,9 +500,9 @@ async def run_research(task_id: str) -> None:
         )
 
         # 2. 检索
-        _update_status(task_id, "searching")
+        await _update_status(task_id, "searching")
         time_range = (getattr(task, "time_range", "") or "").strip()
-        _add_step(task_id, "searching", "开始联网检索", f"共 {len(queries)} 组搜索关键词")
+        await _add_step(task_id, "searching", "开始联网检索", f"共 {len(queries)} 组搜索关键词")
         results = await _search_all(searcher, task_id, queries, time_range=time_range)
         if not results:
             raise ValueError("联网检索未获取到任何结果，请检查 TAVILY_API_KEY 或稍后重试")
@@ -505,44 +536,44 @@ async def run_research(task_id: str) -> None:
 
         await _save_sources(task_id, results)
         credibility = _credibility_summary(results, queries)
-        _add_step(task_id, "searching", "检索完成", f"去重后共收集 {len(results)} 条信息来源\n{credibility}")
+        await _add_step(task_id, "searching", "检索完成", f"去重后共收集 {len(results)} 条信息来源\n{credibility}")
 
         # 3. 分析
-        _update_status(task_id, "analyzing")
-        _add_step(task_id, "analyzing", "开始分析检索材料", "按功能、定价、市场、优劣势等维度提炼，逐条标注引用")
+        await _update_status(task_id, "analyzing")
+        await _add_step(task_id, "analyzing", "开始分析检索材料", "按功能、定价、市场、优劣势等维度提炼，逐条标注引用")
         materials = _build_materials(results)
         analysis = await _analyze(llm, task, competitors, materials)
-        _add_step(task_id, "analyzing", "维度分析完成")
+        await _add_step(task_id, "analyzing", "维度分析完成")
 
         # 4. 数据洞察（失败不阻断报告生成）
-        _add_step(task_id, "analyzing", "生成数据洞察", "量化竞品评分、SWOT 与结论，用于可视化图表")
+        await _add_step(task_id, "analyzing", "生成数据洞察", "量化竞品评分、SWOT 与结论，用于可视化图表")
         try:
             insights = await _insights(llm, task, competitors, analysis)
-            _save_insights(task_id, insights)
-            _add_step(task_id, "analyzing", "数据洞察已生成", f"覆盖 {len(insights['competitors'])} 个产品的多维评分")
+            await _save_insights(task_id, insights)
+            await _add_step(task_id, "analyzing", "数据洞察已生成", f"覆盖 {len(insights['competitors'])} 个产品的多维评分")
         except Exception as exc:
             logger.warning("insights failed for task %s: %s", task_id, exc)
-            _add_step(task_id, "analyzing", "数据洞察生成失败（不影响报告）", str(exc)[:300])
+            await _add_step(task_id, "analyzing", "数据洞察生成失败（不影响报告）", str(exc)[:300])
 
         # 4b. 事件时间线（非阻断）
-        _add_step(task_id, "analyzing", "构建事件时间线", "抽取关键事件并按时间排列")
+        await _add_step(task_id, "analyzing", "构建事件时间线", "抽取关键事件并按时间排列")
         try:
             timeline = await _timeline(llm, task, analysis, materials)
             if timeline:
-                _merge_report_data(task_id, {"timeline": timeline})
-                _add_step(task_id, "analyzing", "事件时间线已生成", f"共 {len(timeline)} 个关键事件")
+                await _merge_report_data(task_id, {"timeline": timeline})
+                await _add_step(task_id, "analyzing", "事件时间线已生成", f"共 {len(timeline)} 个关键事件")
             else:
-                _add_step(task_id, "analyzing", "未抽取到明确时间线事件（不影响报告）")
+                await _add_step(task_id, "analyzing", "未抽取到明确时间线事件（不影响报告）")
         except Exception as exc:
             logger.warning("timeline failed for task %s: %s", task_id, exc)
-            _add_step(task_id, "analyzing", "时间线生成失败（不影响报告）", str(exc)[:300])
+            await _add_step(task_id, "analyzing", "时间线生成失败（不影响报告）", str(exc)[:300])
 
         # 5. 报告
-        _update_status(task_id, "reporting")
-        _add_step(task_id, "reporting", "开始生成调研报告")
+        await _update_status(task_id, "reporting")
+        await _add_step(task_id, "reporting", "开始生成调研报告")
         report = await _report(llm, task, competitors, analysis, results, credibility)
-        _save_report(task_id, report)
-        _add_step(task_id, "done", "调研完成", "报告已生成")
+        await _save_report(task_id, report)
+        await _add_step(task_id, "done", "调研完成", "报告已生成")
 
         # 6. 定时追踪任务：生成本期变更摘要并推送（失败不影响已完成的报告）
         if task.tracker_id:
@@ -568,5 +599,5 @@ async def run_research(task_id: str) -> None:
     except Exception as exc:
         logger.exception("research task %s failed", task_id)
         msg = str(exc)[:1000]
-        _add_step(task_id, "error", "调研失败", msg)
-        _update_status(task_id, "failed", msg)
+        await _add_step(task_id, "error", "调研失败", msg)
+        await _update_status(task_id, "failed", msg)

@@ -157,6 +157,7 @@ def migrate_columns() -> None:
         "audit_logs": {
             "user_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "org_id": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "session_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "action": "VARCHAR(50) NOT NULL DEFAULT ''",
             "resource_type": "VARCHAR(50) NOT NULL DEFAULT ''",
             "resource_id": "VARCHAR(32) NOT NULL DEFAULT ''",
@@ -164,12 +165,15 @@ def migrate_columns() -> None:
             "result": "TEXT NOT NULL DEFAULT ''",
             "status": "VARCHAR(20) NOT NULL DEFAULT ''",
             "error": "TEXT NOT NULL DEFAULT ''",
+            "changes": "TEXT NOT NULL DEFAULT ''",
             "model_name": "VARCHAR(100) NOT NULL DEFAULT ''",
             "tokens_prompt": "INTEGER NOT NULL DEFAULT 0",
             "tokens_completion": "INTEGER NOT NULL DEFAULT 0",
             "cost": "FLOAT NOT NULL DEFAULT 0",
             "ip": "VARCHAR(64) NOT NULL DEFAULT ''",
             "user_agent": "VARCHAR(300) NOT NULL DEFAULT ''",
+            "prev_hash": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "checksum": "VARCHAR(64) NOT NULL DEFAULT ''",
             "created_at": "DATETIME NOT NULL DEFAULT (datetime('now', 'utc'))",
         },
         "execution_snapshots": {
@@ -214,11 +218,12 @@ def migrate_columns() -> None:
                     logger.info("migrated: %s.%s", table, col)
 
         # 回填新增列的 NULL 值为 ''（SQLite ALTER TABLE 的 DEFAULT 不会回填已有行）
-        null_backfills = {
-            "competitors": "user_id",
-            "competitor_profiles": "user_id",
-        }
-        for table, col in null_backfills.items():
+        null_backfills: list[tuple[str, str]] = [
+            ("competitors", "user_id"),
+            ("competitor_profiles", "user_id"),
+            ("competitor_profiles", "generation_source"),
+        ]
+        for table, col in null_backfills:
             result = conn.execute(text(f"SELECT COUNT(*) FROM {table} WHERE {col} IS NULL"))
             null_count = result.scalar()
             if null_count:
@@ -233,6 +238,7 @@ def migrate_columns() -> None:
         audit_indexes = [
             ("idx_audit_action_resource", "action, resource_type"),
             ("idx_audit_created_at", "created_at"),
+            ("idx_audit_session_created", "session_id, created_at"),
         ]
         for idx_name, cols in audit_indexes:
             if idx_name not in existing_indexes:

@@ -1,7 +1,7 @@
 # 03. 数据库设计
 
 > **竞品调研 Agent**
-> 版本：v6.0.0 · 日期：2026-08-03 · 分支：agent-v6
+> 版本：v5.5.0 · 日期：2026-08-03 · 分支：agent-v5
 
 ## 3.1 表结构总览
 
@@ -26,6 +26,7 @@ organizations           企业组织
 
 competitors             竞品
 profile_templates       画像模板
+profile_generation_tasks 画像生成后台任务
 competitor_profiles     竞品画像
 user_permissions        RBAC 权限
 trackers                定时追踪
@@ -228,14 +229,21 @@ email_logs              邮件发送记录
 | org_id | VARCHAR(32) | 所属企业 |
 | competitor_id | VARCHAR(32) | 关联 competitor.id |
 | template_id | VARCHAR(32) | 关联 profile_template.id |
+| template_version | INTEGER | 生成时的模板版本号 |
 | profile_data | TEXT | JSON：按模板维度填充的结构化数据 |
 | source_refs | TEXT | JSON：来源快照引用列表 |
 | status | VARCHAR(20) | `draft`/`reviewed`/`frozen` |
 | frozen_at | DATETIME | 冻结时间 |
+| generation_source | VARCHAR(20) | 生成来源（`research` / `crawl` 等） |
+| report_markdown | TEXT | 预生成报告 Markdown（独立列，避免每次解析 profile_data） |
+| insights_json | TEXT | 预生成洞察 JSON（独立列） |
+| source_index_json | TEXT | 来源索引 JSON（独立列） |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
 **索引**：org_id, competitor_id, template_id
+
+> **v5.5.0 新增**：`template_version`、`report_markdown`、`insights_json`、`source_index_json` 四列，用于预生成内容独立存储，减少 JSON 解析开销。
 
 ---
 
@@ -477,6 +485,26 @@ email_logs              邮件发送记录
 | created_at | DATETIME | 创建时间 |
 
 **索引**：user_id, org_id
+
+---
+
+### profile_generation_tasks — 画像生成后台任务
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | VARCHAR(32) PK | UUID hex |
+| competitor_id | VARCHAR(32) | 关联竞品 |
+| template_id | VARCHAR(32) | 关联模板 |
+| user_id | VARCHAR(32) | 创建者 |
+| org_id | VARCHAR(32) | 所属企业 |
+| status | VARCHAR(20) | `running`/`done`/`error` |
+| current_step | VARCHAR(100) | 当前步骤描述 |
+| result | TEXT | 完成后的结果 JSON |
+| error | TEXT | 错误信息（截断 500 字符） |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+> **v5.5.0 变更**：表名从 `profile_extract_tasks` 改为 `profile_generation_tasks`，ORM 模型对应改为 `ProfileGenerationTask`。支持进程重启后从数据库恢复任务状态（内存缓存 + DB 回退双保险），DB 写入带 SQLite 锁重试机制。
 
 ---
 

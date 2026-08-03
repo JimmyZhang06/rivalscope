@@ -20,3 +20,25 @@ export function splitSourcesSection(markdown: string): { body: string; sourcesTi
     sourcesTitle: m[2].replace(/\[(\d+)\]/g, '').trim(),
   }
 }
+
+/** 去除 source 章节后的正文 */
+export function stripSourcesSection(markdown: string): string {
+  const m = SOURCES_HEADING.exec(markdown)
+  if (!m) return markdown
+  const level = m[1].length
+  const afterHeading = m.index + m[0].length
+  const nextHeading = new RegExp(`^#{1,${level}}\\s+`, 'm').exec(markdown.slice(afterHeading))
+  const end = nextHeading ? afterHeading + nextHeading.index : markdown.length
+  return (markdown.slice(0, m.index) + markdown.slice(end)).trim()
+}
+
+/** 提取末尾来源章节内容 */
+export function extractSourcesSection(markdown: string): { title: string | null; body: string } {
+  const m = SOURCES_HEADING.exec(markdown)
+  if (!m) return { title: null, body: '' }
+  const level = m[1].length
+  const afterHeading = m.index + m[0].length
+  const nextHeading = new RegExp(`^#{1,${level}}\\s+`, 'm').exec(markdown.slice(afterHeading))
+  const end = nextHeading ? afterHeading + nextHeading.index : markdown.length
+  return { title: m[2].replace(/\[(\d+)\]/g, '').trim(), body: markdown.slice(afterHeading, end).trim() }
+}

@@ -1,7 +1,7 @@
 # 04. API 参考
 
 > **竞品调研 Agent**
-> 版本：v6.0.0 · 日期：2026-08-03 · 分支：agent-v6
+> 版本：v5.5.0 · 日期：2026-08-03 · 分支：agent-v5
 
 ## 4.1 认证相关
 
@@ -270,7 +270,9 @@ GET /api/research/{task_id}/events?token=<access_token>
 
 ### 竞品爬虫
 
-> **v5.0.0 说明**：API 端点未变更，但爬虫内部行为已显著改善（语言感知 sitemap、consent overlay 移除、Chrome UA），multi-language 站点（如 /cn/）现在能正确爬取。
+> **v5.0.0 说明**：API 端点未变更，但爬虫内部行为已显著改善（语言感知 sitemap、consent overlay 移除、Chrome UA、meta 标签回退、jina.ai 回退），multi-language 站点（如 /cn/）现在能正确爬取。
+
+> **v5.5.0 新增**：内部功能页排除（/h-cookie, /h-login 等正则过滤）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -445,7 +447,27 @@ Authorization: Bearer <access_token>
 
 **请求体**：`{ "competitor_id": "...", "template_id": "..." }`
 **规则**：template 必须已冻结。搜索已完成任务中提及该竞品的来源（最多 20 条，按置信度排序），调用 LLM 生成结构化数据。
-**响应**：CompetitorProfileOut
+**响应**：`{ "task_id": "...", "competitor_id": "...", "template_id": "...", "status": "running" }` — 返回异步任务 ID。
+
+> **v5.5.0 变更**：`POST /api/profiles/generate-from-crawl` 端点已合并到 `/generate`（保留向后兼容别名）。前端统一调用 `/api/profiles/generate/{task_id}` 查询状态（`getGenerateStatus`）。
+
+### 画像任务状态查询
+
+```
+GET /api/profiles/generate/{task_id}
+Authorization: Bearer <access_token>
+```
+
+**响应**：`{ "task_id": "...", "status": "running"|"done"|"error", "current_step": "...", "result": {...} | null, "error": "" }`
+
+### 画像完整报告（预生成）
+
+```
+GET /api/profiles/{id}/full-report
+Authorization: Bearer <access_token>
+```
+
+**响应**：`{ "report_markdown": "...", "insights": {...}, "source_index": [...] }` — 读取预生成的独立列内容。
 
 ### 画像列表
 

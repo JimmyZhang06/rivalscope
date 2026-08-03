@@ -102,6 +102,12 @@ def update_competitor(cid: str, payload: CompetitorIn, user: User = Depends(get_
         raise HTTPException(status_code=403, detail="无权修改其他企业的竞品")
     if c.org_id == "" and not _is_admin(user):
         raise HTTPException(status_code=403, detail="系统级竞品仅管理员可修改")
+    changes: dict[str, dict[str, str]] = {
+        "name": {"old": c.name, "new": payload.name.strip()},
+        "alias": {"old": c.alias, "new": payload.alias.strip()},
+        "website": {"old": c.website, "new": payload.website.strip()},
+        "tech_focus": {"old": c.tech_focus, "new": payload.tech_focus.strip()},
+    }
     c.name = payload.name.strip()
     c.alias = payload.alias.strip()
     c.website = payload.website.strip()
@@ -113,7 +119,8 @@ def update_competitor(cid: str, payload: CompetitorIn, user: User = Depends(get_
         log_audit(
             user_id=user.id, org_id=user.org_id or "",
             action="competitor.update", resource_type="competitor", resource_id=cid,
-            input_data=json.dumps({"name": payload.name}),
+            input_data=json.dumps(payload.model_dump()),
+            changes=json.dumps(changes),
             status="success",
         )
     except Exception:

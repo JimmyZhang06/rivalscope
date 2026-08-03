@@ -5,8 +5,7 @@ import {
   BarChart3, FileText, Lightbulb, Target, Download, ChevronDown,
 } from 'lucide-react'
 import {
-  freezeProfileApi, generateProfileApi, getProfile,
-  getProfileInsights, getProfileReport,
+  freezeProfileApi, generateProfileApi, getProfile, getProfileFullReport,
   listCompetitors, listProfileTemplates,
 } from '../../api/client'
 import type { Competitor, CompetitorProfile, ProfileTemplate } from '../../api/types'
@@ -120,35 +119,39 @@ export default function ProfileDetailPage() {
     reload()
   }, [reload])
 
-  // Lazy-load report and insights from API (only if not cached)
+  // Auto-fetch report + insights when profile is loaded (only if not cached in profile_data)
   useEffect(() => {
     if (!id || !profile) return
-    if (tab === 'report' && !reportMarkdown && !reportLoading) {
-      setReportLoading(true)
-      getProfileReport(id)
-        .then((data) => {
+
+    const rawPd = typeof profile.profile_data === 'string'
+      ? JSON.parse(profile.profile_data) : profile.profile_data
+    const hasCachedReport = !!rawPd?.report_markdown
+    const hasCachedInsights = !!(rawPd?.insights?.scores || rawPd?.insights?.verdict || rawPd?.insights?.swot)
+
+    if (hasCachedReport && hasCachedInsights) return
+
+    setReportLoading(true)
+    setInsightsLoading(true)
+    getProfileFullReport(id)
+      .then((data) => {
+        if (!hasCachedReport) {
           setReportMarkdown(data.report_markdown || '')
           setReportQuality(data.quality || null)
           setSourceIndex((data.source_index || []).map((s: any) => ({
-            n: s.n,
-            url: s.url,
-            title: s.title || '',
-            tier: s.tier || 'other',
-            confidence: s.confidence || 0,
-            snippet: s.snippet || '',
+            n: s.n, url: s.url, title: s.title || '', tier: s.tier || 'other',
+            confidence: s.confidence || 0, snippet: s.snippet || '',
           })))
-        })
-        .catch((err) => setNotice('报告加载失败：' + (err?.message || '未知错误')))
-        .finally(() => setReportLoading(false))
-    }
-    if (tab === 'insights' && !insights && !insightsLoading) {
-      setInsightsLoading(true)
-      getProfileInsights(id)
-        .then((data) => setInsights(data))
-        .catch((err) => setNotice('洞察加载失败：' + (err?.message || '未知错误')))
-        .finally(() => setInsightsLoading(false))
-    }
-  }, [id, profile, tab, reportMarkdown, reportLoading, insights, insightsLoading])
+        }
+        if (!hasCachedInsights) {
+          setInsights(data.insights)
+        }
+      })
+      .catch((err) => setNotice('报告加载失败：' + (err?.message || '未知错误')))
+      .finally(() => {
+        setReportLoading(false)
+        setInsightsLoading(false)
+      })
+  }, [id, profile])
 
   // Tab 切换时重置导出状态
   useEffect(() => {
@@ -517,58 +520,36 @@ export default function ProfileDetailPage() {
         <span className="font-normal opacity-70">{reportQuality.source_count} 个来源 · {reportQuality.text_length} 字</span>
       </span>
     ) : null
+
+    const sources = sourceIndex.map((s) => ({
+      id: s.n,
+      url: s.url,
+      title: s.title,
+      snippet: s.snippet,
+      tier: s.tier,
+      domain: '',
+      published_at: '',
+      confidence: s.confidence,
+    }))
+
     return (
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <ReportToc markdown={reportMarkdown} />
-            {qualityBadge}
+      <div className="no-print relative">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          {qualityBadge}
+        </div>
+        <div className="flex gap-8">
+          <div className="min-w-0 flex-1">
+            <ReportView markdown={reportMarkdown} sources={sources} onCite={(n) => {
+              const src = sourceIndex.find((s) => s.n === n)
+              if (src?.url) window.open(src.url, '_blank', 'noopener')
+            }} />
           </div>
-          <div className="relative">
-            <button
-              onClick={() => setExportOpen(!exportOpen)}
-              disabled={exporting}
-              className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-            >
-              <Download className="h-3.5 w-3.5" /> 导出
-              <ChevronDown className="h-3 w-3" />
-            </button>
-            {exportOpen && (
-              <div className="absolute right-0 z-20 mt-1 w-32 rounded-md border border-gray-200 bg-white shadow-lg">
-                {[
-                  { key: 'md' as const, label: 'Markdown' },
-                  { key: 'pdf' as const, label: 'PDF' },
-                  { key: 'word' as const, label: 'Word' },
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    onClick={() => handleExport(item.key)}
-                    className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 first:rounded-t-md last:rounded-b-md"
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="hidden xl:block w-60 shrink-0">
+            <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+              <ReportToc markdown={reportMarkdown} />
+            </div>
           </div>
         </div>
-        <ReportView
-          markdown={reportMarkdown}
-          sources={sourceIndex.map((s) => ({
-            id: s.n,
-            url: s.url,
-            title: s.title,
-            snippet: s.snippet,
-            tier: s.tier,
-            domain: '',
-            published_at: '',
-            confidence: s.confidence,
-          }))}
-          onCite={(n) => {
-            const src = sourceIndex.find((s) => s.n === n)
-            if (src?.url) window.open(src.url, '_blank', 'noopener')
-          }}
-        />
       </div>
     )
   }
@@ -699,6 +680,24 @@ export default function ProfileDetailPage() {
             <button onClick={handleRegenerate} disabled={regenerating} className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
               <RefreshCw className={`h-3.5 w-3.5 ${regenerating ? 'animate-spin' : ''}`} /> 重新生成
             </button>
+            {tab === 'report' && reportMarkdown && (
+              <div className="relative">
+                <button onClick={() => setExportOpen(!exportOpen)} disabled={exporting} className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                  <Download className="h-3.5 w-3.5" /> 导出 <ChevronDown className="h-3 w-3" />
+                </button>
+                {exportOpen && (
+                  <div className="absolute right-0 z-30 mt-1 w-32 rounded-md border border-gray-200 bg-white shadow-lg">
+                    {[
+                      { key: 'md' as const, label: 'Markdown' },
+                      { key: 'pdf' as const, label: 'PDF' },
+                      { key: 'word' as const, label: 'Word' },
+                    ].map((item) => (
+                      <button key={item.key} onClick={() => handleExport(item.key)} className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 first:rounded-t-md last:rounded-b-md">{item.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <button onClick={handleCompare} className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
               <GitCompare className="h-3.5 w-3.5" /> 加入对比
             </button>

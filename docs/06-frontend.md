@@ -1,6 +1,6 @@
 # 06. 前端架构
 
-> 版本：v6.0.0 · 分支：agent-v6
+> 版本：v5.5.0 · 分支：agent-v5
 > 更新日期：2026-08-03
 
 ## 6.1 技术栈
@@ -155,7 +155,7 @@
 | 图谱 | 5 | create, list, get, refresh, delete |
 | 企业 | 9 | create, me, update, invite-code/reset, join, members, member update, member remove, leave, permissions |
 | 竞品 | 5 | list, create, update, delete, crawl |
-| 画像 | 9 | templates CRUD + freeze, generate, list, freeze, compare, detail |
+| 画像 | 11 | templates CRUD + freeze, generate, getGenerateStatus, list, freeze, compare, detail, full-report |
 | 权限 | 2 | my permissions, set member permissions |
 | 账单 | 3 | plans, upgrade, orders |
 | 管理 | 6 | stats, users, user update, orgs, org update, audit-logs, execution-snapshots |
@@ -217,10 +217,12 @@
 
 ### ProfilesPage / ProfileTemplatesPage / ProfileDetailPage / ComparisonPage
 
-- 模板 CRUD（dimensions 以 JSON 文本编辑）
-- 画像生成（选择竞品 + 模板 → LLM 生成）
-- 冻结锁定
-- 横向对比矩阵
+- 模板 CRUD（dimensions 以 JSON 文本编辑，冻结后不可编辑）
+- 画像生成：选择竞品 + 模板 → 异步任务（`getGenerateStatus` 轮询） → 完成
+- 画像生成支持两种来源：调研任务来源 / 爬虫页面来源（自动合并）
+- 冻结锁定（不可逆）
+- 横向对比矩阵（至少 2 份冻结画像）
+- ProfileDetailPage 增加"信息来源"Tab：按 tier 筛选 + SourceCard + SourceDrawer
 
 ### GraphPage / GraphDetailPage
 

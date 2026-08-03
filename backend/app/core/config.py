@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # CORS 允许的源（逗号分隔）
     frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # 审计日志留存天数（0 = 不自动清理），默认 365 天
+    audit_retention_days: int = 365
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

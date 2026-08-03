@@ -484,6 +484,7 @@ export interface AuditLog {
   id: string
   user_id: string
   org_id: string
+  session_id: string
   action: string
   resource_type: string
   resource_id: string
@@ -491,12 +492,15 @@ export interface AuditLog {
   result: string
   status: string
   error: string
+  changes: string
   model_name: string
   tokens_prompt: number
   tokens_completion: number
   cost: number
   ip: string
   user_agent: string
+  prev_hash: string
+  checksum: string
   created_at: string
 }
 

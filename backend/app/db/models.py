@@ -439,13 +439,14 @@ class UserPermission(Base):
 
 
 class AuditLog(Base):
-    """审计日志：关键操作 + 模型调用 + 来源访问"""
+    """审计日志：关键操作 + 模型调用 + 来源访问（不可篡改）"""
 
     __tablename__ = "audit_logs"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(32), index=True)
-    org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    user_id: Mapped[str] = mapped_column(String(32))
+    org_id: Mapped[str] = mapped_column(String(32), default="")
+    session_id: Mapped[str] = mapped_column(String(32), default="", index=True)
 
     action: Mapped[str] = mapped_column(String(50))
     resource_type: Mapped[str] = mapped_column(String(50))
@@ -455,6 +456,7 @@ class AuditLog(Base):
     result: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20))
     error: Mapped[str] = mapped_column(Text, default="")
+    changes: Mapped[str] = mapped_column(Text, default="")  # JSON: 更新类操作的变更前后
 
     model_name: Mapped[str] = mapped_column(String(100), default="")
     tokens_prompt: Mapped[int] = mapped_column(default=0)
@@ -463,12 +465,15 @@ class AuditLog(Base):
 
     ip: Mapped[str] = mapped_column(String(64), default="")
     user_agent: Mapped[str] = mapped_column(String(300), default="")
+    prev_hash: Mapped[str] = mapped_column(String(64), default="")  # 链式完整性：上一条记录的 checksum
+    checksum: Mapped[str] = mapped_column(String(64), default="")  # 本条记录的 SHA-256 哈希
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     __table_args__ = (
         Index("idx_audit_user_created", "user_id", "created_at"),
         Index("idx_audit_org_created", "org_id", "created_at"),
+        Index("idx_audit_session_created", "session_id", "created_at"),
         Index("idx_audit_action_resource", "action", "resource_type"),
         Index("idx_audit_created_at", "created_at"),
     )

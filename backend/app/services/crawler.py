@@ -35,9 +35,9 @@ _PATH_RE = re.compile(
     re.I,
 )
 
-# 应排除的路径模式
+# 应排除的路径模式（注意：保留 /news 和 /article，竞品官网新闻页是重要信息来源）
 _EXCLUDE_RE = re.compile(
-    r"/(blog|news|article|post|tag|category|archive|author|search|login|signup|register)"
+    r"/(blog|post|tag|category|archive|author|search|login|signup|register)"
     r"(\/|$|\?)",
     re.I,
 )
@@ -287,10 +287,24 @@ async def _fetch_single(url: str) -> dict[str, Any]:
         content_html = ""
         title = _extract_title(html)
 
+    # 兜底：如果正文提取为空（JS 渲染站点 / 空 body），回退到 meta 标签
+    if not content_text.strip():
+        meta_text = _extract_from_meta(html)
+        if meta_text:
+            content_text = meta_text
+            logger.info("fallback to meta for %s: got %d chars", url, len(meta_text))
+
     # 检查 readability 是否只提取到了 consent overlay 而非实际正文
+    # 所有条目均为正则表达式，与 re.search(m, ..., re.IGNORECASE) 配合使用
     _CONSENT_MARKERS = [
-        "data subjects only", "targeted advertising", "selling.*sharing",
-        "privacy practices", "opt out", "ccpa", "gdpr consent",
+        # 英文标记
+        r"data\s+subjects\s+only", r"targeted\s+advertising",
+        r"selling.*sharing", r"privacy\s+practices",
+        r"\bopt\s+out\b", r"\bgdpr\s+consent\b",
+        # 中文标记
+        r"cookie.{0,10}同意", r"隐私.{0,10}政策", r"数据.{0,10}收集",
+        r"同意.{0,10}继续", r"接受.{0,10}cookie", r"个人信息.{0,10}保护",
+        r"我们使用.{0,20}cookie",
     ]
     if len(content_text) < 3000:
         body_text = soup_clean.get_text(separator="\n", strip=True)
@@ -321,6 +335,49 @@ def _extract_title(html: str) -> str:
     if tag:
         return tag.get_text(strip=True)
     return ""
+
+
+def _extract_from_meta(html: str) -> str:
+    """当正文提取为空时（JS 渲染站点），从 meta 标签和 JSON-LD 提取可用文本。"""
+    soup = BeautifulSoup(html, "html.parser")
+    parts: list[str] = []
+
+    # 1. og:title
+    og_title = soup.find("meta", property="og:title")
+    if og_title and og_title.get("content", "").strip():
+        parts.append(f"[页面标题] {og_title['content'].strip()}")
+
+    # 2. meta description
+    desc = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
+    if desc and desc.get("content", "").strip():
+        parts.append(f"[页面描述] {desc['content'].strip()}")
+
+    # 3. meta keywords
+    kw = soup.find("meta", attrs={"name": re.compile(r"^keywords$", re.I)})
+    if kw and kw.get("content", "").strip():
+        parts.append(f"[关键词] {kw['content'].strip()}")
+
+    # 4. JSON-LD structured data
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            import json as _json
+            data = _json.loads(script.string or "")
+            if isinstance(data, dict):
+                name = data.get("name", "")
+                desc = data.get("description", "")
+                if name:
+                    parts.append(f"[结构化数据] {name}")
+                if desc:
+                    parts.append(desc)
+        except Exception:
+            pass
+
+    # 5. <title> tag
+    title_tag = soup.find("title")
+    if title_tag and title_tag.get_text(strip=True):
+        parts.append(f"[标题] {title_tag.get_text(strip=True)}")
+
+    return "\n".join(parts) if parts else ""
 
 
 # ---------------------------------------------------------------------------
@@ -479,8 +536,43 @@ def _classify_page_type(url: str) -> str:
         "newsroom": "news", "press": "press",
         "contact": "contact", "faq": "faq",
         "repair": "help",
+        # 凡科建站等常见建站工具的 URL 模式
+        "h-pr-j": "products",  # 产品详情页
+        "h-pr-list": "products",  # 产品列表
+        "h-col": "products",  # 栏目/产品分类页
+        "h-nd": "news",  # 新闻详情
+        "h-news": "news",  # 新闻列表
+        "h-nr-j": "news",  # 新闻详情(alternate)
+        "h-a": "about",  # 文章页
+        "h-mcenter": "other",  # 会员中心
+        "h-cookie": "other",  # cookie 说明
+        "h-login": "other",  # 登录页
+        "h-msgboard": "other",  # 留言板
     }
-    return _TYPE_MAP.get(segment, "other")
+    result = _TYPE_MAP.get(segment)
+    if result:
+        return result
+    # 兜底：URL 中包含产品相关关键词
+    if any(kw in segment for kw in ("prd", "prod", "goods", "item", "solution")):
+        return "products"
+    # 凡科建站等建站工具的 URL 模式（前缀匹配）
+    _FAISYS_PREFIXES = [
+        ("h-pr-j-", "products"),     # 产品详情页
+        ("h-pr-list", "products"),   # 产品列表
+        ("h-col-", "products"),      # 栏目/产品分类页
+        ("h-nd-", "news"),           # 新闻详情
+        ("h-news", "news"),          # 新闻列表
+        ("h-nr-j-", "news"),         # 新闻详情(alternate)
+        ("h-a-", "about"),           # 文章页
+        ("h-mcenter", "other"),      # 会员中心
+        ("h-cookie", "other"),       # cookie 说明
+        ("h-login", "other"),        # 登录页
+        ("h-msgboard", "other"),     # 留言板
+    ]
+    for prefix, ptype in _FAISYS_PREFIXES:
+        if segment.startswith(prefix):
+            return ptype
+    return "other"
 
 
 def _json_config(max_pages: int) -> str:

@@ -134,10 +134,10 @@ async def generate_profile(competitor_id: str, template_id: str, user_id: str = 
     except Exception as exc:
         logger.warning("product_intel failed for %s: %s", competitor_id, exc)
 
-    # 最终兜底：从爬取页面生成
+    # 最终兜底：从爬取页面生成（直接提取模式）
     logger.info("product_intel also failed, falling back to crawled pages for %s", competitor_id)
-    from app.services.profile_extractor import extract_profile_from_pages
-    return await extract_profile_from_pages(competitor_id, template_id, user_id=user_id)
+    from app.services.profile_extractor import extract_profile_direct
+    return await extract_profile_direct(competitor_id, template_id, user_id=user_id)
 
 
 def freeze_profile(profile_id: str) -> dict:

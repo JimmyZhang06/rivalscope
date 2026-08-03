@@ -37,16 +37,19 @@ def _profile_access_check(p: CompetitorProfile, user: User) -> None:
     """统一画像访问校验：按 org_id 企业隔离 + user_id 个人隔离"""
     if not p:
         raise HTTPException(status_code=404, detail="画像不存在")
-    # 有企业归属
+    # 有企业归属：检查 org_id 匹配
     if p.org_id == "":
-        if not _is_admin(user):
-            raise HTTPException(status_code=403, detail="无权查看系统级画像")
+        # 系统级画像：管理员可直接访问，个人用户只能访问自己的
+        if _is_admin(user):
+            return
+        if not user.org_id:
+            # 个人用户：user_id 匹配本人，或存量空 user_id（部署前的旧记录，向后兼容）
+            if p.user_id and p.user_id != user.id:
+                raise HTTPException(status_code=403, detail="无权查看他人的画像")
+            return
+        raise HTTPException(status_code=403, detail="无权查看系统级画像")
     elif p.org_id != user.org_id:
         raise HTTPException(status_code=403, detail="无权查看其他企业的画像")
-    # 无企业用户：user_id 匹配本人，或存量空 user_id（部署前的旧记录，向后兼容）
-    if not user.org_id:
-        if p.user_id and p.user_id != user.id:
-            raise HTTPException(status_code=403, detail="无权查看他人的画像")
 
 
 # ---------- 模板 ----------
@@ -166,7 +169,7 @@ async def generate_profile_api(payload: ProfileGenerateIn, user: User = Depends(
 
 @router.post("/generate-from-crawl", response_model=dict, status_code=202)
 async def generate_from_crawl(payload: ProfileGenerateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """后台触发：基于竞品已爬取的官网页面生成画像"""
+    """后台触发：基于竞品已爬取的官网页面生成画像（直接提取模式）"""
     check_quota_or_403(db, user)
     competitor = db.get(Competitor, payload.competitor_id)
     if not competitor or (competitor.org_id != user.org_id and competitor.org_id != ""):
@@ -178,7 +181,7 @@ async def generate_from_crawl(payload: ProfileGenerateIn, user: User = Depends(g
         raise HTTPException(status_code=400, detail="模板未冻结")
 
     org_id = competitor.org_id if competitor else ""
-    task = create_extract_task(payload.competitor_id, payload.template_id, user.id, org_id)
+    task = create_extract_task(payload.competitor_id, payload.template_id, user.id, org_id, crawl_only=True)
     return {"task_id": task.task_id, "competitor_id": payload.competitor_id, "template_id": payload.template_id, "status": "running"}
 
 
@@ -358,13 +361,12 @@ async def get_profile_report_full(pid: str, user: User = Depends(get_current_use
 def compare_profiles(payload: ComparisonIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     template = db.get(ProfileTemplate, payload.template_id)
     if not template:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    # 企业模板：仅同企业用户可访问；个人模板：仅创建人可访问
+    if template.org_id != "" and template.org_id != user.org_id:
         raise HTTPException(status_code=403, detail="无权访问该模板")
-    if template.org_id != user.org_id:
-        if template.org_id != "" or user.org_id:
-            raise HTTPException(status_code=403, detail="无权访问该模板")
-        # 两人都无企业：检查创建人
-        if template.created_by != user.id:
-            raise HTTPException(status_code=403, detail="无权访问该模板")
+    if template.org_id == "" and template.created_by != user.id:
+        raise HTTPException(status_code=403, detail="无权访问该模板")
     valid_ids = []
     for pid in payload.competitor_ids:
         p = db.get(CompetitorProfile, pid)
@@ -380,4 +382,7 @@ def compare_profiles(payload: ComparisonIn, user: User = Depends(get_current_use
         elif p.org_id != user.org_id:
             raise HTTPException(status_code=403, detail=f"无权访问画像 {pid}")
         valid_ids.append(pid)
-    return generate_comparison(payload.template_id, valid_ids)
+    try:
+        return generate_comparison(payload.template_id, valid_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))

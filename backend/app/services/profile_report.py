@@ -377,12 +377,15 @@ def _collect_materials(
     if isinstance(source_refs, list):
         for ref in source_refs:
             if isinstance(ref, dict) and ref.get("url"):
+                conf = ref.get("confidence", 0.0)
+                if isinstance(conf, str):
+                    conf = {"high": 0.9, "medium": 0.6, "low": 0.3}.get(conf, 0.5)
                 materials["sources"].append({
                     "url": ref.get("url", ""),
                     "title": ref.get("title", ""),
                     "snippet": (ref.get("snippet", "") or "")[:300],
                     "tier": ref.get("tier", "other"),
-                    "confidence": float(ref.get("confidence", 0.0) or 0.0),
+                    "confidence": float(conf or 0.0),
                 })
 
     # 5. 图谱关系（如有同名图谱项目）
