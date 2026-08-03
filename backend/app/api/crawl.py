@@ -20,10 +20,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/competitors", tags=["crawl"])
 
 
-def _is_admin(user: User) -> bool:
-    return user.role == "admin"
-
-
 # 正在执行的爬取任务，防重入
 _running_crawls: set[str] = set()
 
@@ -41,7 +37,7 @@ async def start_crawl(
     competitor = db.get(Competitor, cid)
     if not competitor or (competitor.org_id != user.org_id and competitor.org_id != ""):
         raise HTTPException(status_code=404, detail="竞品不存在")
-    if competitor.org_id == "" and not _is_admin(user):
+    if competitor.org_id == "" and user.role != "admin":
         raise HTTPException(status_code=403, detail="系统级竞品仅管理员可爬取")
     if not competitor.website:
         raise HTTPException(status_code=400, detail="竞品未设置官网地址")

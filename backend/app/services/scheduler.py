@@ -15,19 +15,16 @@ from fastapi import HTTPException
 from app.db.database import SessionLocal
 from app.db.models import ExecutionSnapshot, Notification, ResearchTask, Tracker, User
 from app.services.agent import run_research
-from app.services.audit import purge_expired_logs
 
 logger = logging.getLogger(__name__)
 
 SCAN_INTERVAL = 60  # 秒
-PURGE_CHECK_INTERVAL = 86400  # 审计日志清理检查间隔（秒）= 24 小时
 PERIOD_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 
 QUOTA_SKIP_TITLE = "定时追踪因额度不足跳过本期"
 
 _running: set[str] = set()  # 正在执行的 tracker_id，防重入
 _GIT_HASH: str = ""          # 启动时缓存一次 git hash
-_last_purge_check: datetime | None = None  # 上次清理审计日志的时间
 
 
 def _load_git_hash() -> None:
@@ -175,34 +172,11 @@ def _scan_once() -> None:
             logger.info("scheduler triggered tracker %s -> task %s", tracker.id, task.id)
 
 
-def _check_purge() -> None:
-    """检查并清理超过留存期的审计日志（每 24 小时执行一次）"""
-    global _last_purge_check
-    now = datetime.now(timezone.utc)
-    if _last_purge_check and (now - _last_purge_check).total_seconds() < PURGE_CHECK_INTERVAL:
-        return
-
-    try:
-        from app.core.config import get_settings
-        settings = get_settings()
-        retention_days = getattr(settings, "audit_retention_days", 365)
-        if retention_days > 0:
-            with SessionLocal() as db:
-                count = purge_expired_logs(retention_days=retention_days, db=db)
-                if count > 0:
-                    logger.info("scheduler purged %d expired audit logs (retention=%dd)", count, retention_days)
-    except Exception:
-        logger.exception("scheduler purge check failed")
-    finally:
-        _last_purge_check = now
-
-
 async def scheduler_loop() -> None:
     logger.info("tracker scheduler started (interval %ss)", SCAN_INTERVAL)
     while True:
         try:
             _scan_once()
-            _check_purge()
         except Exception:
             logger.exception("scheduler scan failed")
         await asyncio.sleep(SCAN_INTERVAL)

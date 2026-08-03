@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Lock, RefreshCw, ExternalLink, GitCompare,
-  BarChart3, FileText, Lightbulb, Target, Download, ChevronDown,
+  BarChart3, FileText, Lightbulb, Target, Download, ChevronDown, Link2,
 } from 'lucide-react'
 import {
   freezeProfileApi, generateProfileApi, getProfile, getProfileFullReport,
   listCompetitors, listProfileTemplates,
 } from '../../api/client'
-import type { Competitor, CompetitorProfile, ProfileTemplate } from '../../api/types'
+import type { Competitor, CompetitorProfile, ProfileTemplate, Source } from '../../api/types'
 import { fmtDateTime } from '../../utils/time'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import ReportView from '../../components/ReportView'
@@ -17,17 +17,36 @@ import ScoreRadar from '../../components/ScoreRadar'
 import ScoreBars from '../../components/ScoreBars'
 import SwotGrid from '../../components/SwotGrid'
 import StepTimeline from '../../components/StepTimeline'
+import SourceCard from '../../components/SourceCard'
+import SourceDrawer from '../../components/SourceDrawer'
 import { exportMarkdown, exportPdf, exportWord } from '../../utils/exportReport'
 import type { ReportExportInput } from '../../utils/exportReport'
+import type { SourceTier } from '../../api/types'
 
-type Tab = 'overview' | 'report' | 'insights' | 'dimensions'
+type Tab = 'overview' | 'report' | 'insights' | 'dimensions' | 'sources'
 
 const TABS: { key: Tab; label: string; icon: typeof BarChart3 }[] = [
   { key: 'overview', label: '概览', icon: BarChart3 },
   { key: 'report', label: '报告', icon: FileText },
   { key: 'insights', label: '洞察', icon: Lightbulb },
   { key: 'dimensions', label: '维度', icon: Target },
+  { key: 'sources', label: `信息来源`, icon: Link2 },
 ]
+
+const TIER_ORDER: SourceTier[] = ['official', 'media', 'community', 'other']
+const TIER_BAR_COLORS: Record<SourceTier, string> = {
+  official: 'bg-blue-500',
+  media: 'bg-amber-400',
+  community: 'bg-green-500',
+  other: 'bg-gray-300',
+}
+
+const TIER_LABEL_MAP: Record<SourceTier, string> = {
+  official: '官方',
+  media: '媒体',
+  community: '社区',
+  other: '其他',
+}
 
 export default function ProfileDetailPage() {
   usePageTitle('画像详情')
@@ -52,26 +71,49 @@ export default function ProfileDetailPage() {
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const exportRef = useRef<HTMLDivElement>(null)
 
-  // Helpers: read pre-generated content from profile_data (written by background task)
-  const getCachedReport = (pd: any) => {
-    if (!pd?.report_markdown) return null
-    return {
-      markdown: pd.report_markdown,
-      sourceIndex: (pd.source_index || []).map((s: any) => ({
-        n: s.n,
-        url: s.url,
-        title: s.title || '',
-        tier: s.tier || 'other',
-        confidence: s.confidence || 0,
-        snippet: s.snippet || '',
-      })),
-      quality: pd.report_quality || null,
+  // Sources tab state
+  const [tierFilter, setTierFilter] = useState<SourceTier | 'all'>('all')
+  const [drawer, setDrawer] = useState<{ source: Source; index: number } | null>(null)
+
+  // Helpers: read pre-generated content from profile's independent columns (written by background task)
+  const getCachedReport = (profileObj: any, pd: any) => {
+    // 优先从独立列读取
+    if (profileObj?.report_markdown) {
+      return {
+        markdown: profileObj.report_markdown,
+        sourceIndex: typeof profileObj.source_index_json === 'string'
+          ? JSON.parse(profileObj.source_index_json)
+          : (profileObj.source_index_json || []),
+        quality: pd?.report_quality || null,
+      }
     }
+    // 回退：从 profile_data 读取（迁移前的老数据）
+    if (pd?.report_markdown) {
+      return {
+        markdown: pd.report_markdown,
+        sourceIndex: (pd.source_index || []).map((s: any) => ({
+          n: s.n,
+          url: s.url,
+          title: s.title || '',
+          tier: s.tier || 'other',
+          confidence: s.confidence || 0,
+          snippet: s.snippet || '',
+        })),
+        quality: pd.report_quality || null,
+      }
+    }
+    return null
   }
 
-  const getCachedInsights = (pd: any) => {
+  const getCachedInsights = (profileObj: any, pd: any) => {
+    // 优先从独立列读取
+    if (profileObj?.insights_json) {
+      try {
+        return JSON.parse(profileObj.insights_json)
+      } catch { return null }
+    }
+    // 回退：从 profile_data 读取
     const cached = pd?.insights
     if (cached && (cached.scores || cached.verdict || cached.swot)) {
       return cached
@@ -84,12 +126,19 @@ export default function ProfileDetailPage() {
     setLoading(true)
     setError('')
     try {
-      const [p, allCompetitors, allTemplates] = await Promise.all([
-        getProfile(id),
-        listCompetitors(),
-        listProfileTemplates(),
-      ])
+      const p = await getProfile(id)
+      if (!p) {
+        setError('画像不存在')
+        setLoading(false)
+        return
+      }
       setProfile(p)
+
+      let allCompetitors: Competitor[] = []
+      try { allCompetitors = await listCompetitors() } catch { /* 非致命 */ }
+      let allTemplates: ProfileTemplate[] = []
+      try { allTemplates = await listProfileTemplates() } catch { /* 非致命 */ }
+
       const c = allCompetitors.find((x) => x.id === p.competitor_id)
       if (c) setCompetitor(c)
       const t = allTemplates.find((x) => x.id === p.template_id)
@@ -97,14 +146,14 @@ export default function ProfileDetailPage() {
 
       // Refresh cached report/insights from freshly loaded profile data
       const pd = typeof p.profile_data === 'string' ? JSON.parse(p.profile_data) : p.profile_data
-      const freshReport = getCachedReport(pd)
+      const freshReport = getCachedReport(p, pd)
       if (freshReport) {
         setReportMarkdown(freshReport.markdown)
         setReportQuality(freshReport.quality)
         setSourceIndex(freshReport.sourceIndex)
       }
 
-      const freshInsights = getCachedInsights(pd)
+      const freshInsights = getCachedInsights(p, pd)
       if (freshInsights) {
         setInsights(freshInsights)
       }
@@ -119,16 +168,24 @@ export default function ProfileDetailPage() {
     reload()
   }, [reload])
 
-  // Auto-fetch report + insights when profile is loaded (only if not cached in profile_data)
+  // Auto-fetch report + insights when profile is loaded (only if not cached)
   useEffect(() => {
     if (!id || !profile) return
 
     const rawPd = typeof profile.profile_data === 'string'
       ? JSON.parse(profile.profile_data) : profile.profile_data
-    const hasCachedReport = !!rawPd?.report_markdown
-    const hasCachedInsights = !!(rawPd?.insights?.scores || rawPd?.insights?.verdict || rawPd?.insights?.swot)
 
-    if (hasCachedReport && hasCachedInsights) return
+    // 检测预生成失败标记
+    const needsPostProcessing = rawPd?._needs_post_processing
+    const hasCachedReport = !!profile.report_markdown || !!rawPd?.report_markdown
+    const hasCachedInsights = !!profile.insights_json || !!(rawPd?.insights?.scores || rawPd?.insights?.verdict || rawPd?.insights?.swot)
+
+    if (!needsPostProcessing && hasCachedReport && hasCachedInsights) return
+
+    // 预生成失败：显示重试提示
+    if (needsPostProcessing) {
+      setNotice(`报告生成失败（${rawPd?._post_processing_error || '未知原因'}），可点击重试`)
+    }
 
     setReportLoading(true)
     setInsightsLoading(true)
@@ -239,9 +296,9 @@ export default function ProfileDetailPage() {
       if (format === 'md') {
         exportMarkdown(input)
       } else if (format === 'pdf') {
-        await exportPdf(input, sourceRefs)
+        await exportPdf(input, sourceRefs as any[])
       } else if (format === 'word') {
-        exportWord(input)
+        exportWord(input, sourceRefs as any[])
       }
     } catch {
       setNotice('导出失败')
@@ -252,166 +309,488 @@ export default function ProfileDetailPage() {
 
   // ---------- 渲染辅助 ----------
 
+  const qualityBadge = reportQuality ? (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+      reportQuality.level === 'high' ? 'bg-green-100 text-green-700' :
+      reportQuality.level === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+      'bg-red-100 text-red-700'
+    }`}>
+      <span className="inline-block h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+      素材质量：{reportQuality.level === 'high' ? '充足' : reportQuality.level === 'medium' ? '一般' : '不足'}
+      <span className="font-normal opacity-70">{reportQuality.source_count} 个来源 · {reportQuality.text_length} 字</span>
+    </span>
+  ) : null
+
   const renderProfileData = () => {
     if (!profile) return null
     const data = typeof profile.profile_data === 'string' ? JSON.parse(profile.profile_data) : profile.profile_data
     const dims = data?.dimensions || {}
     if (!Object.keys(dims).length) return <p className="text-sm text-gray-400">暂无维度数据</p>
 
-    const stripRefs = (s: string) => s.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim()
+    // label 映射：优先从 insights.dimension_labels 读取（后端已写入 profile_data）
+    // fallback 到 template 状态
+    const dimLabelMap: Record<string, string> =
+        data?.insights?.dimension_labels
+        || template?.dimensions?.reduce((acc, d) => { acc[d.key] = d.label; return acc }, {} as Record<string, string>)
+        || {}
 
-    const isStructuredArray = (arr: any[]): boolean => {
-      if (arr.length === 0) return false
-      const first = arr[0]
-      if (typeof first !== 'object' || first === null) return false
-      const keys = Object.keys(first)
-      return keys.length >= 2 && keys.some((k) => typeof first[k] === 'object' && first[k] !== null)
+    const fieldLabelMap: Record<string, Record<string, string>> =
+        template?.dimensions?.reduce((acc, dim) => {
+            acc[dim.key] = dim.fields.reduce((fAcc, f) => { fAcc[f.key] = f.label; return fAcc }, {} as Record<string, string>)
+            return acc
+        }, {} as Record<string, Record<string, string>>)
+        || {}
+
+    const extractFieldValue = (v: any): { label: string; value: any; confidence?: string; sourceUrl?: string } => {
+        if (v && typeof v === 'object' && !Array.isArray(v) && 'v' in v) {
+            // 新格式 {v, c, s}
+            return {
+                label: '',
+                value: v.v,
+                confidence: v.c,
+                sourceUrl: v.s,
+            }
+        }
+        // 旧格式：纯文本或其他
+        return { label: '', value: v }
     }
 
-    const renderFieldValue = (v: any): React.ReactNode => {
-      if (v === null || v === undefined) return <span className="text-gray-400">—</span>
-      if (typeof v === 'string') return <span>{stripRefs(v)}</span>
-      if (typeof v === 'number' || typeof v === 'boolean') return <span>{String(v)}</span>
+    const insightScores = data?.insights?.scores || {}
+    const getScore = (dimKey: string, dimLabel: string): number | null => {
+        const s = insightScores[dimLabel] ?? insightScores[dimKey] ?? null
+        return typeof s === 'number' ? s : null
+    }
 
-      if (Array.isArray(v)) {
-        if (v.length === 0) return <span className="text-gray-400">—</span>
-        if (typeof v[0] === 'string') {
-          return (
-            <div className="flex flex-wrap gap-1.5">
-              {v.map((item, i) => (
-                <span key={i} className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{stripRefs(item)}</span>
-              ))}
-            </div>
-          )
+    const confBadge = (conf: string) => {
+        const map: Record<string, { text: string; cls: string }> = {
+            high:   { text: '高可信度', cls: 'bg-emerald-50 text-emerald-600 ring-emerald-200' },
+            medium: { text: '中可信度', cls: 'bg-amber-50 text-amber-600 ring-amber-200' },
+            low:    { text: '低可信度', cls: 'bg-gray-50 text-gray-500 ring-gray-200' },
         }
-        if (isStructuredArray(v)) {
-          return (
-            <div className="mt-2 space-y-2">
-              {v.map((item, i) => {
-                const itemKeys = Object.keys(item).filter((k) => item[k] !== null && item[k] !== false && item[k] !== '' && item[k] !== '信息不足')
-                const titleKey = itemKeys.find((k) => ['name', 'title', 'product', '类别'].includes(k)) || itemKeys[0]
-                const title = String(item[titleKey] || '').replace(/\[\d+\]/g, '').trim()
+        const info = map[conf] || map.low
+        return (
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${info.cls}`}>
+                {info.text}
+            </span>
+        )
+    }
+
+    const scoreColor = (score: number) => {
+        if (score >= 7) return 'text-emerald-600 bg-emerald-50'
+        if (score >= 4) return 'text-amber-600 bg-amber-50'
+        return 'text-rose-600 bg-rose-50'
+    }
+
+    const dimColors = [
+        { border: 'border-l-blue-500',   bg: 'bg-blue-50/40',   icon: '📦', tag: 'bg-blue-100 text-blue-700' },
+        { border: 'border-l-emerald-500', bg: 'bg-emerald-50/40', icon: '🏢', tag: 'bg-emerald-100 text-emerald-700' },
+        { border: 'border-l-violet-500',  bg: 'bg-violet-50/40',  icon: '📍', tag: 'bg-violet-100 text-violet-700' },
+        { border: 'border-l-amber-500',   bg: 'bg-amber-50/40',   icon: '⚙',  tag: 'bg-amber-100 text-amber-700' },
+        { border: 'border-l-rose-500',    bg: 'bg-rose-50/40',    icon: '⚡', tag: 'bg-rose-100 text-rose-700' },
+        { border: 'border-l-teal-500',    bg: 'bg-teal-50/40',    icon: '🔗', tag: 'bg-teal-100 text-teal-700' },
+        { border: 'border-l-indigo-500',  bg: 'bg-indigo-50/40',  icon: '📊', tag: 'bg-indigo-100 text-indigo-700' },
+    ]
+
+    const renderFieldValue = (v: any, dimKey?: string): React.ReactNode => {
+        const entry = extractFieldValue(v)
+        const display = entry.value
+
+        if (display === null || display === undefined)
+            return <span className="text-gray-400">—</span>
+
+        if (typeof display === 'string') {
+            const text = display.replace(/\[\d+\]/g, '').trim()
+            if (!text || text === '信息不足')
+                return <span className="text-gray-400">—</span>
+            return <span className="text-sm text-gray-800">{text}</span>
+        }
+
+        if (typeof display === 'number' || typeof display === 'boolean')
+            return <span className="text-sm text-gray-800">{String(display)}</span>
+
+        if (Array.isArray(display)) {
+            if (display.length === 0) return <span className="text-gray-400">—</span>
+            if (typeof display[0] === 'string') {
                 return (
-                  <div key={i} className="rounded-lg border border-gray-100 bg-white p-3">
-                    {title && <p className="text-sm font-medium text-gray-800">{title}</p>}
-                    <div className="mt-1.5 grid gap-x-4 gap-y-1 sm:grid-cols-2">
-                      {itemKeys.filter((k) => k !== titleKey).map((k) => {
-                        const val = item[k]
-                        if (val === null || val === undefined || val === '') return null
-                        const label = { name: '名称', category: '类别', description: '描述', price: '价格', confidence: '置信度', specs: '规格', features: '功能', date: '日期', type: '类型' }[k] || k
-                        return (
-                          <div key={k} className="text-xs">
-                            <span className="text-gray-400">{label}</span>
-                            <p className="mt-0.5 text-gray-700">{typeof val === 'object' ? JSON.stringify(val) : stripRefs(String(val))}</p>
-                          </div>
-                        )
-                      })}
+                    <div className="flex flex-wrap gap-1.5">
+                        {display.map((item, i) => (
+                            <span key={i} className="rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                                {String(item).replace(/\[\d+\]/g, '').trim()}
+                            </span>
+                        ))}
                     </div>
-                  </div>
                 )
+            }
+            // 对象数组（嵌套结构）
+            return (
+                <div className="mt-2 space-y-2">
+                    {display.map((item: any, i: number) => {
+                        const keys = Object.keys(item).filter(k => item[k] !== null && item[k] !== false && item[k] !== '' && item[k] !== '信息不足')
+                        const titleKey = keys.find(k => ['name', 'title', 'product', '类别'].includes(k)) || keys[0]
+                        const title = String(item[titleKey] || '').replace(/\[\d+\]/g, '').trim()
+                        return (
+                            <div key={i} className="rounded-lg border border-gray-100 bg-white p-3">
+                                {title && <p className="text-sm font-medium text-gray-800">{title}</p>}
+                                <div className="mt-1.5 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                                    {keys.filter(k => k !== titleKey).map(k => {
+                                        const val = item[k]
+                                        if (val === null || val === undefined || val === '') return null
+                                        const label = (dimKey ? fieldLabelMap[dimKey]?.[k] : undefined)
+                                            || { name: '名称', category: '类别', description: '描述', price: '价格',
+                                                confidence: '置信度', specs: '规格', features: '功能',
+                                                date: '日期', type: '类型' }[k] || k
+                                        return (
+                                            <div key={k} className="text-xs">
+                                                <span className="text-gray-400">{label}</span>
+                                                <p className="mt-0.5 text-gray-700">{typeof val === 'object' ? JSON.stringify(val) : String(val)}</p>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            )
+        }
+
+        if (typeof display === 'object' && display !== null) {
+            const entries = Object.entries(display).filter(([, val]) => val !== null && val !== false && val !== '' && val !== '信息不足')
+            if (entries.length === 0) return <span className="text-gray-400">信息不足</span>
+            return (
+                <div className="mt-1 space-y-1">
+                    {entries.map(([k, val]) => (
+                        <div key={k} className="text-xs">
+                            <span className="text-gray-400">{k}：</span>
+                            <span className="text-gray-700">{renderFieldValue(val, dimKey)}</span>
+                        </div>
+                    ))}
+                </div>
+            )
+        }
+
+        return <span className="text-sm text-gray-800">{String(display)}</span>
+    }
+
+    return (
+        <div className="space-y-4">
+            {Object.entries(dims).map(([dimKey, fields], idx) => {
+                const dimLabel = dimLabelMap[dimKey] || dimKey
+                const style = dimColors[idx % dimColors.length]
+                const fieldEntries = typeof fields === 'object' && !Array.isArray(fields)
+                    ? Object.entries(fields as Record<string, any>) : []
+                const filledCount = fieldEntries.filter(([, v]) => {
+                    const entry = extractFieldValue(v)
+                    return entry.value && entry.value !== '信息不足' && entry.value !== ''
+                }).length
+                const score = getScore(dimKey, dimLabel)
+
+                return (
+                    <div key={dimKey}
+                        className={`rounded-xl border border-gray-100 ${style.bg} ${style.border} overflow-hidden`}>
+                        {/* 维度标题栏 */}
+                        <div className="flex items-center justify-between px-5 py-3">
+                            <div className="flex items-center gap-2.5">
+                                <span className="text-base">{style.icon}</span>
+                                <h3 className="text-sm font-semibold text-gray-800">{dimLabel}</h3>
+                                <span className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${style.tag}`}>
+                                    {dimKey}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2.5">
+                                {score !== null && (
+                                    <span className={`rounded-lg px-2.5 py-1 text-sm font-bold ${scoreColor(score)}`}>
+                                        {score}
+                                    </span>
+                                )}
+                                <span className="text-xs text-gray-400">
+                                    {filledCount}/{fieldEntries.length} 字段
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* 字段列表 */}
+                        <div className="border-t border-gray-100/80 px-5 py-3.5">
+                            {fieldEntries.length === 0 ? (
+                                <p className="text-xs text-gray-400 italic">信息不足</p>
+                            ) : (
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {fieldEntries.map(([fieldKey, v]) => {
+                                        const entry = extractFieldValue(v)
+                                        if (!entry.value || entry.value === '信息不足' || entry.value === '')
+                                            return null
+                                        const fieldLabel = fieldLabelMap[dimKey]?.[fieldKey] || fieldKey
+
+                                        return (
+                                            <div key={fieldKey} className="rounded-lg bg-white/70 p-3 ring-1 ring-gray-100">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs font-medium text-gray-400">{fieldLabel}</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {entry.confidence && confBadge(entry.confidence)}
+                                                    </div>
+                                                </div>
+                                                <div className="mt-1.5">{renderFieldValue(v, dimKey)}</div>
+                                                {entry.sourceUrl && (
+                                                    <a href={entry.sourceUrl} target="_blank" rel="noreferrer"
+                                                        className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-gray-400 hover:text-blue-500">
+                                                        <ExternalLink className="h-2.5 w-2.5" /> 来源
+                                                    </a>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )
+            })}
+        </div>
+    )
+  }
+
+  // ---------- 来源数据处理 ----------
+
+  /** Convert profile.source_refs to Source[] with computed fields */
+  const normalizeSources = (): Source[] => {
+    if (!profile) return []
+    const refs = profile.source_refs || []
+    // Also merge source_index if available (has richer data like confidence, age_days, tier)
+    const indexMap = new Map<number, any>()
+    sourceIndex.forEach((s) => indexMap.set(s.n, s))
+
+    return refs.map((ref, i) => {
+      const idx = indexMap.get(i + 1)
+      const domain = (() => {
+        try { return new URL(ref.url).hostname.replace(/^www\./, '') } catch { return '' }
+      })()
+      return {
+        id: i + 1,
+        title: ref.title || ref.url,
+        url: ref.url,
+        snippet: ref.snippet || idx?.snippet || '',
+        score: idx?.confidence ? Math.round(idx.confidence * 100) : 50,
+        domain,
+        tier: (idx?.tier || 'other') as SourceTier,
+        published_at: '',
+        dimension: '',
+        age_days: -1,
+        confidence: idx?.confidence || 0,
+        conflict_status: 'none',
+        is_duplicate: false,
+        access_status: '',
+      }
+    })
+  }
+
+  const profileSources = normalizeSources()
+
+  /** Source stats computed from profile sources */
+  const sourceStats = (() => {
+    const sources = profileSources
+    const tierCount = new Map<SourceTier, number>()
+    const dimensions = new Set<string>()
+    const freshness = { recent: 0, fresh: 0, normal: 0, old: 0, undated: 0 }
+    for (const s of sources) {
+      tierCount.set(s.tier, (tierCount.get(s.tier) ?? 0) + 1)
+      if (s.dimension) dimensions.add(s.dimension)
+      if (s.age_days < 0) freshness.undated += 1
+      else if (s.age_days <= 30) freshness.recent += 1
+      else if (s.age_days <= 180) freshness.fresh += 1
+      else if (s.age_days <= 365) freshness.normal += 1
+      else freshness.old += 1
+    }
+    return {
+      tierCount,
+      dimensions: [...dimensions],
+      freshness,
+      timeSpan: '',
+    }
+  })()
+
+  const filteredProfileSources = useMemo(() => {
+    const list = profileSources
+      .map((source, i) => ({ source, index: i + 1 }))
+      .filter(({ source }) => tierFilter === 'all' || source.tier === tierFilter)
+    return list
+  }, [profileSources, tierFilter])
+
+  // ---------- Tab 内容 ----------
+
+  const renderSourcesTab = () => {
+    const sources = profileSources
+    const stats = sourceStats
+    return (
+      <div>
+        {/* 概览统计卡 */}
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
+            <p className="text-xl font-bold text-gray-900">{sources.length}</p>
+            <p className="mt-0.5 text-xs text-gray-500">信息来源总数</p>
+          </div>
+          <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
+            <p className="text-xl font-bold text-blue-700">
+              {sources.length
+                ? Math.round(
+                    (((stats.tierCount.get('official') ?? 0) + (stats.tierCount.get('media') ?? 0)) /
+                      sources.length) *
+                      100,
+                  )
+                : 0}
+              %
+            </p>
+            <p className="mt-0.5 text-xs text-gray-500">官方与媒体占比</p>
+          </div>
+          <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
+            <p className="text-xl font-bold text-gray-900">{stats.dimensions.length || '—'}</p>
+            <p className="mt-0.5 text-xs text-gray-500">来源类型</p>
+          </div>
+          <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
+            <p className="text-sm font-bold text-gray-900">{profile?.generation_source === 'crawl' ? '基于爬取页面' : '基于调研来源'}</p>
+            <p className="mt-0.5 text-xs text-gray-500">生成方式</p>
+          </div>
+        </div>
+
+        {/* 可信度分布条 */}
+        {sources.length > 0 && (
+          <div className="mb-4 rounded-md border border-gray-100 p-3.5">
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full">
+              {TIER_ORDER.map((t) => {
+                const n = stats.tierCount.get(t) ?? 0
+                return n > 0 ? (
+                  <div
+                    key={t}
+                    className={TIER_BAR_COLORS[t]}
+                    style={{ width: `${(n / sources.length) * 100}%` }}
+                    title={`${TIER_LABEL_MAP[t]} ${n} 条`}
+                  />
+                ) : null
               })}
             </div>
-          )
-        }
-        return (
-          <div className="mt-1 space-y-1">
-            {v.map((item, i) => (
-              <div key={i} className="text-xs text-gray-600">
-                {typeof item === 'object' ? Object.entries(item).filter(([, val]) => val).map(([k, val]) => `${k}: ${stripRefs(String(val))}`).join('；') : stripRefs(String(item))}
-              </div>
-            ))}
-          </div>
-        )
-      }
-
-      if (typeof v === 'object' && v !== null) {
-        const entries = Object.entries(v).filter(([, val]) => val !== null && val !== false && val !== '' && val !== '信息不足')
-        if (entries.length === 0) return <span className="text-gray-400">信息不足</span>
-        return (
-          <div className="mt-1 space-y-1">
-            {entries.map(([k, val]) => (
-              <div key={k} className="text-xs">
-                <span className="text-gray-400">{k}：</span>
-                <span className="text-gray-700">{renderFieldValue(val)}</span>
-              </div>
-            ))}
-          </div>
-        )
-      }
-
-      return <span>{String(v)}</span>
-    }
-
-    const dimColors = ['border-blue-400', 'border-emerald-400', 'border-violet-400', 'border-amber-400', 'border-rose-400', 'border-teal-400', 'border-indigo-400']
-
-    const summaryPoints = typeof data?.summary === 'object' && data.summary?.key_points
-      ? data.summary.key_points
-      : typeof data?.summary === 'string'
-        ? [data.summary]
-        : []
-    return (
-      <div className="space-y-5">
-        {summaryPoints.length > 0 && (
-          <div className="relative rounded-lg border border-blue-100 bg-blue-50/80 px-5 py-3.5 text-sm text-blue-800 leading-relaxed">
-            <ul className="space-y-1">
-              {summaryPoints.map((point: string, i: number) => (
-                <li key={i}>{point}</li>
-              ))}
-            </ul>
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+              {TIER_ORDER.map((t) => {
+                const n = stats.tierCount.get(t) ?? 0
+                return n > 0 ? (
+                  <span key={t} className="flex items-center gap-1.5">
+                    <span className={`h-2 w-2 rounded-full ${TIER_BAR_COLORS[t]}`} />
+                    {TIER_LABEL_MAP[t]} {n} 条 · {Math.round((n / sources.length) * 100)}%
+                  </span>
+                ) : null
+              })}
+            </div>
           </div>
         )}
-        {Object.entries(dims).map(([dimKey, fields]: [string, any], idx) => {
-          const fieldEntries = typeof fields === 'object' && !Array.isArray(fields) ? Object.entries(fields) : []
-          const hasContent = fieldEntries.some(([, v]) => {
-            if (typeof v === 'string') return v.trim() !== '' && v !== '信息不足'
-            if (Array.isArray(v)) return v.length > 0 && v.some((item: any) => item !== null && item !== '' && item !== '信息不足')
-            return false
-          })
-          const borderColor = dimColors[idx % dimColors.length]
 
-          return (
-            <div key={dimKey} className={`rounded-lg border-l-[3px] ${borderColor} border border-gray-100 bg-white`}>
-              <div className="border-b border-gray-50 px-4 py-2.5">
-                <p className="text-sm font-semibold text-gray-700">{dimKey}</p>
-              </div>
-              <div className="p-4">
-                {!hasContent && (
-                  <p className="text-xs text-gray-400 italic">信息不足</p>
-                )}
-                {fieldEntries.map(([k, v]) => {
-                  const rawStr = typeof v === 'string' ? v : ''
-                  const isEmpty = rawStr === '信息不足' || rawStr === '' || (Array.isArray(v) && v.length === 0)
-                  if (isEmpty) return null
-                  return (
-                    <div key={k} className={fieldEntries.indexOf([k, v]) > 0 ? 'mt-3' : ''}>
-                      <span className="text-xs font-medium text-gray-400">{k}</span>
-                      <div className="mt-1">{renderFieldValue(v)}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
+        {/* 信息新鲜度分布 */}
+        {sources.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-gray-100 bg-gray-50/70 px-3.5 py-2.5 text-xs text-gray-600">
+            <span className="font-medium text-gray-700">来源类型</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-500" />官方 {stats.tierCount.get('official') || 0} 条</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" />媒体 {stats.tierCount.get('media') || 0} 条</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-green-500" />社区 {stats.tierCount.get('community') || 0} 条</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-gray-300" />其他 {stats.tierCount.get('other') || 0} 条</span>
+          </div>
+        )}
+
+        {/* 筛选与排序 */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {(['all', ...TIER_ORDER] as const).map((t) => {
+            const count = t === 'all' ? sources.length : stats.tierCount.get(t) ?? 0
+            if (t !== 'all' && count === 0) return null
+            return (
+              <button
+                key={t}
+                onClick={() => setTierFilter(t)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  tierFilter === t
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {t === 'all' ? '全部' : TIER_LABEL_MAP[t]} {count}
+              </button>
+            )
+          })}
+        </div>
+
+        {filteredProfileSources.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-400">没有符合条件的来源</p>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {filteredProfileSources.map(({ source, index }) => (
+              <SourceCard
+                key={source.id}
+                source={source}
+                index={index}
+                onOpenDetail={(s) => setDrawer({ source: s, index })}
+              />
+            ))}
+          </div>
+        )}
       </div>
     )
   }
 
   const renderSources = () => {
     if (!profile || !profile.source_refs?.length) return null
+    const sources = profileSources.slice(0, 6)
+    const moreCount = profileSources.length - 6
     return (
       <div className="mt-6">
-        <h3 className="text-sm font-semibold text-gray-700">来源引用</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">来源引用</h3>
+          {profile.source_refs.length > 0 && (
+            <span className="text-xs text-gray-400">共 {profile.source_refs.length} 条</span>
+          )}
+        </div>
         <div className="mt-2 space-y-2">
-          {profile.source_refs.map((ref) => (
-            <div key={ref.url} className="flex items-start gap-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
-              <ExternalLink className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-gray-600">{ref.title || ref.url}</p>
-                <p className="truncate text-xs text-gray-400">{ref.url}</p>
+          {sources.map((source, _i) => {
+            const tierInfo = { official: '官方', media: '媒体', community: '社区', other: '其他' }[source.tier] || '其他'
+            const tierCls = {
+              official: 'bg-blue-50 text-blue-700 ring-blue-200',
+              media: 'bg-amber-50 text-amber-700 ring-amber-200',
+              community: 'bg-green-50 text-green-700 ring-green-200',
+              other: 'bg-gray-50 text-gray-600 ring-gray-200',
+            }[source.tier] || 'bg-gray-50 text-gray-600 ring-gray-200'
+            const confPct = source.confidence > 0 ? Math.round(source.confidence * 100) : 0
+            const confColor = confPct >= 70 ? 'bg-emerald-500' : confPct >= 40 ? 'bg-amber-400' : 'bg-red-400'
+            const domain = source.domain || (() => { try { return new URL(source.url).hostname.replace(/^www\./, '') } catch { return '' } })()
+            return (
+              <div key={source.id} className="flex items-start gap-2.5 rounded-md border border-gray-100 bg-white px-3 py-2.5">
+                {domain && (
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=16`}
+                    alt=""
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded-sm"
+                    loading="lazy"
+                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <a href={source.url} target="_blank" rel="noreferrer" className="truncate text-xs font-medium text-gray-800 hover:text-blue-600 hover:underline" title={source.title || source.url}>
+                      {source.title || source.url}
+                    </a>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${tierCls}`}>{tierInfo}</span>
+                  </div>
+                  <p className="mt-0.5 truncate text-[11px] text-gray-400">{source.url}</p>
+                  {source.snippet && (
+                    <p className="mt-1 text-xs text-gray-500 line-clamp-2 leading-relaxed">{source.snippet}</p>
+                  )}
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <span className="text-[10px] text-gray-400">可信度</span>
+                    <div className="h-1 w-20 overflow-hidden rounded-full bg-gray-100">
+                      <div className={`h-full rounded-full ${confColor}`} style={{ width: `${confPct}%` }} />
+                    </div>
+                    <span className="text-[10px] text-gray-500">{confPct}%</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
+          {moreCount > 0 && (
+            <p className="text-center text-xs text-gray-400">还有 {moreCount} 条来源，请前往「信息来源」标签页查看</p>
+          )}
         </div>
       </div>
     )
@@ -510,45 +889,36 @@ export default function ProfileDetailPage() {
     if (!reportMarkdown) {
       return <p className="text-sm text-gray-400">暂无报告</p>
     }
-    const qualityBadge = reportQuality ? (
-      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-        reportQuality.level === 'high' ? 'bg-green-100 text-green-700' :
-        reportQuality.level === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-        'bg-red-100 text-red-700'
-      }`}>
-        素材质量：{reportQuality.level === 'high' ? '充足' : reportQuality.level === 'medium' ? '一般' : '不足'}
-        <span className="font-normal opacity-70">{reportQuality.source_count} 个来源 · {reportQuality.text_length} 字</span>
-      </span>
-    ) : null
-
-    const sources = sourceIndex.map((s) => ({
-      id: s.n,
-      url: s.url,
-      title: s.title,
-      snippet: s.snippet,
-      tier: s.tier,
-      domain: '',
-      published_at: '',
-      confidence: s.confidence,
-    }))
-
     return (
-      <div className="no-print relative">
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          {qualityBadge}
-        </div>
-        <div className="flex gap-8">
-          <div className="min-w-0 flex-1">
-            <ReportView markdown={reportMarkdown} sources={sources} onCite={(n) => {
-              const src = sourceIndex.find((s) => s.n === n)
-              if (src?.url) window.open(src.url, '_blank', 'noopener')
-            }} />
-          </div>
-          <div className="hidden xl:block w-60 shrink-0">
-            <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
+        {/* 左侧目录 */}
+        <aside className="hidden lg:block">
+          <ReportToc markdown={reportMarkdown} />
+        </aside>
+        {/* 右侧内容 */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center gap-2 lg:hidden">
               <ReportToc markdown={reportMarkdown} />
             </div>
           </div>
+          <ReportView
+            markdown={reportMarkdown}
+            sources={sourceIndex.map((s) => ({
+              id: s.n,
+              url: s.url,
+              title: s.title,
+              snippet: s.snippet,
+              tier: s.tier,
+              domain: '',
+              published_at: '',
+              confidence: s.confidence,
+            })) as any}
+            onCite={(n) => {
+              const src = sourceIndex.find((s) => s.n === n)
+              if (src?.url) window.open(src.url, '_blank', 'noopener')
+            }}
+          />
         </div>
       </div>
     )
@@ -672,32 +1042,42 @@ export default function ProfileDetailPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {qualityBadge}
             {profile.status !== 'frozen' && (
               <button onClick={handleFreeze} disabled={freezing} className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
                 <Lock className="h-3.5 w-3.5" /> {freezing ? '冻结中…' : '冻结'}
               </button>
             )}
+            <div className="relative">
+              <button
+                onClick={() => setExportOpen(!exportOpen)}
+                disabled={exporting}
+                className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" /> 导出
+                <ChevronDown className="h-3 w-3" />
+              </button>
+              {exportOpen && (
+                <div className="absolute right-0 z-20 mt-1 w-32 rounded-md border border-gray-200 bg-white shadow-lg">
+                  {[
+                    { key: 'md' as const, label: 'Markdown' },
+                    { key: 'pdf' as const, label: 'PDF' },
+                    { key: 'word' as const, label: 'Word' },
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => handleExport(item.key)}
+                      className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 first:rounded-t-md last:rounded-b-md"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button onClick={handleRegenerate} disabled={regenerating} className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
               <RefreshCw className={`h-3.5 w-3.5 ${regenerating ? 'animate-spin' : ''}`} /> 重新生成
             </button>
-            {tab === 'report' && reportMarkdown && (
-              <div className="relative">
-                <button onClick={() => setExportOpen(!exportOpen)} disabled={exporting} className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
-                  <Download className="h-3.5 w-3.5" /> 导出 <ChevronDown className="h-3 w-3" />
-                </button>
-                {exportOpen && (
-                  <div className="absolute right-0 z-30 mt-1 w-32 rounded-md border border-gray-200 bg-white shadow-lg">
-                    {[
-                      { key: 'md' as const, label: 'Markdown' },
-                      { key: 'pdf' as const, label: 'PDF' },
-                      { key: 'word' as const, label: 'Word' },
-                    ].map((item) => (
-                      <button key={item.key} onClick={() => handleExport(item.key)} className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 first:rounded-t-md last:rounded-b-md">{item.label}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
             <button onClick={handleCompare} className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
               <GitCompare className="h-3.5 w-3.5" /> 加入对比
             </button>
@@ -721,6 +1101,7 @@ export default function ProfileDetailPage() {
             >
               <t.icon className="h-3.5 w-3.5" />
               {t.label}
+              {t.key === 'sources' && profile?.source_refs?.length ? ` (${profile.source_refs.length})` : ''}
             </button>
           ))}
         </div>
@@ -732,13 +1113,30 @@ export default function ProfileDetailPage() {
           {tab === 'insights' && renderInsightsTab()}
           {tab === 'dimensions' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">维度详情</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">维度详情</h2>
+                {insights?.scores && (
+                  <span className="text-xs text-gray-400">
+                    基于 {Object.keys(insights.scores).length} 个维度的洞察分析
+                  </span>
+                )}
+              </div>
               <div className="mt-3">{renderProfileData()}</div>
-              {renderSources()}
             </div>
           )}
+          {tab === 'sources' && renderSourcesTab()}
         </div>
       </div>
+
+      {/* 页面级来源抽屉 */}
+      {id && profile && (
+        <SourceDrawer
+          taskId={id}
+          source={drawer?.source ?? null}
+          index={drawer?.index ?? 0}
+          onClose={() => setDrawer(null)}
+        />
+      )}
     </div>
   )
 }

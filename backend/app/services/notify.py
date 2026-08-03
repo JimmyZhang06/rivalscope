@@ -5,14 +5,12 @@
 
 import asyncio
 import logging
-import re
 import smtplib
 import ssl
 from email.header import Header
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from urllib.parse import urlparse
 
 import httpx
 
@@ -171,18 +169,9 @@ _REPORT_EMAIL_CSS = (
     "h3{font-size:15px;color:#1f2937;margin:16px 0 6px;}"
     "p{margin:8px 0;}strong{color:#1e3a8a;}"
     "ul,ol{margin:8px 0;padding-left:22px;}li{margin:4px 0;}"
-    "table{width:100%;border-spacing:0;border-collapse:collapse;font-size:12px;margin:12px 0;word-break:break-word;}"
+    "table{width:100%;border-collapse:collapse;font-size:12px;margin:12px 0;}"
     "th,td{border:1px solid #d1d5db;padding:6px 8px;text-align:left;vertical-align:top;}"
-    "thead th{background:#eff6ff !important;color:#1e3a8a !important;font-weight:600;}"
-    "tbody tr:nth-child(even){background:#f9fafb;}"
-    ".src-card{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;margin:6px 0;"
-    "background:#f9fafb;border-left:3px solid #1e40af;border-radius:4px;}"
-    ".src-card a{color:#1d4ed8;text-decoration:none;font-weight:500;font-size:13px;word-break:break-all;}"
-    ".src-card .src-url{display:block;font-size:11px;color:#6b7280;margin-top:2px;word-break:break-all;}"
-    ".src-num{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;"
-    "width:22px;height:22px;border-radius:50%;background:#1e40af;color:#fff;font-size:11px;font-weight:600;}"
-    ".src-section{margin:16px 0 8px;padding:14px 16px;background:#f9fafb;border-radius:8px;}"
-    ".src-section h3{margin:0 0 10px;font-size:15px;color:#1e3a8a;}"
+    "thead th{background:#eff6ff;color:#1e3a8a;}"
     "a{color:#1d4ed8;word-break:break-all;}"
     "blockquote{background:#eff6ff;border-left:3px solid #60a5fa;padding:8px 14px;margin:10px 0;color:#4b5563;}"
     ".btn{display:inline-block;margin:6px 0 2px;background:#1e40af;color:#fff !important;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:13px;}"
@@ -194,12 +183,7 @@ def render_report_html(product_name: str, report_markdown: str, link_url: str) -
     """把报告 Markdown 渲染成可内嵌邮件正文的完整 HTML 文档"""
     import markdown as md
 
-    # 把来源章节从正文中剥离，用结构化卡片替代
-    body_md, sources_section = _split_sources(report_markdown or "")
-    body_html = md.markdown(body_md or report_markdown or "", extensions=["tables", "fenced_code", "sane_lists"])
-    sources_block = ""
-    if sources_section:
-        sources_block = _render_sources_html(sources_section)
+    body_html = md.markdown(report_markdown or "", extensions=["tables", "fenced_code", "sane_lists"])
     return (
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         f"<style>{_REPORT_EMAIL_CSS}</style></head><body><div class='wrap'><div class='card'>"
@@ -207,7 +191,6 @@ def render_report_html(product_name: str, report_markdown: str, link_url: str) -
         f"<h1>{product_name} 竞品调研报告</h1>"
         "<p class='meta'>本邮件由竞品调研助手自动发送，以下为报告全文。</p>"
         f"{body_html}"
-        f"{sources_block}"
         f"<p style='margin-top:22px'><a class='btn' href='{link_url}'>在网页中查看完整报告 →</a></p>"
         "</div><p class='foot'>此邮件由系统自动发送，请勿直接回复。</p></div></body></html>"
     )
@@ -219,91 +202,6 @@ def _summary_excerpt(change_summary: str, limit: int = 200) -> str:
         line.lstrip("#").strip() for line in change_summary.splitlines() if line.strip()
     )
     return text[:limit] + ("…" if len(text) > limit else "")
-
-
-_SOURCES_HEADING_RE = re.compile(r"^#{1,3}\s+(.*(?:信息来源|参考来源|参考资料|参考文献|来源引用|References?).*)$", re.IGNORECASE | re.MULTILINE)
-_SOURCE_URL_RE = re.compile(r"https?://[^\s\)\]>]+")
-
-
-def _parse_sources(sources_text: str) -> list[dict]:
-    """从来源 markdown 文本中提取结构化来源列表"""
-    entries = []
-    for line in sources_text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        stripped = stripped.lstrip("- ").strip()
-        if not stripped:
-            continue
-        urls = _SOURCE_URL_RE.findall(stripped)
-        url = urls[0] if urls else ""
-        if not url:
-            continue
-        # 去掉 [n] 编号
-        title_text = re.sub(r"^\[\d+\]\s*", "", stripped).strip()
-        # 找 URL 在文本中的位置
-        url_pos = title_text.find(url)
-        if url_pos == -1:
-            url_pos = title_text.find(url.replace("https://", "").replace("http://", ""))
-        if url_pos == -1:
-            # URL 格式可能略有不同，直接用整个文本去掉 URL
-            title_text = _SOURCE_URL_RE.sub("", title_text).strip(" -—:：")
-        else:
-            before = title_text[:url_pos].strip(" -—:：")
-            after = title_text[url_pos + len(url):].strip(" -—:：")
-            title_text = before if before else after
-        if not title_text:
-            parsed = urlparse(url)
-            title_text = parsed.path.strip("/").split("/")[-1] or parsed.netloc
-            title_text = title_text.replace("-", " ").replace("_", " ")[:60]
-        entries.append({"url": url, "title": title_text[:80]})
-    return entries
-
-
-def _render_sources_html(sources_text: str) -> str:
-    """将来源 markdown 文本转为结构化卡片 HTML"""
-    entries = _parse_sources(sources_text)
-    if not entries:
-        return ""
-
-    items_html = []
-    for idx, entry in enumerate(entries, 1):
-        items_html.append(
-            f'<div class="src-card">'
-            f'<span class="src-num">{idx}</span>'
-            f'<div>'
-            f'<a href="{entry["url"]}">{entry["title"]}</a>'
-            f'<span class="src-url">{entry["url"]}</span>'
-            f'</div></div>'
-        )
-
-    return (
-        '<div class="src-section">'
-        '<h3>📎 数据来源</h3>'
-        + "".join(items_html)
-        + "</div>"
-    )
-
-
-def _split_sources(markdown: str) -> tuple[str, str]:
-    """将来源章节从 markdown 中剥离，返回 (去除来源后的正文, 来源章节文本)"""
-    match = _SOURCES_HEADING_RE.search(markdown)
-    if not match:
-        return markdown, ""
-    heading = match.group(0)
-    level = len(heading) - len(heading.lstrip("#"))
-    section_start = match.start()
-    after_heading = match.end()
-    rest = markdown[after_heading:]
-    pattern = r"^#{" + "1," + str(level) + r"}\s+"
-    next_heading = re.search(pattern, rest, re.MULTILINE)
-    if next_heading:
-        sources_text = rest[: next_heading.start()]
-        before_sources = markdown[:section_start]
-        after_sources = rest[next_heading.start():]
-        return (before_sources + after_sources).strip(), sources_text
-    sources_text = rest
-    return markdown[:section_start].strip(), sources_text
 
 
 async def push_task_report_email(task_id: str) -> None:
@@ -368,17 +266,10 @@ async def push_tracker_report(task_id: str) -> None:
         if change_summary:
             import markdown as md
 
-            # 从变更摘要中剥离来源章节，用结构化卡片渲染
-            body_md, sources_section = _split_sources(change_summary)
-            sources_html = _render_sources_html(sources_section)
-            rendered_body = md.markdown(body_md or change_summary, extensions=["tables", "sane_lists"])
-            sources_block = f"<div style='margin:14px 0 6px;'>{sources_html}</div>" if sources_html else ""
-
             change_html = (
-                "<div style='background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px;margin:0 0 6px;'>"
-                "<p style='margin:0 0 6px;font-weight:600;color:#1e40af;'>本期变更（与上一期对比）</p>"
-                + rendered_body
-                + sources_block
+                "<div style=\"background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px;margin:0 0 6px;\">"
+                "<p style=\"margin:0 0 6px;font-weight:600;color:#1e40af;\">本期变更（与上一期对比）</p>"
+                + md.markdown(change_summary, extensions=["tables", "sane_lists"])
                 + "</div>"
             )
         report_html = render_report_html(product_name, report_markdown, link_url)

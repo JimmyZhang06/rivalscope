@@ -1,11 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Source } from '../api/types'
-import { splitSourcesSection, extractSourcesSection } from '../utils/reportSections'
+import { splitSourcesSection } from '../utils/reportSections'
 import { slugify } from './ReportToc'
 import TierBadge from './TierBadge'
+import { ChevronDown, ChevronUp, Link2 } from 'lucide-react'
 
 /** 把正文中的 [12] 引用（排除 markdown 链接语法）转为可点击角标链接 */
 function injectCitations(markdown: string) {
@@ -62,20 +63,19 @@ export default function ReportView({
   markdown,
   sources,
   onCite,
+  showSources = true,
 }: {
   markdown: string
   sources?: Source[]
   onCite?: (index: number) => void
+  showSources?: boolean
 }) {
+  // LLM 生成的「信息来源」章节是大段裸 URL 混排，剥离后改用结构化 sources 渲染
   const { body, sourcesTitle } = useMemo(
-    () => splitSourcesSection(markdown),
-    [markdown],
-  )
-  const processed = useMemo(() => (onCite ? injectCitations(body) : body), [body, onCite])
-  const fallbackSection = useMemo(
-    () => (sources && sources.length === 0 ? extractSourcesSection(markdown) : { title: null as string | null, body: '' }),
+    () => (sources && sources.length > 0 ? splitSourcesSection(markdown) : { body: markdown, sourcesTitle: null }),
     [markdown, sources],
   )
+  const processed = useMemo(() => (onCite ? injectCitations(body) : body), [body, onCite])
 
   return (
     <div className="report-md text-sm text-gray-800">
@@ -106,43 +106,62 @@ export default function ReportView({
       >
         {processed}
       </ReactMarkdown>
-
-      {(sources && sources.length > 0) || (fallbackSection.title && fallbackSection.body) ? (
-        <section className="mt-2">
-          <h2 id={slugify(sourcesTitle ?? fallbackSection.title ?? '信息来源')} className="scroll-mt-24">
-            {sourcesTitle ?? fallbackSection.title ?? '信息来源'}
-          </h2>
-          {sources && sources.length > 0 ? (
-            <div className="not-prose mt-4 grid gap-2.5 sm:grid-cols-2">
-              {sources.map((s, i) => (
-                <button
-                  key={s.id}
-                  onClick={() => onCite?.(i + 1)}
-                  className="group flex items-start gap-2.5 rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50/40 hover:shadow-sm"
-                >
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
-                    {i + 1}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium leading-snug text-gray-800 group-hover:text-blue-700">
-                      {s.title || s.url}
-                    </span>
-                    <span className="mt-1 flex items-center gap-2 text-[11px] text-gray-400">
-                      <TierBadge tier={s.tier} />
-                      {s.domain && <span className="truncate">{s.domain}</span>}
-                      {s.published_at && <span className="shrink-0">{s.published_at.slice(0, 10)}</span>}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="not-prose mt-4">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{fallbackSection.body}</ReactMarkdown>
-            </div>
-          )}
-        </section>
-      ) : null}
+      {showSources && sources && sources.length > 0 && (
+        <SourcesSection sources={sources} sourcesTitle={sourcesTitle} onCite={onCite} />
+      )}
     </div>
+  )
+}
+
+/** 折叠式信息来源区域 */
+function SourcesSection({ sources, sourcesTitle, onCite }: {
+  sources: Source[]
+  sourcesTitle: string | null
+  onCite?: (n: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <section className="mt-6 not-prose">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center gap-2 rounded-lg border border-gray-100 bg-gray-50/60 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-100/80"
+      >
+        <Link2 className="h-4 w-4 shrink-0 text-gray-400" />
+        {sourcesTitle ?? '信息来源'}
+        <span className="ml-auto text-[11px] font-normal text-gray-400">
+          {sources.length} 条来源
+        </span>
+        {open
+          ? <ChevronUp className="h-4 w-4 text-gray-400" />
+          : <ChevronDown className="h-4 w-4 text-gray-400" />
+        }
+      </button>
+      {open && (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {sources.map((s, i) => (
+            <button
+              key={s.id}
+              onClick={() => onCite?.(i + 1)}
+              className="group flex items-start gap-2.5 rounded-lg border border-gray-100 bg-white p-3 text-left transition hover:border-blue-200 hover:shadow-sm"
+            >
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[10px] font-bold text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition">
+                {i + 1}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium leading-snug text-gray-800 group-hover:text-blue-700">
+                  {s.title || s.url}
+                </span>
+                <span className="mt-1 flex items-center gap-2 text-[11px] text-gray-400">
+                  <TierBadge tier={s.tier} />
+                  {s.domain && <span className="truncate">{s.domain}</span>}
+                  {s.published_at && <span className="shrink-0">{s.published_at.slice(0, 10)}</span>}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }

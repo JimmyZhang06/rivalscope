@@ -238,8 +238,9 @@ export default function CompetitorsPage() {
               setError(`${c.name} 画像生成失败：${status.error || '未知错误'}`)
             }
           }
-        } catch {
-          // 静默
+        } catch (err) {
+          console.error(`[ProfilePoll] task ${taskId} poll failed:`, err)
+          // 非致命：轮询偶发失败不中断
         }
       }, 2000)
       setGenPollTimers((prev) => ({ ...prev, [c.id]: tid }))
@@ -262,13 +263,13 @@ export default function CompetitorsPage() {
   const loadCrawlInfo = async (competitorId: string) => {
     try {
       const [task, pages] = await Promise.all([
-        getCrawlStatus(competitorId).catch(() => null),
-        listCrawlPages(competitorId).catch(() => []),
+        getCrawlStatus(competitorId).catch((e) => { console.error(`[CrawlInfo] getCrawlStatus failed for ${competitorId}:`, e); return null }),
+        listCrawlPages(competitorId).catch((e) => { console.error(`[CrawlInfo] listCrawlPages failed for ${competitorId}:`, e); return [] }),
       ])
       if (task) setCrawlTasks((prev) => ({ ...prev, [competitorId]: task }))
       setCrawlPages((prev) => ({ ...prev, [competitorId]: pages }))
-    } catch {
-      // 静默处理
+    } catch (err) {
+      console.error(`[CrawlInfo] loadCrawlInfo failed for ${competitorId}:`, err)
     }
   }
 
@@ -301,8 +302,9 @@ export default function CompetitorsPage() {
             await storeReload() // 刷新竞品状态
             setNotice(task.status === 'done' ? `爬取完成，共 ${task.crawled_pages} 页` : `爬取失败：${task.error}`)
           }
-        } catch {
-          // 静默
+        } catch (err) {
+          console.error(`[CrawlPoll] competitor ${c.id} poll failed:`, err)
+          // 非致命：轮询偶发失败不中断
         }
       }, 2000)
       setPollTimers((prev) => ({ ...prev, [c.id]: tid }))

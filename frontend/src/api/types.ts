@@ -174,13 +174,32 @@ export interface CompetitorProfile {
   org_id: string
   competitor_id: string
   template_id: string
+  template_version: number
   profile_data: Record<string, any>
   source_refs: Array<{ url: string; title: string; snippet: string }>
   status: 'draft' | 'reviewed' | 'frozen'
   frozen_at: string | null
   generation_source: string
+  report_markdown: string
+  insights_json: string
+  source_index_json: string
   created_at: string
   updated_at: string
+}
+
+// 洞察数据（补充 dimension_labels）
+export interface InsightsData {
+  scores: Record<string, number>
+  dimension_labels?: Record<string, string>  // { "product_overview": "产品概况" }
+  verdict: string
+  positioning: string
+  swot: {
+    strengths: string[]
+    weaknesses: string[]
+    opportunities: string[]
+    threats: string[]
+  }
+  timeline: Array<{ date: string; title: string; summary: string }>
 }
 
 export interface GenerateTaskStatus {
@@ -484,7 +503,6 @@ export interface AuditLog {
   id: string
   user_id: string
   org_id: string
-  session_id: string
   action: string
   resource_type: string
   resource_id: string
@@ -492,15 +510,12 @@ export interface AuditLog {
   result: string
   status: string
   error: string
-  changes: string
   model_name: string
   tokens_prompt: number
   tokens_completion: number
   cost: number
   ip: string
   user_agent: string
-  prev_hash: string
-  checksum: string
   created_at: string
 }
 

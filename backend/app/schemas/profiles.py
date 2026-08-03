@@ -69,6 +69,9 @@ class CompetitorProfileOut(BaseModel):
     generation_source: str = ""
     created_at: datetime
     updated_at: datetime
+    report_markdown: str = ""
+    insights_json: str = ""
+    source_index_json: str = ""
 
     @field_validator("profile_data", mode="before")
     @classmethod
@@ -130,7 +133,7 @@ class ProfileFreezeOut(BaseModel):
 
 class ComparisonIn(BaseModel):
     template_id: str
-    competitor_ids: list[str] = Field(..., min_length=2, max_length=10)
+    profile_ids: list[str] = Field(..., min_length=2, max_length=10)
 
 
 class ComparisonMatrixRow(BaseModel):
@@ -150,7 +153,7 @@ class ComparisonOut(BaseModel):
 class ProfileInsightsOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    scores: dict[str, float] = Field(default_factory=dict)
+    scores: dict[str, float | str] = Field(default_factory=dict)
     verdict: str = ""
     positioning: str = ""
     swot: dict[str, list[str]] = Field(default_factory=dict)

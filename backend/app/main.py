@@ -55,10 +55,10 @@ async def lifespan(_app: FastAPI):
     create_audit_triggers()
 
     # 恢复进程重启前未完成的画像提取任务
-    from app.services.profile_extractor import recover_stale_tasks
+    from app.services.profile_extractor import recover_orphaned_generation_tasks
     from app.services.scheduler import scheduler_loop, _load_git_hash
     _load_git_hash()
-    recovered = recover_stale_tasks()
+    recovered = recover_orphaned_generation_tasks()
     if recovered:
         logger.info("recovered %d stale profile extract tasks on startup", len(recovered))
 
@@ -142,12 +142,16 @@ def migrate_columns() -> None:
             "org_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "competitor_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "template_id": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "template_version": "INTEGER NOT NULL DEFAULT 1",
             "user_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "profile_data": "TEXT NOT NULL DEFAULT ''",
             "source_refs": "TEXT NOT NULL DEFAULT '[]'",
             "status": "VARCHAR(20) NOT NULL DEFAULT 'draft'",
             "frozen_at": "DATETIME",
             "generation_source": "VARCHAR(20) NOT NULL DEFAULT ''",
+            "report_markdown": "TEXT NOT NULL DEFAULT ''",
+            "insights_json": "TEXT NOT NULL DEFAULT ''",
+            "source_index_json": "TEXT NOT NULL DEFAULT '[]'",
         },
         "user_permissions": {
             "user_id": "VARCHAR(32) NOT NULL DEFAULT ''",
@@ -157,7 +161,6 @@ def migrate_columns() -> None:
         "audit_logs": {
             "user_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "org_id": "VARCHAR(32) NOT NULL DEFAULT ''",
-            "session_id": "VARCHAR(32) NOT NULL DEFAULT ''",
             "action": "VARCHAR(50) NOT NULL DEFAULT ''",
             "resource_type": "VARCHAR(50) NOT NULL DEFAULT ''",
             "resource_id": "VARCHAR(32) NOT NULL DEFAULT ''",
@@ -165,15 +168,12 @@ def migrate_columns() -> None:
             "result": "TEXT NOT NULL DEFAULT ''",
             "status": "VARCHAR(20) NOT NULL DEFAULT ''",
             "error": "TEXT NOT NULL DEFAULT ''",
-            "changes": "TEXT NOT NULL DEFAULT ''",
             "model_name": "VARCHAR(100) NOT NULL DEFAULT ''",
             "tokens_prompt": "INTEGER NOT NULL DEFAULT 0",
             "tokens_completion": "INTEGER NOT NULL DEFAULT 0",
             "cost": "FLOAT NOT NULL DEFAULT 0",
             "ip": "VARCHAR(64) NOT NULL DEFAULT ''",
             "user_agent": "VARCHAR(300) NOT NULL DEFAULT ''",
-            "prev_hash": "VARCHAR(64) NOT NULL DEFAULT ''",
-            "checksum": "VARCHAR(64) NOT NULL DEFAULT ''",
             "created_at": "DATETIME NOT NULL DEFAULT (datetime('now', 'utc'))",
         },
         "execution_snapshots": {
@@ -218,12 +218,11 @@ def migrate_columns() -> None:
                     logger.info("migrated: %s.%s", table, col)
 
         # 回填新增列的 NULL 值为 ''（SQLite ALTER TABLE 的 DEFAULT 不会回填已有行）
-        null_backfills: list[tuple[str, str]] = [
-            ("competitors", "user_id"),
-            ("competitor_profiles", "user_id"),
-            ("competitor_profiles", "generation_source"),
-        ]
-        for table, col in null_backfills:
+        null_backfills = {
+            "competitors": "user_id",
+            "competitor_profiles": "user_id",
+        }
+        for table, col in null_backfills.items():
             result = conn.execute(text(f"SELECT COUNT(*) FROM {table} WHERE {col} IS NULL"))
             null_count = result.scalar()
             if null_count:
@@ -238,7 +237,6 @@ def migrate_columns() -> None:
         audit_indexes = [
             ("idx_audit_action_resource", "action, resource_type"),
             ("idx_audit_created_at", "created_at"),
-            ("idx_audit_session_created", "session_id, created_at"),
         ]
         for idx_name, cols in audit_indexes:
             if idx_name not in existing_indexes:

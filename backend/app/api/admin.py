@@ -92,11 +92,9 @@ def update_user(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    changes: dict[str, dict[str, str]] = {}
     if payload.plan is not None:
         if payload.plan not in PLANS:
             raise HTTPException(status_code=400, detail="无效的套餐")
-        changes["plan"] = {"old": user.plan, "new": payload.plan}
         user.plan = payload.plan
         user.plan_expires_at = (
             None if payload.plan == "free" else datetime.now(timezone.utc) + timedelta(days=30)
@@ -106,7 +104,6 @@ def update_user(
             raise HTTPException(status_code=400, detail="无效的角色")
         if user.id == admin.id and payload.role != "admin":
             raise HTTPException(status_code=400, detail="不能取消自己的管理员权限")
-        changes["role"] = {"old": user.role, "new": payload.role}
         user.role = payload.role
     db.commit()
     db.refresh(user)
@@ -114,8 +111,7 @@ def update_user(
         log_audit(
             user_id=admin.id, org_id=admin.org_id or "",
             action="admin.user_update", resource_type="user", resource_id=user.id,
-            input_data=json.dumps(payload.model_dump(exclude_none=True)),
-            changes=json.dumps(changes),
+            input_data=json.dumps({"plan": payload.plan, "role": payload.role}),
             status="success",
         )
     except Exception:
@@ -225,11 +221,9 @@ def update_org(
     org = db.get(Organization, org_id)
     if not org:
         raise HTTPException(status_code=404, detail="企业不存在")
-    changes: dict[str, dict[str, str]] = {}
     if payload.plan is not None:
         if payload.plan not in PLANS:
             raise HTTPException(status_code=400, detail="无效的套餐")
-        changes["plan"] = {"old": org.plan, "new": payload.plan}
         org.plan = payload.plan
         org.plan_expires_at = (
             None if payload.plan == "free" else datetime.now(timezone.utc) + timedelta(days=30)
@@ -240,8 +234,7 @@ def update_org(
         log_audit(
             user_id=admin.id, org_id=admin.org_id or "",
             action="admin.org_update", resource_type="organization", resource_id=org.id,
-            input_data=json.dumps(payload.model_dump(exclude_none=True)),
-            changes=json.dumps(changes),
+            input_data=json.dumps({"plan": payload.plan}),
             status="success",
         )
     except Exception:
@@ -381,35 +374,21 @@ def audit_export(
     items = query.order_by(AuditLog.created_at.desc()).limit(10000).all()
 
     buf = io.StringIO()
-    # UTF-8 BOM，让 Excel 正确识别中文编码
-    buf.write('﻿')
     writer = csv.writer(buf)
     writer.writerow([
-        "ID", "时间(UTC)", "用户ID", "组织ID", "会话ID", "操作", "资源类型", "资源ID",
-        "状态", "错误", "变更", "模型", "Prompt Tokens", "Completion Tokens", "成本(USD)",
-        "IP", "User-Agent", "校验和", "前一条哈希",
+        "ID", "时间(UTC)", "用户ID", "组织ID", "操作", "资源类型", "资源ID",
+        "状态", "错误", "模型", "Prompt Tokens", "Completion Tokens", "成本(USD)",
+        "IP", "User-Agent", "输入", "结果",
     ])
     for l in items:
         writer.writerow([
             l.id,
             l.created_at.isoformat() if l.created_at else "",
-            l.user_id, l.org_id, l.session_id, l.action, l.resource_type, l.resource_id,
-            l.status, l.error, l.changes[:500] if l.changes else "",
-            l.model_name,
+            l.user_id, l.org_id, l.action, l.resource_type, l.resource_id,
+            l.status, l.error, l.model_name,
             l.tokens_prompt, l.tokens_completion, l.cost,
             l.ip, l.user_agent,
-            l.checksum, l.prev_hash,
+            l.input[:500], l.result[:500],
         ])
 
     return Response(content=buf.getvalue(), media_type="text/csv; charset=utf-8")
-
-
-@router.get("/audit-logs/integrity")
-def audit_integrity(
-    start_id: str = Query("", max_length=32),
-    end_id: str = Query("", max_length=32),
-    db: Session = Depends(get_db),
-):
-    """校验审计日志链完整性，返回验证结果"""
-    result = verify_integrity(db, start_id or None, end_id or None)
-    return result

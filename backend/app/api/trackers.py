@@ -75,14 +75,6 @@ def _with_extras_batch(db: Session, trackers: list[Tracker], user: User) -> list
     tracker_ids = [t.id for t in trackers]
     creator_ids = list({t.creator_id for t in trackers})
 
-    # 批量获取每个 tracker 的总任务数（不受 row_number 限制）
-    total_counts = dict(
-        db.query(ResearchTask.tracker_id, func.count(ResearchTask.id))
-        .filter(ResearchTask.tracker_id.in_(tracker_ids))
-        .group_by(ResearchTask.tracker_id)
-        .all()
-    )
-
     # 用 window function 按 tracker 分组取最近 10 条
     from sqlalchemy import func
 
@@ -116,7 +108,7 @@ def _with_extras_batch(db: Session, trackers: list[Tracker], user: User) -> list
     for tracker in trackers:
         out = TrackerOut.model_validate(tracker)
         tasks = tasks_by_tracker.get(tracker.id, [])
-        out.run_count = total_counts.get(tracker.id, 0)
+        out.run_count = len(tasks)
         # 最近完成（已按 created_at 倒序排列）
         completed = [t for t in tasks if t.status == "completed"]
         if completed:
@@ -206,18 +198,13 @@ def update_tracker(
     tracker = _get_org_tracker(tracker_id, user, db)
     _require_manage(tracker, user)
     data = payload.model_dump(exclude_unset=True)
-    changes: dict[str, dict[str, str]] = {}
     reschedule = False
     for field, value in data.items():
-        old_val = getattr(tracker, field)
-        if field in ("frequency", "run_hour") and value != old_val:
+        if field in ("frequency", "run_hour") and value != getattr(tracker, field):
             reschedule = True
         if field == "enabled" and value and not tracker.enabled:
-            reschedule = True
-        new_val = value.strip() if isinstance(value, str) else value
-        if old_val != new_val:
-            changes[field] = {"old": str(old_val), "new": str(new_val)}
-        setattr(tracker, field, new_val)
+            reschedule = True  # 重新启用时刷新下次运行时间
+        setattr(tracker, field, value.strip() if isinstance(value, str) else value)
     if reschedule:
         tracker.next_run_at = initial_next_run(tracker.frequency, tracker.run_hour)
     db.commit()
@@ -227,7 +214,6 @@ def update_tracker(
             user_id=user.id, org_id=user.org_id or "",
             action="tracker.update", resource_type="tracker", resource_id=tracker_id,
             input_data=json.dumps(list(data.keys())),
-            changes=json.dumps(changes) if changes else "",
             status="success",
         )
     except Exception:

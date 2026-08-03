@@ -545,7 +545,7 @@ export default function TaskDetailPage() {
                                   {qa.q}
                                 </p>
                                 <div className="mt-2 rounded-md border border-gray-100 bg-white p-4">
-                                  <ReportView markdown={qa.a} onCite={openCite} />
+                                  <ReportView markdown={qa.a} onCite={openCite} showSources={false} />
                                 </div>
                               </div>
                             ))}

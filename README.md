@@ -1,6 +1,6 @@
 # 竞品调研 Agent / Competitive Research Agent
 
-> **版本**: v6.0.0 | **日期**: 2026-08-03 | **分支**: agent-v6
+> **版本**: v7.0.0 | **日期**: 2026-08-03 | **分支**: agent-v7
 > This work is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
 
 > SaaS 化竞品情报平台 —— 联网检索、全链路引用溯源、SSE 实时进度、定时追踪、关系图谱、竞品画像、全局 AI 助手、企业组织与商业化账号体系

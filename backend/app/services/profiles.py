@@ -90,6 +90,18 @@ async def generate_profile(competitor_id: str, template_id: str, user_id: str = 
             raw_summary.setdefault("key_points", [])
             raw_summary.setdefault("data_quality", "medium")
 
+        # 新增：归一化维度字段值格式（research 路径输出纯文本字符串 → 统一为 {v, c, s}）
+        from app.services.profile_extractor import _normalize_dimensions
+        dimensions_raw = data.get("dimensions", {})
+        data["dimensions"] = _normalize_dimensions(dimensions_raw)
+
+        # 新增：写入维度 label 映射（前端无需依赖 template 状态）
+        with SessionLocal() as db2:
+            tmpl = db2.get(ProfileTemplate, template_id)
+            if tmpl:
+                template_dims = json.loads(tmpl.dimensions)
+                data["dimension_labels"] = {d["key"]: d["label"] for d in template_dims}
+
         with SessionLocal() as db:
             profile_data_str = json.dumps(data, ensure_ascii=False)
             # Record related task/source IDs for traceable report generation
@@ -134,10 +146,10 @@ async def generate_profile(competitor_id: str, template_id: str, user_id: str = 
     except Exception as exc:
         logger.warning("product_intel failed for %s: %s", competitor_id, exc)
 
-    # 最终兜底：从爬取页面生成（直接提取模式）
+    # 最终兜底：从爬取页面生成
     logger.info("product_intel also failed, falling back to crawled pages for %s", competitor_id)
-    from app.services.profile_extractor import extract_profile_direct
-    return await extract_profile_direct(competitor_id, template_id, user_id=user_id)
+    from app.services.profile_extractor import extract_profile_from_pages
+    return await extract_profile_from_pages(competitor_id, template_id, user_id=user_id)
 
 
 def freeze_profile(profile_id: str) -> dict:

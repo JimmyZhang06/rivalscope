@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, is_admin, check_access
 from app.db.database import get_db
 from app.db.models import Competitor, CompetitorProfile, User
 from app.schemas.competitor import CompetitorIn, CompetitorOut
@@ -12,30 +12,15 @@ from app.services.audit import log_audit
 router = APIRouter(prefix="/api/competitors", tags=["competitors"])
 
 
-def _is_admin(user: User) -> bool:
-    return user.role == "admin"
-
-
-def _require_org(user: User) -> None:
-    if not user.org_id:
-        raise HTTPException(status_code=403, detail="请先加入企业")
-
-
 def _competitor_access_check(c: Competitor, user: User) -> None:
     """统一竞品访问校验：按 org_id 企业隔离 + user_id 个人隔离"""
     if not c:
         raise HTTPException(status_code=404, detail="竞品不存在")
-    if c.org_id == "":
-        if user.org_id:
-            # 企业用户看到系统级竞品：需管理员
-            if not _is_admin(user):
-                raise HTTPException(status_code=403, detail="无权查看系统级竞品")
-        else:
-            # 两个都是个人用户：user_id 匹配本人，或存量空 user_id（部署前的旧记录，向后兼容）
-            if c.user_id and c.user_id != user.id:
-                raise HTTPException(status_code=403, detail="无权查看他人的竞品")
-    elif c.org_id != user.org_id:
-        raise HTTPException(status_code=403, detail="无权查看其他企业的竞品")
+    check_access(
+        c.org_id, c.user_id, user,
+        system_access="owner_or_admin",
+        resource_name="竞品",
+    )
 
 
 @router.get("", response_model=list[CompetitorOut])
@@ -52,7 +37,7 @@ def list_competitors(
     if user.org_id:
         q = db.query(Competitor).filter(
             (Competitor.org_id == user.org_id)
-            | ((Competitor.org_id == "") & _is_admin(user))
+            | ((Competitor.org_id == "") & is_admin(user))
         )
     else:
         q = db.query(Competitor).filter(
@@ -100,14 +85,8 @@ def update_competitor(cid: str, payload: CompetitorIn, user: User = Depends(get_
                 raise HTTPException(status_code=403, detail="无权修改他人的竞品")
     elif c.org_id != user.org_id:
         raise HTTPException(status_code=403, detail="无权修改其他企业的竞品")
-    if c.org_id == "" and not _is_admin(user):
+    if c.org_id == "" and not is_admin(user):
         raise HTTPException(status_code=403, detail="系统级竞品仅管理员可修改")
-    changes: dict[str, dict[str, str]] = {
-        "name": {"old": c.name, "new": payload.name.strip()},
-        "alias": {"old": c.alias, "new": payload.alias.strip()},
-        "website": {"old": c.website, "new": payload.website.strip()},
-        "tech_focus": {"old": c.tech_focus, "new": payload.tech_focus.strip()},
-    }
     c.name = payload.name.strip()
     c.alias = payload.alias.strip()
     c.website = payload.website.strip()
@@ -119,8 +98,7 @@ def update_competitor(cid: str, payload: CompetitorIn, user: User = Depends(get_
         log_audit(
             user_id=user.id, org_id=user.org_id or "",
             action="competitor.update", resource_type="competitor", resource_id=cid,
-            input_data=json.dumps(payload.model_dump()),
-            changes=json.dumps(changes),
+            input_data=json.dumps({"name": payload.name}),
             status="success",
         )
     except Exception:
@@ -139,7 +117,7 @@ def delete_competitor(cid: str, user: User = Depends(get_current_user), db: Sess
                 raise HTTPException(status_code=403, detail="无权删除他人的竞品")
     elif c.org_id != user.org_id:
         raise HTTPException(status_code=403, detail="无权删除其他企业的竞品")
-    if c.org_id == "" and not _is_admin(user):
+    if c.org_id == "" and not is_admin(user):
         raise HTTPException(status_code=403, detail="系统级竞品仅管理员可删除")
     # 应用层外键保护：检查关联画像
     linked = db.query(CompetitorProfile).filter(CompetitorProfile.competitor_id == cid).count()

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { RefreshCw, Table2 } from 'lucide-react'
 import { compareProfiles, getProfileInsights } from '../../api/client'
 import { usePageTitle } from '../../hooks/usePageTitle'
@@ -33,6 +33,22 @@ export default function ComparisonPage() {
     // competitors 从 store 取，无需额外加载
   }, [storeReload])
 
+  // 处理 ?profile= 参数（从画像详情页"加入对比"跳转过来时预选）
+  const urlProfileRef = useRef<string | null>(null)
+  urlProfileRef.current = new URLSearchParams(window.location.search).get('profile')
+
+  useEffect(() => {
+    if (storeLoading || allProfiles.length === 0) return
+    const pre = urlProfileRef.current
+    if (pre && selectedIds.length === 0) {
+      const p = allProfiles.find((x: any) => x.id === pre)
+      if (p && p.status === 'frozen') {
+        setSelectedIds([p.id])
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLoading, allProfiles])
+
   const handleTemplateChange = (tid: string) => {
     setSelectedTemplate(tid)
     setSelectedIds([])
@@ -44,13 +60,31 @@ export default function ComparisonPage() {
     setComparing(true)
     setError('')
     try {
-      const res = await compareProfiles({ template_id: selectedTemplate, competitor_ids: selectedIds })
+      const res = await compareProfiles({ template_id: selectedTemplate, profile_ids: selectedIds })
       setResult(res)
+
+      // 加载各画像的洞察数据，供雷达图使用
+      setInsightsLoading(true)
+      const pairs = await Promise.all(
+        selectedIds.map(async (pid) => {
+          try {
+            const ins = await getProfileInsights(pid)
+            return { pid, insights: ins }
+          } catch {
+            return { pid, insights: null }
+          }
+        }),
+      )
+      const next: Record<string, any> = {}
+      pairs.forEach(({ pid, insights }) => { if (insights) next[pid] = insights })
+      setInsightsMap(next)
+
       setNotice('对比完成')
     } catch (err) {
       setError(err instanceof Error ? err.message : '对比失败')
     } finally {
       setComparing(false)
+      setInsightsLoading(false)
     }
   }
 

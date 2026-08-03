@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = "deepseek-chat"
+    llm_timeout_seconds: int = 60
 
     # Tavily 联网检索
     tavily_api_key: str = ""
@@ -40,9 +41,6 @@ class Settings(BaseSettings):
 
     # CORS 允许的源（逗号分隔）
     frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
-
-    # 审计日志留存天数（0 = 不自动清理），默认 365 天
-    audit_retention_days: int = 365
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

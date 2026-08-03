@@ -123,6 +123,10 @@ async def generate_profile_insights(profile_id: str, user_id: str, org_id: str) 
         f"画像模板：{template.name}\n"
     )
 
+    # 先加载模板获取 label 映射（用于洞察评分中文化）
+    template_dims = json.loads(template.dimensions) if template else []
+    dim_label_map = {d["key"]: d["label"] for d in template_dims}
+
     # 如果有 research_task 的 report_data，直接使用
     if existing_report_data and existing_report_data.get("dimensions"):
         insights = {
@@ -137,14 +141,17 @@ async def generate_profile_insights(profile_id: str, user_id: str, org_id: str) 
     else:
         # 否则基于 profile_data 用 LLM 生成洞察（确定性规则）
         dim_summary = "\n".join(
-            f"【{dim_label}】\n{json.dumps(fields, ensure_ascii=False, indent=2)}"
-            for dim_label, fields in dimensions.items()
+            f"【{dim_label_map.get(dim_key, dim_key)}】\n{json.dumps(fields, ensure_ascii=False, indent=2)}"
+            for dim_key, fields in dimensions.items()
             if isinstance(fields, dict)
         )
 
         system_prompt = (
             "你是一名资深的竞争情报分析师。基于给出的竞品画像维度数据，"
             "生成结构化的分析洞察。\n\n"
+            f"维度名称为中文，评分 JSON 的 key 必须严格使用以下中文维度名，"
+            f"不得使用英文或其他变体：\n"
+            f"{', '.join(dim_label_map.values())}\n\n"
             "评分规则（严格按证据数量定级）：\n"
             "- 强（8-10分）：3条以上明确正面证据，无负面证据\n"
             "- 中（5-7分）：有正面证据但有限，或存在争议\n"
@@ -157,7 +164,7 @@ async def generate_profile_insights(profile_id: str, user_id: str, org_id: str) 
             "4. 分析需专业、客观，不夸大也不贬低。\n\n"
             "JSON 结构：\n"
             '{\n'
-            '  "scores": {"维度名": 1-10的评分, ...},\n'
+            '  "scores": {"维度名(中文)": 1-10的评分, ...},\n'
             '  "verdict": "一段话总体结论",\n'
             '  "positioning": "市场定位判断（一段话）",\n'
             '  "swot": {\n'
@@ -183,13 +190,8 @@ async def generate_profile_insights(profile_id: str, user_id: str, org_id: str) 
             insights = parse_json(insights_text)
         except Exception as exc:
             logger.error("LLM insights generation failed for profile %s: %s", profile_id, exc)
-            insights = {
-                "scores": {},
-                "verdict": "数据不足，无法生成洞察",
-                "positioning": "数据不足",
-                "swot": {"strengths": [], "weaknesses": [], "opportunities": [], "threats": []},
-                "timeline": [],
-            }
+            # 兜底：基于已有维度数据生成最简洞察
+            insights = _fallback_insights(dimensions, competitor.name if competitor else "竞品", dim_label_map)
 
     # 确保所有字段存在
     insights.setdefault("scores", {})
@@ -197,6 +199,9 @@ async def generate_profile_insights(profile_id: str, user_id: str, org_id: str) 
     insights.setdefault("positioning", "")
     insights.setdefault("swot", {"strengths": [], "weaknesses": [], "opportunities": [], "threats": []})
     insights.setdefault("timeline", [])
+
+    # 新增：追加维度 label 映射，前端读取维度名称
+    insights["dimension_labels"] = dim_label_map
 
     # 持久化洞察数据到 profile_data
     _persist_insights(profile, insights)
@@ -377,15 +382,16 @@ def _collect_materials(
     if isinstance(source_refs, list):
         for ref in source_refs:
             if isinstance(ref, dict) and ref.get("url"):
-                conf = ref.get("confidence", 0.0)
-                if isinstance(conf, str):
-                    conf = {"high": 0.9, "medium": 0.6, "low": 0.3}.get(conf, 0.5)
+                conf_raw = ref.get("confidence", 0.0)
+                if isinstance(conf_raw, str):
+                    conf_map = {"high": 0.9, "medium": 0.6, "low": 0.3}
+                    conf_raw = conf_map.get(conf_raw.lower(), 0.0)
                 materials["sources"].append({
                     "url": ref.get("url", ""),
                     "title": ref.get("title", ""),
                     "snippet": (ref.get("snippet", "") or "")[:300],
                     "tier": ref.get("tier", "other"),
-                    "confidence": float(conf or 0.0),
+                    "confidence": float(conf_raw or 0.0),
                 })
 
     # 5. 图谱关系（如有同名图谱项目）
@@ -464,52 +470,65 @@ def _build_report_prompt(quality: dict, competitor_info: str, summary_text: str,
     """根据素材质量动态生成 system_prompt 和 user_prompt，返回 (system, user)。"""
     quality_label = {"high": "充足", "medium": "一般", "low": "不足"}[quality["level"]]
 
-    if quality["level"] == "high":
-        chapters = (
-            "# {竞品名} 竞品画像报告\n\n"
-            "## 一、公司概况\n"
-            "（公司基本信息、发展历程、规模等）\n\n"
-            "## 二、产品线概览\n"
-            "（核心产品、产品分类、主要功能等）\n\n"
-            "## 三、市场定位\n"
-            "（目标客户、价格定位、差异化优势等）\n\n"
-            "## 四、技术栈与架构\n"
-            "（核心技术、架构特点、技术路线等）\n\n"
-            "## 五、竞争分析\n"
-            "（主要竞品对比、市场格局、优劣势等）\n\n"
-            "## 六、发展趋势与展望\n"
-            "（近期动态、未来方向、潜在风险等）\n\n"
-            "## 七、信息来源"
-        )
-    elif quality["level"] == "medium":
-        chapters = (
-            "# {竞品名} 竞品画像报告\n\n"
-            "## 一、公司概况\n"
-            "（公司基本信息、发展历程等）\n\n"
-            "## 二、产品与核心功能\n"
-            "（核心产品、主要功能等）\n\n"
-            "## 三、市场定位\n"
-            "（目标客户、差异化优势等）\n\n"
-            "## 四、信息来源"
-        )
-    else:
-        chapters = (
-            "# {竞品名} 竞品画像简报\n\n"
-            "## 素材摘要\n"
-            "（基于现有素材整理的信息摘要）\n\n"
-            "## 信息来源"
-        )
+    competitor_name = _extract_competitor_name(competitor_info)
+
+    # 固定章节结构（所有质量级别一致），通过内容深度区分
+    chapters = (
+        f"# {competitor_name} 竞品画像报告\n\n"
+        "## 一、公司概况\n"
+        "（基本信息、发展历程、规模、融资情况等）\n\n"
+        "## 二、产品与核心功能\n"
+        "（核心产品线、主要功能模块、技术特点；功能对比用 Markdown 表格）\n\n"
+        "## 三、市场定位\n"
+        "（目标客户、价格定位、差异化优势、市场份额）\n\n"
+        "## 四、技术架构\n"
+        "（核心技术栈、架构特点、技术路线、专利情况）\n\n"
+        "## 五、竞品对比\n"
+        "（主要竞品横向对比，用 Markdown 表格呈现功能/定价/市场等维度）\n\n"
+        "## 六、发展趋势与风险\n"
+        "（近期动态、行业趋势、潜在风险与挑战）\n\n"
+        "## 七、信息来源"
+    )
+
+    # 内容深度指引（按素材质量分级）
+    depth_guide = {
+        "high": (
+            "素材充足，每章写 2-4 个段落，充分使用素材中的具体数据、功能描述、价格信息；"
+            "竞品对比章使用 Markdown 表格横向对比 3-5 个维度；"
+            "每个关键论断标注 [n] 引用编号。"
+        ),
+        "medium": (
+            "素材一般，每章写 1-2 个段落，优先使用素材中有明确依据的信息；"
+            "缺少数据的维度标注「信息不足」；"
+            "竞品对比章使用 Markdown 表格（可简化对比维度）；"
+            "有依据的论断标注 [n] 引用编号。"
+        ),
+        "low": (
+            "素材严重不足，每章精简到 2-3 句话，严格基于已有素材；"
+            "大量标注「信息不足」；"
+            "竞品对比章可仅做文字概述；"
+            "仅对素材中明确出现的事实标注 [n]。"
+        ),
+    }
 
     system = (
-        "你是一名资深的竞品情报分析师，擅长撰写专业、可读的竞品画像报告。\n"
+        "你是一名资深的竞品情报分析师，擅长撰写结构清晰、格式规范的竞品画像报告。\n"
         f"素材质量：{quality_label}（{quality['source_count']} 个来源，{quality['text_length']} 字）\n\n"
-        "请基于提供的素材，为以下竞品撰写一份结构化的 Markdown 分析报告。\n\n"
-        "报告要求：\n"
-        "1. 使用中文撰写，语气专业客观；\n"
-        "2. 每个事实/数据点后标注来源编号 [n]，n 对应素材列表的编号；\n"
-        "3. 信息不足时明确标注「信息不足」，不得编造；\n"
-        "4. 纯 Markdown 输出，不要使用代码块包裹，不要输出 JSON。\n\n"
-        "报告章节结构：\n"
+        "## Markdown 格式规范\n\n"
+        "1. 标题层级：报告总标题用 `#`，章节用 `##`，小节用 `###`，不要跳级；\n"
+        "2. 对比表格：竞品/功能/定价对比必须使用 Markdown 表格，表头为「维度 | 详情」，列对齐用默认即可；\n"
+        "3. 列表：并列项用无序列表 `-`，有序列表 `1.` 仅用于步骤或排名；\n"
+        "4. 引用标注：正文中每个具体事实、数据、功能点后紧跟 `[n]`（n 为素材编号），格式为 `[3]` 或 `[3][7]`，纯文本不要加链接；\n"
+        "5. 强调：关键词用 `**加粗**`，不要用斜体；\n"
+        "6. 代码/术语：技术名词保持原文，不要翻译缩写；\n"
+        "7. 不要输出代码块包裹整篇报告、不要输出 JSON、不要输出解释性前缀（如「以下是报告」）。\n\n"
+        f"内容深度指引（素材质量 {quality_label}）：\n"
+        f"{depth_guide[quality['level']]}\n\n"
+        "通用要求：\n"
+        "- 仅依据提供的素材撰写，素材未覆盖的内容必须标注「信息不足」，不得编造或凭通用知识推断；\n"
+        "- 报告使用中文，语气专业、客观、简洁；\n"
+        "- 信息来源章列出所有引用过的素材编号与标题。\n\n"
+        "章节结构：\n"
         f"{chapters}"
     )
 
@@ -520,12 +539,21 @@ def _build_report_prompt(quality: dict, competitor_info: str, summary_text: str,
         )
 
     user = (
-        f"{competitor_info}\n\n"
-        f"【画像概要（已有的结构化数据）】\n{summary_text or '（无概要信息）'}\n\n"
-        f"【素材（编号后文引用用）】\n{materials_text}"
+        f"竞品：{competitor_name}\n\n"
+        f"画像概要（已有的结构化数据）：\n{summary_text or '（无概要信息）'}\n\n"
+        f"素材列表（编号在后文引用）：\n{materials_text}"
     )
 
     return system, user
+
+
+def _extract_competitor_name(competitor_info: str) -> str:
+    """从 competitor_info 文本中提取竞品名称（第一行「竞品：xxx」）。"""
+    for line in competitor_info.split("\n"):
+        line = line.strip()
+        if line.startswith("竞品："):
+            return line[len("竞品："):].strip()
+    return "该竞品"
 
 
 # ---------------------------------------------------------------------------
@@ -557,12 +585,16 @@ def _format_materials(materials: dict) -> tuple[str, list[dict]]:
             parts.append("")
             # 记录来源索引
             if item.get("url"):
+                _conf = item.get("confidence", 0.0)
+                if isinstance(_conf, str):
+                    _conf_map = {"high": 0.9, "medium": 0.6, "low": 0.3}
+                    _conf = _conf_map.get(_conf.lower(), 0.0)
                 source_index.append({
                     "n": n,
                     "url": item["url"],
                     "title": item.get("title", item.get("source", "")),
                     "tier": item.get("tier", "other"),
-                    "confidence": item.get("confidence", 0.0),
+                    "confidence": float(_conf or 0.0),
                     "snippet": (item.get("snippet", "") or "")[:120],
                 })
 
@@ -660,3 +692,44 @@ def _fallback_report(competitor: Competitor | None, summary: Any, materials: dic
                 parts.append(f"[{counter}] {item.get('source', item.get('url', ''))}\n{text[:500]}\n")
 
     return "\n".join(parts)
+
+
+def _fallback_insights(
+    dimensions: dict,
+    competitor_name: str,
+    dim_label_map: dict[str, str] | None = None,
+) -> dict:
+    """LLM 失败时的兜底洞察：基于维度数据生成最简评分"""
+    scores = {}
+    for dim_key, fields in dimensions.items():
+        if not isinstance(fields, dict):
+            label = (dim_label_map or {}).get(dim_key, dim_key)
+            scores[label] = 0
+            continue
+        filled = sum(
+            1
+            for v in fields.values()
+            if isinstance(v, dict)
+            and v.get("v", "") not in ("", "信息不足")
+        )
+        total = len(fields)
+        if total == 0:
+            score = 0
+        elif filled == 0:
+            score = 1
+        elif filled / total >= 0.7:
+            score = 7
+        else:
+            score = 4
+
+        label = (dim_label_map or {}).get(dim_key, dim_key)
+        scores[label] = score
+
+    return {
+        "scores": scores,
+        "verdict": f"基于 {len(dimensions)} 个维度的有限数据生成，建议补充调研材料以获得更准确的洞察。",
+        "positioning": "数据有限，暂无法判断",
+        "swot": {"strengths": [], "weaknesses": [], "opportunities": [], "threats": []},
+        "timeline": [],
+        "dimension_labels": dim_label_map or {},
+    }

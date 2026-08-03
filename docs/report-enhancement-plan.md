@@ -1,7 +1,6 @@
 # 竞品调研 & 图谱报告详情页内容增强 — 技术执行方案
 
-> 基于 `agent-v5` 分支实际代码编写。所有行号、组件名、API 路径均与当前代码一一对应。
-> 本方案已通过技术评审，修正了导出封面模板、状态守卫、回调传递、下拉状态管理等 6 项问题。
+> 基于 `agent-v7` 分支实际代码编写。所有行号、组件名、API 路径均与当前代码一一对应。
 
 ---
 
@@ -22,7 +21,7 @@
 
 | 原则 | 说明 |
 |---|---|
-| **不改动核心流程** | `agent.py` 的 5 阶段流水线（plan→search→analyze→insights→report）不动 |
+| **不改动核心流程** | `agent.py` 的 5 阶段流水线（plan→search→analyze→insights→report）不动；`graph_agent.py` 的 5 阶段流水线（plan→collect→extract→save→report）不动 |
 | **不改动数据库** | 不在 `models.py` 中新增表 |
 | **增量组件为主** | 新建 3 个组件，修改 6 个文件 |
 | **复用优先** | `ReportToc`、`SourceDrawer`、`ReportView`、`ReactMarkdown`、导出模板全部复用 |
@@ -33,7 +32,7 @@
 
 ### 目标
 
-将 `GraphDetailPage.tsx` 第 489-516 行的单薄 Drawer 从"纯 Markdown 直出"升级为与 `TaskDetailPage` 同等级的报告阅读体验。
+将 `GraphDetailPage.tsx` 第 488-516 行的单薄 Drawer 从"纯 Markdown 直出"升级为与 `TaskDetailPage` 同等级的报告阅读体验。
 
 ### 改动文件清单
 
@@ -282,6 +281,7 @@ import ReportView from '../../components/ReportView'
 import ReportToc from '../../components/ReportToc'
 import GraphReportHeader from '../../components/GraphReportHeader'
 import EntitySummaryCards from '../../components/EntitySummaryCards'
+import { FileDown } from 'lucide-react'   // 导出按钮图标
 ```
 
 **关键改动点**：
@@ -302,7 +302,7 @@ import EntitySummaryCards from '../../components/EntitySummaryCards'
 
 **方案**：在 `GraphDetailPage.tsx` 中新增一个内联状态和函数，不新建独立组件（改动最小）。
 
-**新增 state**：
+**新增 state**（在第 116-124 行现有 state 之后）：
 
 ```tsx
 const [graphExportOpen, setGraphExportOpen] = useState(false)
@@ -410,12 +410,12 @@ export interface ReportExportInput {
 }
 ```
 
-**修改 `renderCoverHtml`**（第 78-89 行）：
+**修改 `renderCoverHtml`**（第 78-90 行）：
 
 ```tsx
 function renderCoverHtml(input: ReportExportInput, sources: Source[]) {
   const competitors = input.competitors
-    ? input.competitors.split(/[,，、]/).map(c => c.trim()).filter(Boolean).join('、')
+    ? input.competitors.split(/[,，、]/).map((c) => c.trim()).filter(Boolean).join('、')
     : ''
 
   if (input.type === 'graph') {
@@ -434,7 +434,7 @@ function renderCoverHtml(input: ReportExportInput, sources: Source[]) {
   return `
     <div class="exp-cover">
       <p class="exp-kicker">Competitive Intelligence Profile Report</p>
-      <h1>${escapeHtml(input.product_name)} 竞品调研报告</h1>
+      <h1>${escapeHtml(input.product_name)} 竞品画像报告</h1>
       ${competitors ? `<p class="exp-meta">对比竞品：${escapeHtml(competitors)}</p>` : ''}
       ${input.focus ? `<p class="exp-meta">调研重点：${escapeHtml(input.focus)}</p>` : ''}
       <p class="exp-meta">生成时间：${fmtDateTime(input.created_at || '')} · 信息来源 ${sources.length} 条</p>
@@ -442,7 +442,67 @@ function renderCoverHtml(input: ReportExportInput, sources: Source[]) {
 }
 ```
 
-**向下兼容**：已有的 `exportMarkdownTask`、`exportWordTask`、`exportPdfTask` 三个函数保持不变，继续使用 `type: 'research'` 的默认行为。
+**注意**：当前 `renderCoverHtml` 的 kicker 是 `Competitive Intelligence Profile Report`，标题是 `竞品画像报告`。图谱报告封面将使用不同的 kicker（`Industry Relationship Analysis`）和标题（`关系网络分析报告`）。
+
+**向下兼容**：已有的 `exportMarkdownTask`、`exportWordTask`、`exportPdfTask` 三个函数保持不变，继续使用 `type: 'research'` 的默认行为。但注意——这些 wrapper 函数目前不传 `type` 字段，需要补充 `type: 'research'` 以明确类型。
+
+**新增通用导出函数**（在 `exportMarkdownTask` 之前）：
+
+```tsx
+/** 通用导出：根据 ReportExportInput.type 自动选择封面模板 */
+export function exportMarkdown(input: ReportExportInput) {
+  downloadBlob(
+    new Blob([input.report_markdown], { type: 'text/markdown;charset=utf-8' }),
+    `${input.type === 'graph' ? '图谱报告' : '竞品画像报告'}-${input.product_name}.md`,
+  )
+}
+
+export async function exportWord(input: ReportExportInput, sources: Source[]) {
+  const title = input.type === 'graph'
+    ? `${input.product_name} 关系网络分析报告`
+    : `${input.product_name} 竞品画像报告`
+  const html = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+<style>
+@page Section1 { size: 595.3pt 841.9pt; margin: 2cm 1.8cm 2cm 1.8cm; mso-header-margin: 36pt; mso-footer-margin: 36pt; mso-paper-source: 0; }
+div.Section1 { page: Section1; }
+${EXPORT_CSS}</style></head>
+<body><div class="Section1">${buildExportHtml(input, sources, WORD_PAGE_BREAK)}</div></body></html>`
+  downloadBlob(new Blob(['﻿', html], { type: 'application/msword;charset=utf-8' }), `${title}.doc`)
+}
+```
+
+**修改 `exportMarkdownTask` / `exportWordTask` / `exportPdfTask` 以传递 `type: 'research'`**：
+
+```tsx
+// exportMarkdownTask 保持不变（只传 report_markdown，不经过 ReportExportInput）
+
+export async function exportWordTask(task: TaskDetail, sources: Source[]) {
+  const input: ReportExportInput = {
+    report_markdown: task.report_markdown,
+    product_name: task.product_name,
+    created_at: task.created_at,
+    competitors: task.competitors,
+    focus: task.focus,
+    type: 'research',           // 新增：明确标记为调研报告
+  }
+  exportWord(input, sources)
+}
+
+export async function exportPdfTask(task: TaskDetail, sources: Source[]) {
+  const input: ReportExportInput = {
+    report_markdown: task.report_markdown,
+    product_name: task.product_name,
+    created_at: task.created_at,
+    competitors: task.competitors,
+    focus: task.focus,
+    type: 'research',           // 新增：明确标记为调研报告
+  }
+  await exportPdf(input, sources)
+}
+```
 
 ---
 
@@ -491,10 +551,24 @@ frontend/src/pages/app/TaskDetailPage.tsx  — 修改
 
 ```tsx
 <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/20 pt-4 sm:grid-cols-4">
-  <div><p className="text-lg font-bold">{sources.length}</p><p className="text-[11px] text-slate-400">信息来源</p></div>
-  <div>...</div>
-  <div>...</div>
-  <div>...</div>
+  <div>
+    <p className="text-lg font-bold">{sources.length}</p>
+    <p className="text-[11px] text-slate-400 print:text-gray-500">信息来源</p>
+  </div>
+  <div>
+    <p className="text-lg font-bold tabular-nums">
+      {(stats.tierCount.get('official') ?? 0) + (stats.tierCount.get('media') ?? 0)}
+    </p>
+    <p className="text-[11px] text-slate-400 print:text-gray-500">官方与媒体来源</p>
+  </div>
+  <div>
+    <p className="text-lg font-bold">{stats.dimensions.length || '—'}</p>
+    <p className="text-[11px] text-slate-400 print:text-gray-500">检索维度</p>
+  </div>
+  <div>
+    <p className="text-lg font-bold">{reportData ? reportData.competitors.length : '—'}</p>
+    <p className="text-[11px] text-slate-400 print:text-gray-500">对比产品</p>
+  </div>
 </div>
 ```
 
@@ -517,7 +591,7 @@ frontend/src/pages/app/TaskDetailPage.tsx  — 修改
 </div>
 ```
 
-**辅助计算**（在组件函数体内新增，靠近其他 `useMemo` 之后）：
+**辅助计算**（在组件函数体内新增，靠近其他 `useMemo` 之后，约在第 220 行附近）：
 
 ```tsx
 // 总耗时
@@ -547,14 +621,14 @@ const conflictCount = useMemo(
 )
 ```
 
-**`StatCard` 子组件**（在 `TaskDetailPage` 函数内部或外部定义）：
+**`StatCard` 子组件**（在 `TaskDetailPage` 函数内部定义，约在第 93 行之后）：
 
 ```tsx
 function StatCard({ value, label }: { value: string | number; label: string }) {
   return (
     <div>
       <p className="text-lg font-bold tabular-nums">{value}</p>
-      {/* 使用 text-slate-300 而非 text-slate-400，确保暗色背景可读性 */}
+      {/* 使用 text-slate-300 而非 text-slate-400，确保暗色背景可读性（修正项 #6） */}
       <p className="text-[11px] text-slate-300">{label}</p>
     </div>
   )
@@ -791,13 +865,15 @@ if task.report_data:
 
 if timeline_data:
     timeline_text = "\n".join(
-        f"- {t.get('date', '')} {t.get('title', '')}（来源 [{t.get('ref', '?')}]）"
+        f"- {t.get('date', '')} {t.get('title', '')（来源 [{t.get('ref', '?')}]）"
         for t in timeline_data[:5]
     )
     user += f"\n\n关键事件时间线：\n{timeline_text}\n"
 
 user += f"\n\n来源统计数据（用于可信度说明章节）：\n{credibility}\n\n信息来源列表：\n{source_list}"
 ```
+
+**注意**：`_timeline()` 函数（第 388-407 行）已存在且可独立运行，但 `_report()` 的 `user` prompt 当前不包含 timeline 数据。上述修改在 `_report()` 中补充 timeline 数据，使报告第 0 节"关键动态速览"有据可依。
 
 ---
 
@@ -815,20 +891,35 @@ user += f"\n\n来源统计数据（用于可信度说明章节）：\n{credibili
 
 | 文件 | 修改位置 | 改动内容 |
 |---|---|---|
-| `frontend/src/pages/app/GraphDetailPage.tsx` | 第 117-125 行（新增 state） | 新增 `graphExportOpen` / `graphExportRef` state |
+| `frontend/src/pages/app/GraphDetailPage.tsx` | 第 116-124 行（新增 state） | 新增 `graphExportOpen` / `graphExportRef` state |
 | | 新增函数 | `handleGraphExport` + 点击外部关闭 effect |
-| | 第 489-516 行（Drawer 重写） | 布局升级：Header 增加导出按钮 + Body 内嵌封面头/实体卡/TOC |
-| | 顶部 imports | 新增 `ReportView`、`ReportToc`、`GraphReportHeader`、`EntitySummaryCards` |
-| | 第 124 行附近 | 新增 `FileDown` icon import |
+| | 第 488-516 行（Drawer 重写） | 布局升级：Header 增加导出按钮 + Body 内嵌封面头/实体卡/TOC |
+| | 顶部 imports（第 1-19 行） | 新增 `ReportView`、`ReportToc`、`GraphReportHeader`、`EntitySummaryCards`、`FileDown` icon |
 | `frontend/src/utils/exportReport.tsx` | 第 14-20 行 | `ReportExportInput` 扩展 `type`/`industry`/`time_range` |
-| | 第 78-89 行 | `renderCoverHtml` 增加 `type === 'graph'` 分支 |
+| | 第 78-90 行 | `renderCoverHtml` 增加 `type === 'graph'` 分支 |
+| | 第 129 行后 | 新增通用 `exportMarkdown(input)` / `exportWord(input, sources)` |
+| | 第 204-224 行 | `exportWordTask`/`exportPdfTask` 补充 `type: 'research'` |
 | `frontend/src/api/types.ts` | 第 433-437 行 | `GraphDetail` 接口新增 `sources?` 字段 |
 | `backend/app/services/graph_agent.py` | 第 304-315 行 | `system` prompt 章节扩展至 11 节 |
 | | 第 317-325 行后 | `user` prompt 追加实体/关系/置信度统计数据 |
 | `backend/app/services/agent.py` | 第 339-349 行 | `system` prompt 新增第 0 节"关键动态速览" |
 | | 第 351-357 行 | `user` prompt 追加 timeline 数据 |
 | `frontend/src/pages/app/TaskDetailPage.tsx` | 第 496-515 行 | 封面头新增第 2 行统计卡（4 个） |
+| | 第 93 行后 | 新增 `StatCard` 子组件 |
+| | 第 220 行附近 | 新增 `elapsedTime` / `searchRounds` / `dedupRate` / `conflictCount` useMemo |
 | | 第 615 行后 | 洞察 Tab 挂载 `DimensionMatrix` |
+
+---
+
+### Phase 4 后端改动注意事项
+
+1. **`graph_agent.py` 的 `_report()` 函数**（第 268-326 行）：当前 prompt 要求 8 个章节，修改后要求 11 个章节。新增的"网络结构概览"、"关键路径与枢纽识别"、"可信度说明"需要 LLM 有足够的上下文才能写好，因此 `user` prompt 中追加的实体/关系/置信度统计至关重要。
+
+2. **`agent.py` 的 `_report()` 函数**（第 334-358 行）：当前 prompt 要求 9 个章节，修改后在第 1 节前新增第 0 节"关键动态速览"。需要从 `task.report_data` 中读取 timeline 数据（由 `_timeline()` 在第 528-538 行生成），追加到 `user` prompt 中。
+
+3. **`_timeline()` 函数**（第 388-407 行）已在 `run_research()` 第 528-538 行被调用，生成的数据存入 `report_data.timeline`。但当前 `_report()` 不读取 timeline——修改后 `_report()` 将读取并利用它。
+
+---
 
 ### 可选修改（Phase 3，暂不实施）
 

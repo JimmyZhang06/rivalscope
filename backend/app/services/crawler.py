@@ -1,6 +1,7 @@
 """竞品官网爬取引擎：Sitemap 发现 + 链接递归 + 并发抓取 + 正文提取"""
 
 import asyncio
+import gzip
 import json
 import logging
 import re
@@ -29,16 +30,21 @@ _MAX_DEPTH = 2  # 从发现入口出发的最大跳数
 # 有价值路径的正则（排除 /blog/* 等大量重复页面）
 _PATH_RE = re.compile(
     r"/(pricing|price|features|products|about(-us)?|customers|case[-_]stud(y|ies)"
-    r"|docs|help|support|enterprise|solutions|integrations?|technology|company"
-    r"|careers?|press|news|contact|faq|security|privacy|terms)"
+    r"|docs|help|support(/product)?|enterprise|solutions|integrations?|technology|company"
+    r"|careers?|press|news|newsroom|contact|faq|security|privacy|terms)"
     r"|(/product(s)?/[^/]+)$",
     re.I,
 )
 
-# 应排除的路径模式（注意：保留 /news 和 /article，竞品官网新闻页是重要信息来源）
+# 应排除的路径模式（只排除大量重复的低价值页面）
 _EXCLUDE_RE = re.compile(
-    r"/(blog|post|tag|category|archive|author|search|login|signup|register)"
+    r"/(blog|article|post|tag|category|archive|author|search|login|signup|register)"
     r"(\/|$|\?)",
+    re.I,
+)
+# 额外排除内部功能页（cookie/会员/留言等）
+_INTERNAL_EXCLUDE_RE = re.compile(
+    r"/(h-cookie|h-login|h-mCenter|h-msgBoard|h-col-101|h-col-102|h-col-103|h-col-105|h-col-106|h-col-146)(\.html)?(\/|$)",
     re.I,
 )
 
@@ -65,48 +71,73 @@ async def discover_urls(base_url: str, max_pages: int = _MAX_PAGES_DEFAULT) -> l
     if m:
         lang_prefix = m.group(1)
 
-    # 1. Sitemap（多路径尝试）
-    sitemap_urls = await _fetch_sitemap_urls(base, lang_prefix)
-    # 如果有语言前缀，过滤掉其他语言的 URL（sitemap 通常包含所有语言版本）
-    if lang_prefix:
-        lang_re = re.compile(rf"^https?://[^/]+/{lang_prefix}/", re.I)
-        for u in sitemap_urls:
-            if _is_same_domain(u, parsed) and lang_re.match(u):
-                urls.add(u)
-    else:
-        for u in sitemap_urls:
-            if _is_same_domain(u, parsed):
-                urls.add(u)
-    if len(urls) >= max_pages:
-        return sorted(urls)[:max_pages]
-
-    # 2. 首页链接发现（BFS，限制深度）
+    # 1. Sitemap 和 2. 首页链接发现 并行执行（取两者的并集）
+    # Sitemap 覆盖历史页面，首页 BFS 覆盖当前产品/子域链接（如 store.dji.com）
     homepage = base if not lang_prefix else f"{base}/{lang_prefix}"
-    discovered = await _discover_from_homepage(homepage, max_depth=_MAX_DEPTH)
-    for u in discovered:
-        if _is_same_domain(u, parsed):
-            urls.add(u)
-    if len(urls) >= max_pages:
-        return sorted(urls)[:max_pages]
+
+    # 并行收集两个渠道的 URL
+    async def _collect_sitemap() -> set[str]:
+        sitemap_urls = await _fetch_sitemap_urls(base, lang_prefix)
+        result: set[str] = set()
+        if lang_prefix:
+            lang_re = re.compile(rf"^https?://[^/]+/{lang_prefix}/", re.I)
+            for u in sitemap_urls:
+                if not _is_same_domain(u, parsed):
+                    continue
+                if lang_re.match(u):
+                    result.add(u)
+            # 回退：补全语言前缀
+            if len(result) < max_pages // 2:
+                for u in sitemap_urls:
+                    if not _is_same_domain(u, parsed):
+                        continue
+                    p = urlparse(u)
+                    if p.path in ("/", ""):
+                        continue
+                    if re.match(rf"^https?://[^/]+/{lang_prefix}/", u, re.I):
+                        continue
+                    normalized = f"{parsed.scheme}://{parsed.netloc}/{lang_prefix}{p.path}"
+                    result.add(normalized)
+        else:
+            for u in sitemap_urls:
+                if _is_same_domain(u, parsed):
+                    result.add(u)
+        return result
+
+    async def _collect_homepage() -> set[str]:
+        # 只需深度 1：首页本身通常包含产品/子域链接（如 store.dji.com）
+        # 深度 2 会导致大量子页面请求，对产品序列场景没有必要
+        discovered = await _discover_from_homepage(homepage, max_depth=1)
+        return {u for u in discovered if _is_same_domain(u, parsed)}
+
+    sitemap_urls_set, homepage_urls_set = await asyncio.gather(
+        _collect_sitemap(), _collect_homepage()
+    )
+    urls = sitemap_urls_set | homepage_urls_set
 
     # 3. 启发式关键路径（带语言前缀）
-    heuristics = [
-        "/pricing", "/features", "/products", "/about", "/about-us",
-        "/customers", "/case-studies", "/docs", "/help", "/enterprise",
-        "/solutions", "/integrations", "/technology", "/company",
-        "/security", "/privacy", "/contact", "/faq",
-    ]
-    prefix = f"/{lang_prefix}" if lang_prefix else ""
-    for path in heuristics:
-        candidate = f"{base}{prefix}{path}"
-        if candidate not in urls:
-            urls.add(candidate)
+    if len(urls) < max_pages:
+        heuristics = [
+            "/pricing", "/features", "/products", "/about", "/about-us",
+            "/customers", "/case-studies", "/docs", "/help", "/enterprise",
+            "/solutions", "/integrations", "/technology", "/company",
+            "/security", "/privacy", "/contact", "/faq",
+        ]
+        prefix = f"/{lang_prefix}" if lang_prefix else ""
+        for path in heuristics:
+            candidate = f"{base}{prefix}{path}"
+            if candidate not in urls:
+                urls.add(candidate)
 
     return sorted(urls)[:max_pages]
 
 
-async def _fetch_sitemap_urls(base: str, lang_prefix: str = "") -> list[str]:
-    """尝试从多个路径获取 sitemap 并解析所有 <loc> URL"""
+async def _fetch_sitemap_urls(base: str, lang_prefix: str = "", max_urls: int = 0) -> list[str]:
+    """尝试从多个路径获取 sitemap 并解析所有 <loc> URL
+
+    支持 .xml 和 .xml.gz（gzip 压缩）格式。
+    当 max_urls > 0 时，达到上限后立即停止拉取子 sitemap。
+    """
     urls: list[str] = []
     # 同时支持 sitemap.xml 和 sitemap_index.xml
     candidates = ["/sitemap.xml", "/sitemap_index.xml"]
@@ -121,6 +152,13 @@ async def _fetch_sitemap_urls(base: str, lang_prefix: str = "") -> list[str]:
                 if resp.status_code != 200:
                     continue
                 content = resp.text
+                # 检测 gzip 压缩：resp.text 解码后如果前几个字节是乱码说明实际是二进制
+                if resp.headers.get("content-type", "").startswith("application/gzip") or sm_url.endswith(".gz"):
+                    try:
+                        content = gzip.decompress(resp.content).decode("utf-8")
+                    except Exception:
+                        logger.warning("gzip decompress failed for %s", sm_url)
+                        continue
         except Exception:
             continue
 
@@ -128,20 +166,55 @@ async def _fetch_sitemap_urls(base: str, lang_prefix: str = "") -> list[str]:
             root = ET.fromstring(content)
             tag = root.tag.lower()
             if "sitemapindex" in tag:
+                # 收集子 sitemap 地址（带 early stop）
+                child_sitemaps: list[str] = []
                 for sm_loc in root.findall(".//{*}loc"):
                     if sm_loc.text:
-                        child_urls = await _fetch_sitemap_urls(sm_loc.text.strip(), lang_prefix)
-                        urls.extend(child_urls)
+                        child_sitemaps.append(sm_loc.text.strip())
+                        if max_urls > 0 and len(child_sitemaps) >= max_urls:
+                            break
+                # 并发拉取子 sitemap：最多拉 3 个子文件就够覆盖需求
+                #（每个子文件含 ~100-140 个 URL）
+                semaphore = asyncio.Semaphore(3)
+                async def _fetch_child(child_url: str) -> list[str]:
+                    try:
+                        async with semaphore:
+                            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                                r = await client.get(child_url, headers={"User-Agent": _USER_AGENT})
+                                if r.status_code != 200:
+                                    return []
+                                text = r.text
+                                if child_url.endswith(".gz") or r.headers.get("content-type", "").startswith("application/gzip"):
+                                    try:
+                                        text = gzip.decompress(r.content).decode("utf-8")
+                                    except Exception:
+                                        return []
+                                child_root = ET.fromstring(text)
+                                found = [loc.text.strip() for loc in child_root.findall(".//{*}loc") if loc.text]
+                                return found
+                    except Exception:
+                        return []
+                # 并发拉取子 sitemap：最多拉前 8 个子文件（覆盖 ~800-1100 个 URL）
+                # DJI 等大站 52 个子 sitemap 分散在不同文件，8 个足以覆盖主要语言版本
+                child_tasks = [_fetch_child(c) for c in child_sitemaps[:8]]
+                child_results = await asyncio.gather(*child_tasks, return_exceptions=True)
+                for cr in child_results:
+                    if isinstance(cr, list):
+                        for u in cr:
+                            if u not in urls:
+                                urls.append(u)
             else:
                 for loc in root.findall(".//{*}loc"):
                     if loc.text:
                         urls.append(loc.text.strip())
+                        if max_urls > 0 and len(urls) >= max_urls:
+                            return urls[:max_urls]
             if urls:
                 break  # 找到了就停止尝试其他路径
         except ET.ParseError:
             logger.warning("sitemap parse failed for %s", sm_url)
 
-    return urls
+    return urls[:max_urls] if max_urls > 0 else urls
 
 
 async def _discover_from_homepage(base: str, max_depth: int = 2) -> list[str]:
@@ -274,48 +347,56 @@ async def _fetch_single(url: str) -> dict[str, Any]:
     for tag in soup_clean(["script", "style", "noscript"]):
         tag.decompose()
 
-    # 用 readability 提取正文
-    try:
-        doc = Document(str(soup_clean))
-        content_html = doc.summary()
-        soup_content = BeautifulSoup(content_html, "html.parser")
-        content_text = soup_content.get_text(separator="\n", strip=True)
-        title = doc.short_title() or _extract_title(html)
-    except Exception:
-        # readability 失败，降级到 BS4
-        content_text = soup_clean.get_text(separator="\n", strip=True)
-        content_html = ""
-        title = _extract_title(html)
+    # 先用 readability 提取正文
+    content_text, content_html, title = _extract_content(soup_clean, html)
 
-    # 兜底：如果正文提取为空（JS 渲染站点 / 空 body），回退到 meta 标签
-    if not content_text.strip():
-        meta_text = _extract_from_meta(html)
-        if meta_text:
-            content_text = meta_text
-            logger.info("fallback to meta for %s: got %d chars", url, len(meta_text))
-
-    # 检查 readability 是否只提取到了 consent overlay 而非实际正文
-    # 所有条目均为正则表达式，与 re.search(m, ..., re.IGNORECASE) 配合使用
+    # 检查提取是否足够（针对 JS 渲染站点的回退策略）
     _CONSENT_MARKERS = [
-        # 英文标记
-        r"data\s+subjects\s+only", r"targeted\s+advertising",
-        r"selling.*sharing", r"privacy\s+practices",
-        r"\bopt\s+out\b", r"\bgdpr\s+consent\b",
-        # 中文标记
-        r"cookie.{0,10}同意", r"隐私.{0,10}政策", r"数据.{0,10}收集",
-        r"同意.{0,10}继续", r"接受.{0,10}cookie", r"个人信息.{0,10}保护",
-        r"我们使用.{0,20}cookie",
+        "data subjects only", "targeted advertising", "selling.*sharing",
+        "privacy practices", "opt out", "ccpa", "gdpr consent",
     ]
-    if len(content_text) < 3000:
-        body_text = soup_clean.get_text(separator="\n", strip=True)
-        is_consent_only = any(
-            re.search(m, content_text, re.IGNORECASE)
-            for m in _CONSENT_MARKERS
-        )
-        if is_consent_only and len(body_text) > len(content_text):
-            # readability 只提取到了 consent overlay，回退到完整 body 文本
-            content_text = body_text
-            content_html = ""
+    body_text = soup_clean.get_text(separator="\n", strip=True)
+    is_consent_only = len(content_text) < 3000 and any(
+        re.search(m, content_text, re.IGNORECASE) for m in _CONSENT_MARKERS
+    )
+
+    if is_consent_only and len(body_text) > len(content_text):
+        # readability 只提取到了 consent overlay，回退到完整 body 文本
+        content_text = body_text
+        content_html = ""
+    elif len(content_text) < 500:
+        # readability 内容太少，尝试 JS 渲染站点的 meta 标签回退
+        _meta_content, _meta_title = _extract_from_meta(soup_clean, html)
+        if len(_meta_content) > len(content_text):
+            content_text = _meta_content
+        if not title and _meta_title:
+            title = _meta_title
+        # 仍然不足（meta 通常只给 200 字摘要），尝试 jina.ai 回退
+        if len(content_text) < 500:
+            try:
+                _jina_content, _jina_title = await _extract_via_jina(url)
+            except Exception:
+                _jina_content, _jina_title = "", ""
+            if len(_jina_content) > len(content_text):
+                content_text = _jina_content
+            if not title and _jina_title:
+                title = _jina_title
+    # 额外检测：readability 提取了文字但内容全是导航/菜单（JS SPA 常见问题）
+    # 表现为：内容 > 500 字符，但每行都很短（多为导航链接），实际正文很少
+    elif len(content_text) >= 500 and len(content_text) < 5000:
+        lines = [l.strip() for l in content_text.split("\n") if l.strip()]
+        if lines:
+            avg_line_len = sum(len(l) for l in lines) / len(lines)
+            # 平均行长短于 40 字符且行数多 → 大概率是导航/菜单内容
+            if avg_line_len < 40 and len(lines) > 30:
+                try:
+                    _jina_content, _jina_title = await _extract_via_jina(url)
+                except Exception:
+                    _jina_content, _jina_title = "", ""
+                if len(_jina_content) > len(content_text):
+                    content_text = _jina_content
+                if not title and _jina_title:
+                    title = _jina_title
 
     result.update({
         "title": title[:500],
@@ -324,6 +405,96 @@ async def _fetch_single(url: str) -> dict[str, Any]:
         "access_status": "success",
     })
     return result
+
+
+def _extract_content(soup_clean: Any, html: str) -> tuple[str, str, str]:
+    """提取正文：readability → BS4 降级。返回 (content_text, content_html, title)。"""
+    title = ""
+    try:
+        doc = Document(str(soup_clean))
+        content_html = doc.summary()
+        soup_content = BeautifulSoup(content_html, "html.parser")
+        content_text = soup_content.get_text(separator="\n", strip=True)
+        title = doc.short_title() or _extract_title(html)
+        return content_text, content_html, title
+    except Exception:
+        pass
+    # readability 失败，降级到 BS4
+    content_text = soup_clean.get_text(separator="\n", strip=True)
+    content_html = ""
+    title = _extract_title(html)
+    return content_text, content_html, title
+
+
+def _extract_from_meta(soup_clean: Any, html: str) -> tuple[str, str]:
+    """JS 渲染站点回退：从 meta 标签提取正文（常用于 CMS 构建的静态站点）。
+    返回 (content_text, title)。
+    """
+    title = ""
+    # 标题
+    og_title = soup_clean.find("meta", property="og:title")
+    if og_title and og_title.get("content"):
+        title = og_title["content"].strip()
+    else:
+        tag = soup_clean.find("title")
+        if tag:
+            title = tag.get_text(strip=True)
+
+    # 正文：优先 meta description
+    desc = soup_clean.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
+    if desc and desc.get("content"):
+        content = desc["content"].strip()
+        if len(content) >= 200:
+            return content, title
+
+    # 尝试从 JSON-LD 结构化数据提取
+    ld_scripts = soup_clean.find_all("script", type="application/ld+json")
+    for s in ld_scripts:
+        try:
+            import json as _json
+            data = _json.loads(s.string or "")
+            if isinstance(data, dict):
+                body = data.get("articleBody") or data.get("description") or data.get("text", "")
+                if body and len(body) >= 200:
+                    return body.strip(), title
+        except Exception:
+            continue
+
+    return "", title
+
+
+async def _extract_via_jina(url: str) -> tuple[str, str]:
+    """JS 渲染站点终极回退：通过 jina.ai HTTP API 获取渲染后的页面内容。
+    返回 (content_text, title)。
+    限流保护：失败时静默返回空，避免影响主流程。
+    """
+    try:
+        import httpx
+        api_url = f"https://r.jina.ai/{url}"
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(api_url, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; CompAgent/1.0)",
+                "Accept": "text/plain",
+            })
+            if resp.status_code == 200:
+                text = resp.text
+                # jina.ai 返回格式: "Title: xxx\n\nURL Source: xxx\n\nMarkdown Content:\n..."
+                lines = text.split("\n")
+                title = ""
+                content_start = 0
+                for i, line in enumerate(lines):
+                    if line.startswith("Title:"):
+                        title = line.replace("Title:", "").strip()
+                    elif line.strip() == "Markdown Content:":
+                        content_start = i + 1
+                        break
+                content = "\n".join(lines[content_start:]).strip()
+                # 清理图片引用（减少 token 消耗）
+                content = re.sub(r'!\[Image \d+:.*?\]\(.*?\)', '', content)
+                return content, title
+    except Exception as exc:
+        logger.debug("jina.ai fallback failed for %s: %s", url, exc)
+    return "", ""
 
 
 def _extract_title(html: str) -> str:
@@ -335,49 +506,6 @@ def _extract_title(html: str) -> str:
     if tag:
         return tag.get_text(strip=True)
     return ""
-
-
-def _extract_from_meta(html: str) -> str:
-    """当正文提取为空时（JS 渲染站点），从 meta 标签和 JSON-LD 提取可用文本。"""
-    soup = BeautifulSoup(html, "html.parser")
-    parts: list[str] = []
-
-    # 1. og:title
-    og_title = soup.find("meta", property="og:title")
-    if og_title and og_title.get("content", "").strip():
-        parts.append(f"[页面标题] {og_title['content'].strip()}")
-
-    # 2. meta description
-    desc = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
-    if desc and desc.get("content", "").strip():
-        parts.append(f"[页面描述] {desc['content'].strip()}")
-
-    # 3. meta keywords
-    kw = soup.find("meta", attrs={"name": re.compile(r"^keywords$", re.I)})
-    if kw and kw.get("content", "").strip():
-        parts.append(f"[关键词] {kw['content'].strip()}")
-
-    # 4. JSON-LD structured data
-    for script in soup.find_all("script", type="application/ld+json"):
-        try:
-            import json as _json
-            data = _json.loads(script.string or "")
-            if isinstance(data, dict):
-                name = data.get("name", "")
-                desc = data.get("description", "")
-                if name:
-                    parts.append(f"[结构化数据] {name}")
-                if desc:
-                    parts.append(desc)
-        except Exception:
-            pass
-
-    # 5. <title> tag
-    title_tag = soup.find("title")
-    if title_tag and title_tag.get_text(strip=True):
-        parts.append(f"[标题] {title_tag.get_text(strip=True)}")
-
-    return "\n".join(parts) if parts else ""
 
 
 # ---------------------------------------------------------------------------
@@ -501,10 +629,18 @@ def _normalize_base(url: str) -> str:
 
 
 def _is_same_domain(url: str, reference: Any) -> bool:
+    """检查 URL 是否属于同一域名（包含子域），如 www.dji.com 匹配 store.dji.com"""
     parsed = urlparse(url)
-    ref_netloc = reference.netloc.lower().removeprefix("www.") if hasattr(reference, "netloc") else ""
-    target = parsed.netloc.lower().removeprefix("www.")
-    return bool(target and target == ref_netloc)
+    ref_netloc = reference.netloc.lower() if hasattr(reference, "netloc") else ""
+    target = parsed.netloc.lower()
+    if not target or not ref_netloc:
+        return False
+    # 去除 www. 后做后缀匹配（www.dji.com ≈ store.dji.com ≈ dji.com）
+    ref_root = ref_netloc.removeprefix("www.")
+    target_stripped = target.removeprefix("www.")
+    if target_stripped == ref_root:
+        return True
+    return target_stripped.endswith("." + ref_root)
 
 
 def _classify_page_type(url: str) -> str:
@@ -513,9 +649,10 @@ def _classify_page_type(url: str) -> str:
     path = re.sub(r"^/(cn|en|de|fr|ja|ko|es|pt|it|ru|zh)/", "/", parsed.path).lower().rstrip("/")
     if not path or path == "/":
         return "home"
-    segment = path.split("/")[1] if "/" in path else path
-    segment = segment.split(".")[0]
-    _TYPE_MAP = {
+
+    # 先匹配特定站点模式
+    _SITE_TYPE_MAP = {
+        # 常见路径关键词
         "pricing": "pricing", "price": "pricing", "prices": "pricing",
         "features": "features", "feature": "features",
         "products": "products", "product": "products",
@@ -536,42 +673,30 @@ def _classify_page_type(url: str) -> str:
         "newsroom": "news", "press": "press",
         "contact": "contact", "faq": "faq",
         "repair": "help",
-        # 凡科建站等常见建站工具的 URL 模式
-        "h-pr-j": "products",  # 产品详情页
-        "h-pr-list": "products",  # 产品列表
-        "h-col": "products",  # 栏目/产品分类页
-        "h-nd": "news",  # 新闻详情
-        "h-news": "news",  # 新闻列表
-        "h-nr-j": "news",  # 新闻详情(alternate)
-        "h-a": "about",  # 文章页
-        "h-mcenter": "other",  # 会员中心
-        "h-cookie": "other",  # cookie 说明
-        "h-login": "other",  # 登录页
-        "h-msgboard": "other",  # 留言板
     }
-    result = _TYPE_MAP.get(segment)
-    if result:
-        return result
-    # 兜底：URL 中包含产品相关关键词
-    if any(kw in segment for kw in ("prd", "prod", "goods", "item", "solution")):
+
+    # 从路径尾部段匹配
+    segments = path.split("/")
+    for seg in reversed(segments):
+        seg = seg.split(".")[0]  # 去掉扩展名
+        if seg in _SITE_TYPE_MAP:
+            return _SITE_TYPE_MAP[seg]
+
+    # 常见 CMS 站点模式（华为云速建站等）
+    if re.search(r"/h-col-", path):
+        return "company"  # 栏目页通常是公司介绍类
+    if re.search(r"/h-nd-\d+", path):
+        # 文章/产品详情页：通过内容标题判断（需后续内容分析）
         return "products"
-    # 凡科建站等建站工具的 URL 模式（前缀匹配）
-    _FAISYS_PREFIXES = [
-        ("h-pr-j-", "products"),     # 产品详情页
-        ("h-pr-list", "products"),   # 产品列表
-        ("h-col-", "products"),      # 栏目/产品分类页
-        ("h-nd-", "news"),           # 新闻详情
-        ("h-news", "news"),          # 新闻列表
-        ("h-nr-j-", "news"),         # 新闻详情(alternate)
-        ("h-a-", "about"),           # 文章页
-        ("h-mcenter", "other"),      # 会员中心
-        ("h-cookie", "other"),       # cookie 说明
-        ("h-login", "other"),        # 登录页
-        ("h-msgboard", "other"),     # 留言板
-    ]
-    for prefix, ptype in _FAISYS_PREFIXES:
-        if segment.startswith(prefix):
-            return ptype
+    if re.search(r"/h-nr-", path):
+        return "solutions"
+    if re.search(r"/h-news|/news/|/blog/", path):
+        return "news"
+    if re.search(r"/product[s]?/", path):
+        return "products"
+    if re.search(r"/solution[s]?/", path):
+        return "solutions"
+
     return "other"
 
 
@@ -620,17 +745,26 @@ async def _fetch_single_with_limit(url: str, max_chars: int = 5000) -> dict[str,
         result["access_error"] = str(exc)[:500]
         return result
 
-    try:
-        doc = Document(html)
-        content_html = doc.summary()
-        soup = BeautifulSoup(content_html, "html.parser")
-        content_text = soup.get_text(separator="\n", strip=True)
-        title = doc.short_title() or _extract_title(html)
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
-        content_text = soup.get_text(separator="\n", strip=True)
-        content_html = ""
-        title = _extract_title(html)
+    # 正文提取（与 _fetch_single 相同的多级回退策略）
+    soup_raw = BeautifulSoup(html, "html.parser")
+    for tag in soup_raw(["script", "style", "noscript"]):
+        tag.decompose()
+    content_text, content_html, title = _extract_content(soup_raw, html)
+    if len(content_text) < 500:
+        _meta_content, _meta_title = _extract_from_meta(soup_raw, html)
+        if len(_meta_content) > len(content_text):
+            content_text = _meta_content
+        if not title and _meta_title:
+            title = _meta_title
+        if len(content_text) < 500:
+            try:
+                _jina_content, _jina_title = await _extract_via_jina(url)
+            except Exception:
+                _jina_content, _jina_title = "", ""
+            if len(_jina_content) > len(content_text):
+                content_text = _jina_content
+            if not title and _jina_title:
+                title = _jina_title
 
     result.update({
         "title": title[:500],
@@ -639,3 +773,4 @@ async def _fetch_single_with_limit(url: str, max_chars: int = 5000) -> dict[str,
         "access_status": "success",
     })
     return result
+# reload trigger

@@ -1,6 +1,5 @@
 import json
 import random
-import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -35,10 +34,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 AVATAR_KEYS = {"", "blue", "cyan", "emerald", "amber", "rose", "slate", "teal", "sky"}
 
 
-def _uuid() -> str:
-    return uuid.uuid4().hex
-
-
 def _valid_avatar(v: str) -> bool:
     """允许预设色键，或前端压缩后上传的 data URL 图片（≤ 200KB 文本）"""
     if v in AVATAR_KEYS:
@@ -58,18 +53,17 @@ def _log_action(db: Session, user: User, action: str, request: Request) -> None:
     )
 
 
-def _token_out(user: User, session_id: str = "") -> TokenOut:
+def _token_out(user: User) -> TokenOut:
     return TokenOut(
-        access_token=create_access_token(user.id, user.token_version or 0, session_id),
-        refresh_token=create_refresh_token(user.id, user.token_version or 0, session_id),
+        access_token=create_access_token(user.id, user.token_version or 0),
+        refresh_token=create_refresh_token(user.id, user.token_version or 0),
         user=UserOut.model_validate(user),
     )
 
 
 @router.post("/register", response_model=TokenOut, status_code=201)
 def register(payload: RegisterIn, request: Request, db: Session = Depends(get_db)):
-    if not rate_limit_dep(request):
-        raise HTTPException(status_code=429, detail="注册请求过于频繁，请稍后重试")
+    rate_limit_dep(request)
     email = payload.email.lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="该邮箱已注册，请直接登录")
@@ -79,7 +73,6 @@ def register(payload: RegisterIn, request: Request, db: Session = Depends(get_db
     _log_action(db, user, "register", request)
     db.commit()
     db.refresh(user)
-    session_id = _uuid()
     try:
         log_audit(
             user_id=user.id,
@@ -89,19 +82,17 @@ def register(payload: RegisterIn, request: Request, db: Session = Depends(get_db
             resource_id=user.id,
             input_data=f"email={email}",
             status="success",
-            session_id=session_id,
             ip=(request.client.host if request.client else "") or "",
             user_agent=(request.headers.get("user-agent") or "")[:300],
         )
     except Exception:
         pass
-    return _token_out(user, session_id)
+    return _token_out(user)
 
 
 @router.post("/login", response_model=TokenOut)
 def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
-    if not rate_limit_dep(request):
-        raise HTTPException(status_code=429, detail="登录请求过于频繁，请稍后重试")
+    rate_limit_dep(request)
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if not user or not verify_password(payload.password, user.password_hash):
         try:
@@ -114,7 +105,6 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
                 input_data=f"email={payload.email.lower()}",
                 status="failed",
                 error="邮箱或密码错误",
-                session_id="",
                 ip=(request.client.host if request.client else "") or "",
                 user_agent=(request.headers.get("user-agent") or "")[:300],
             )
@@ -123,7 +113,6 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
     _log_action(db, user, "login", request)
     db.commit()
-    session_id = _uuid()
     try:
         log_audit(
             user_id=user.id,
@@ -132,13 +121,12 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
             resource_type="user",
             resource_id=user.id,
             status="success",
-            session_id=session_id,
             ip=(request.client.host if request.client else "") or "",
             user_agent=(request.headers.get("user-agent") or "")[:300],
         )
     except Exception:
         pass
-    return _token_out(user, session_id)
+    return _token_out(user)
 
 
 @router.get("/me", response_model=UserOut)
@@ -369,8 +357,7 @@ def usage(
 
 @router.post("/forgot", response_model=ForgotOut)
 def forgot_password(payload: ForgotIn, request: Request, db: Session = Depends(get_db)):
-    if not rate_limit_dep(request):
-        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后重试")
+    rate_limit_dep(request)
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if not user:
         # 无论用户是否存在，返回相同消息（防止邮箱枚举）
@@ -412,19 +399,19 @@ def forgot_password(payload: ForgotIn, request: Request, db: Session = Depends(g
 
 @router.post("/refresh", response_model=TokenOut)
 def refresh_token(payload: dict, db: Session = Depends(get_db)):
-    """使用 refresh token 换取新的 access + refresh token（保持同一 session_id）"""
+    """使用 refresh token 换取新的 access + refresh token"""
     from app.core.security import decode_refresh_token
     raw = payload.get("refresh_token", "")
     decoded = decode_refresh_token(raw)
     if not decoded:
         raise HTTPException(status_code=401, detail="Refresh token 无效或已过期")
-    user_id, ver, session_id = decoded
+    user_id, ver = decoded
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=401, detail="账号不存在")
     if ver != (user.token_version or 0):
         raise HTTPException(status_code=401, detail="登录状态已失效，请重新登录")
-    return _token_out(user, session_id)
+    return _token_out(user)
 
 
 @router.post("/reset")

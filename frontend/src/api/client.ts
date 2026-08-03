@@ -489,9 +489,8 @@ export function deleteCompetitor(id: string): Promise<void> {
 
 // ---------- 画像模板 ----------
 
-export function listProfileTemplates(page = 1, pageSize = 50): Promise<ProfileTemplate[]> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return request('/api/profiles/templates?' + params)
+export function listProfileTemplates(): Promise<ProfileTemplate[]> {
+  return request('/api/profiles/templates')
 }
 
 export function createProfileTemplate(payload: { name: string; dimensions: any[]; org_id: string }): Promise<ProfileTemplate> {
@@ -521,7 +520,7 @@ export function generateProfileFromCrawl(payload: { competitor_id: string; templ
 }
 
 export function getGenerateStatus(taskId: string): Promise<GenerateTaskStatus> {
-  return request(`/api/profiles/generate-from-crawl/${taskId}`)
+  return request(`/api/profiles/generate/${taskId}`)
 }
 
 export function getProfile(id: string): Promise<CompetitorProfile> {
@@ -587,7 +586,6 @@ export function listAuditLogs(params?: {
   action?: string
   resource_type?: string
   user_id?: string
-  org_id?: string
   start?: string
   end?: string
   page?: number
@@ -597,7 +595,6 @@ export function listAuditLogs(params?: {
   if (params?.action) p.set('action', params.action)
   if (params?.resource_type) p.set('resource_type', params.resource_type)
   if (params?.user_id) p.set('user_id', params.user_id)
-  if (params?.org_id) p.set('org_id', params.org_id)
   if (params?.start) p.set('start', params.start)
   if (params?.end) p.set('end', params.end)
   p.set('page', String(params?.page ?? 1))
@@ -606,22 +603,10 @@ export function listAuditLogs(params?: {
   return request(`/api/admin/audit-logs?${qs}`)
 }
 
-export function auditIntegrity(params?: {
-  start_id?: string
-  end_id?: string
-}): Promise<{ valid: boolean; total: number; broken_at: string | null; details: string }> {
-  const p = new URLSearchParams()
-  if (params?.start_id) p.set('start_id', params.start_id)
-  if (params?.end_id) p.set('end_id', params.end_id)
-  const qs = p.toString()
-  return request(`/api/admin/audit-logs/integrity?${qs}`)
-}
-
 export function exportAuditLogs(params?: {
   action?: string
   resource_type?: string
   user_id?: string
-  org_id?: string
   start?: string
   end?: string
 }): Promise<Blob> {

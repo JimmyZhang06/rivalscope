@@ -67,11 +67,7 @@ def my_org(user: User = Depends(get_current_user), db: Session = Depends(get_db)
 @router.patch("", response_model=OrgOut)
 def update_org(payload: OrgUpdateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     org = _require_org_admin(db, user)
-    changes: dict[str, dict[str, str]] = {}
-    old_name = org.name
     org.name = payload.name.strip()
-    if old_name != org.name:
-        changes["name"] = {"old": old_name, "new": org.name}
     db.commit()
     db.refresh(org)
     try:
@@ -79,7 +75,6 @@ def update_org(payload: OrgUpdateIn, user: User = Depends(get_current_user), db:
             user_id=user.id, org_id=org.id,
             action="org.update", resource_type="organization", resource_id=org.id,
             input_data=payload.name.strip(),
-            changes=json.dumps(changes) if changes else "",
             status="success",
         )
     except Exception:
@@ -205,14 +200,11 @@ def update_member(
         raise HTTPException(status_code=404, detail="成员不存在")
     if member.org_role == "owner":
         raise HTTPException(status_code=400, detail="不能修改企业所有者的角色或额度")
-    changes: dict[str, dict[str, str]] = {}
     if payload.org_role is not None:
         if payload.org_role not in ("admin", "member"):
             raise HTTPException(status_code=400, detail="无效的角色")
-        changes["org_role"] = {"old": member.org_role, "new": payload.org_role}
         member.org_role = payload.org_role
     if payload.org_monthly_limit is not None:
-        changes["org_monthly_limit"] = {"old": str(member.org_monthly_limit), "new": str(payload.org_monthly_limit)}
         member.org_monthly_limit = payload.org_monthly_limit
     db.commit()
     db.refresh(member)
@@ -220,8 +212,7 @@ def update_member(
         log_audit(
             user_id=user.id, org_id=org.id,
             action="org.member_update", resource_type="user", resource_id=member_id,
-            input_data=json.dumps(payload.model_dump(exclude_none=True)),
-            changes=json.dumps(changes) if changes else "",
+            input_data=json.dumps({"org_role": payload.org_role, "org_monthly_limit": payload.org_monthly_limit}),
             status="success",
         )
     except Exception:

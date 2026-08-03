@@ -46,14 +46,23 @@ export default function ProfilesPage() {
           if (status.status === 'done') {
             clearInterval(tid)
             setGenPollTimer(null)
-            showNotice(`${getCompetitorName(selectedCompetitor)} 画像已生成`)
+            if (status.error) {
+              setError(`画像数据生成完成，但报告/洞察预生成失败：${status.error}`)
+            } else {
+              showNotice(`${getCompetitorName(selectedCompetitor)} 画像已生成（含报告与洞察）`)
+            }
             await reload()
           } else if (status.status === 'error') {
             clearInterval(tid)
             setGenPollTimer(null)
             setError(`画像生成失败：${status.error || '未知错误'}`)
+          } else if (status.current_step) {
+            showNotice(status.current_step)
           }
-        } catch { /* silent */ }
+        } catch (err) {
+          console.error(`[ProfilePoll] task ${taskId} poll failed:`, err)
+          // 非致命：轮询偶发失败不中断
+        }
       }, 2000)
       setGenPollTimer(tid)
     } catch (err) {
@@ -77,14 +86,23 @@ export default function ProfilesPage() {
           if (status.status === 'done') {
             clearInterval(tid)
             setGenPollTimer(null)
-            showNotice(`${getCompetitorName(selectedCompetitor)} 画像已生成`)
+            if (status.error) {
+              setError(`画像数据生成完成，但报告/洞察预生成失败：${status.error}`)
+            } else {
+              showNotice(`${getCompetitorName(selectedCompetitor)} 画像已生成（含报告与洞察）`)
+            }
             await reload()
           } else if (status.status === 'error') {
             clearInterval(tid)
             setGenPollTimer(null)
             setError(`画像生成失败：${status.error || '未知错误'}`)
+          } else if (status.current_step) {
+            showNotice(status.current_step)
           }
-        } catch { /* silent */ }
+        } catch (err) {
+          console.error(`[ProfilePoll] task ${taskId} poll failed:`, err)
+          // 非致命：轮询偶发失败不中断
+        }
       }, 2000)
       setGenPollTimer(tid)
     } catch (err) {
@@ -114,7 +132,13 @@ export default function ProfilesPage() {
   const getProfileSummary = (p: any): string => {
     try {
       const data = typeof p.profile_data === 'string' ? JSON.parse(p.profile_data) : p.profile_data
-      if (data?.summary) return data.summary.slice(0, 80) + (data.summary.length > 80 ? '…' : '')
+      if (data?.summary) {
+        if (Array.isArray(data.summary)) {
+          return data.summary[0]?.slice(0, 80) + (data.summary[0]?.length > 80 ? '…' : '') || ''
+        }
+        const s = String(data.summary)
+        return s.slice(0, 80) + (s.length > 80 ? '…' : '')
+      }
       const dims = data?.dimensions || {}
       const firstDim = Object.entries(dims)[0]
       if (firstDim) {

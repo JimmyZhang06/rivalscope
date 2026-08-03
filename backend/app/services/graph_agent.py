@@ -45,7 +45,7 @@ def _norm(name: str) -> str:
     return re.sub(r"[\s\u3000]+", "", str(name or "").strip()).lower()
 
 
-def _do_set_status(project_id: str, status: str, error: str = "") -> None:
+def _set_status(project_id: str, status: str, error: str = "") -> None:
     with SessionLocal() as db:
         p = db.get(GraphProject, project_id)
         if p:
@@ -53,10 +53,6 @@ def _do_set_status(project_id: str, status: str, error: str = "") -> None:
             if error:
                 p.error = error[:1000]
             db.commit()
-
-
-async def _set_status(project_id: str, status: str, error: str = "") -> None:
-    await asyncio.to_thread(_do_set_status, project_id, status, error)
 
 
 async def _plan_queries(llm, project: GraphProject) -> list[dict]:
@@ -175,7 +171,7 @@ def _parse_ref(ref) -> int | None:
     return None
 
 
-def _do_save(project_id: str, root_name: str, data: dict, results: list[dict]) -> tuple[int, int]:
+def _save(project_id: str, root_name: str, data: dict, results: list[dict]) -> tuple[int, int]:
     """将抽取结果去重落库，返回 (实体数, 关系数)"""
     url_by_ref: dict[int, str] = {}
     for i, r in enumerate(results, 1):
@@ -261,20 +257,12 @@ def _do_save(project_id: str, root_name: str, data: dict, results: list[dict]) -
         return len(name_to_id), rel_count
 
 
-async def _save(project_id: str, root_name: str, data: dict, results: list[dict]) -> tuple[int, int]:
-    return await asyncio.to_thread(_do_save, project_id, root_name, data, results)
-
-
-def _do_save_report(project_id: str, markdown: str) -> None:
+def _save_report(project_id: str, markdown: str) -> None:
     with SessionLocal() as db:
         p = db.get(GraphProject, project_id)
         if p:
             p.report_markdown = markdown
             db.commit()
-
-
-async def _save_report(project_id: str, markdown: str) -> None:
-    await asyncio.to_thread(_do_save_report, project_id, markdown)
 
 
 async def _report(llm, project: GraphProject, data: dict, results: list[dict]) -> str:
@@ -344,7 +332,7 @@ async def build_graph(project_id: str) -> None:
 
     settings = get_settings()
     if not settings.llm_api_key or not settings.llm_base_url or not settings.tavily_api_key:
-        await _set_status(project_id, "failed", "缺少 LLM / Tavily 配置，请在 backend/.env 中填写")
+        _set_status(project_id, "failed", "缺少 LLM / Tavily 配置，请在 backend/.env 中填写")
         return
 
     with SessionLocal() as db:
@@ -356,7 +344,7 @@ async def build_graph(project_id: str) -> None:
         db.expunge(project)
 
     try:
-        await _set_status(project_id, "building")
+        _set_status(project_id, "building")
         from app.services.llm import LLMClient
         from app.services.search import SearchClient
 
@@ -368,18 +356,18 @@ async def build_graph(project_id: str) -> None:
             raise ValueError("联网检索未获取到任何结果，请检查 TAVILY_API_KEY 或稍后重试")
         materials = _build_materials(results)
         data = await _extract(llm, project, materials)
-        n_ent, n_rel = await _save(project_id, project.root_name, data, results)
+        n_ent, n_rel = _save(project_id, project.root_name, data, results)
         if n_ent <= 1 and n_rel == 0:
             raise ValueError("未能从检索材料中抽取到有效的关系网络，请尝试补充行业或调整时效")
         # 生成关系网络分析报告（非阻断：失败不影响图谱本身完成）
         try:
             report = await _report(llm, project, data, results)
             if report.strip():
-                await _save_report(project_id, report)
+                _save_report(project_id, report)
         except Exception as exc:
             logger.warning("graph report generation failed for %s (non-blocking): %s", project_id, exc)
-        await _set_status(project_id, "completed")
+        _set_status(project_id, "completed")
         logger.info("graph %s built: %d entities, %d relations", project_id, n_ent, n_rel)
     except Exception as exc:
         logger.exception("graph build failed for %s", project_id)
-        await _set_status(project_id, "failed", str(exc))
+        _set_status(project_id, "failed", str(exc))

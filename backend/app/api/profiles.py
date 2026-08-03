@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import check_quota_or_403, get_current_user
+from app.api.deps import check_access, check_quota_or_403, get_current_user, is_admin
 from app.db.database import SessionLocal, get_db
 from app.db.models import Competitor, CompetitorProfile, ProfileTemplate, User
 from app.schemas.profiles import (
@@ -20,7 +20,7 @@ from app.schemas.profiles import (
 )
 from app.services.comparison import generate_comparison
 from app.services.profiles import freeze_profile, generate_profile
-from app.services.profile_extractor import create_extract_task, get_extract_task
+from app.services.profile_extractor import create_profile_generation_task, get_profile_generation_task
 from app.services.profile_report import generate_profile_insights, generate_profile_report
 from app.core.timeutil import utcnow
 
@@ -29,27 +29,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
 
-def _is_admin(user: User) -> bool:
-    return user.role == "admin"
-
-
 def _profile_access_check(p: CompetitorProfile, user: User) -> None:
     """统一画像访问校验：按 org_id 企业隔离 + user_id 个人隔离"""
     if not p:
         raise HTTPException(status_code=404, detail="画像不存在")
-    # 有企业归属：检查 org_id 匹配
-    if p.org_id == "":
-        # 系统级画像：管理员可直接访问，个人用户只能访问自己的
-        if _is_admin(user):
-            return
-        if not user.org_id:
-            # 个人用户：user_id 匹配本人，或存量空 user_id（部署前的旧记录，向后兼容）
-            if p.user_id and p.user_id != user.id:
-                raise HTTPException(status_code=403, detail="无权查看他人的画像")
-            return
-        raise HTTPException(status_code=403, detail="无权查看系统级画像")
-    elif p.org_id != user.org_id:
-        raise HTTPException(status_code=403, detail="无权查看其他企业的画像")
+    check_access(
+        p.org_id, p.user_id, user,
+        system_access="admin_only",
+        resource_name="画像",
+    )
 
 
 # ---------- 模板 ----------
@@ -64,7 +52,7 @@ def list_templates(
     if user.org_id:
         q = db.query(ProfileTemplate).filter(
             (ProfileTemplate.org_id == user.org_id)
-            | ((ProfileTemplate.org_id == "") & _is_admin(user))
+            | ((ProfileTemplate.org_id == "") & is_admin(user))
         )
     else:
         q = db.query(ProfileTemplate).filter(ProfileTemplate.created_by == user.id)
@@ -92,7 +80,7 @@ def update_template(tid: str, payload: ProfileTemplateIn, user: User = Depends(g
     if not t:
         raise HTTPException(status_code=404, detail="模板不存在")
     if t.org_id == "":
-        if not _is_admin(user) and not user.org_id:
+        if not is_admin(user) and not user.org_id:
             # 个人用户的私有模板：检查创建人
             if t.created_by != user.id:
                 raise HTTPException(status_code=403, detail="无权修改他人的模板")
@@ -115,7 +103,7 @@ def freeze_template(tid: str, user: User = Depends(get_current_user), db: Sessio
     if not t:
         raise HTTPException(status_code=404, detail="模板不存在")
     if t.org_id == "":
-        if not _is_admin(user):
+        if not is_admin(user):
             raise HTTPException(status_code=403, detail="仅管理员可冻结系统级模板")
     elif t.org_id != user.org_id:
         raise HTTPException(status_code=403, detail="无权冻结其他企业的模板")
@@ -133,7 +121,7 @@ def delete_template(tid: str, user: User = Depends(get_current_user), db: Sessio
     if not t:
         raise HTTPException(status_code=404, detail="模板不存在")
     if t.org_id == "":
-        if not _is_admin(user) and (not user.org_id and t.created_by != user.id):
+        if not is_admin(user) and (not user.org_id and t.created_by != user.id):
             raise HTTPException(status_code=403, detail="无权删除他人的模板")
     elif t.org_id != user.org_id:
         raise HTTPException(status_code=403, detail="无权删除其他企业的模板")
@@ -149,7 +137,7 @@ def delete_template(tid: str, user: User = Depends(get_current_user), db: Sessio
 
 @router.post("/generate", response_model=dict, status_code=202)
 async def generate_profile_api(payload: ProfileGenerateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """后台触发：生成竞品画像（使用 generate-from-crawl 异步任务模式）"""
+    """后台触发：生成竞品画像（使用异步任务模式）"""
     check_quota_or_403(db, user)
     competitor = db.get(Competitor, payload.competitor_id)
     if not competitor or (competitor.org_id != user.org_id and competitor.org_id != ""):
@@ -161,34 +149,21 @@ async def generate_profile_api(payload: ProfileGenerateIn, user: User = Depends(
         raise HTTPException(status_code=400, detail="模板未冻结")
 
     org_id = competitor.org_id if competitor else ""
-    task = create_extract_task(payload.competitor_id, payload.template_id, user.id, org_id)
+    task = create_profile_generation_task(payload.competitor_id, payload.template_id, user.id, org_id)
     return {"task_id": task.task_id, "competitor_id": payload.competitor_id, "template_id": payload.template_id, "status": "running"}
 
 
-# ---------- 基于爬取页面生成画像 ----------
-
+# 兼容别名：旧前端可能仍调用此路径（零改动兼容）
 @router.post("/generate-from-crawl", response_model=dict, status_code=202)
-async def generate_from_crawl(payload: ProfileGenerateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """后台触发：基于竞品已爬取的官网页面生成画像（直接提取模式）"""
-    check_quota_or_403(db, user)
-    competitor = db.get(Competitor, payload.competitor_id)
-    if not competitor or (competitor.org_id != user.org_id and competitor.org_id != ""):
-        raise HTTPException(status_code=404, detail="竞品不存在")
-    template = db.get(ProfileTemplate, payload.template_id)
-    if not template or (template.org_id != user.org_id and template.org_id != ""):
-        raise HTTPException(status_code=404, detail="模板不存在")
-    if template.frozen_at is None:
-        raise HTTPException(status_code=400, detail="模板未冻结")
-
-    org_id = competitor.org_id if competitor else ""
-    task = create_extract_task(payload.competitor_id, payload.template_id, user.id, org_id, crawl_only=True)
-    return {"task_id": task.task_id, "competitor_id": payload.competitor_id, "template_id": payload.template_id, "status": "running"}
+async def generate_from_crawl_alias(payload: ProfileGenerateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return await generate_profile_api(payload, user, db)
 
 
-@router.get("/generate-from-crawl/{task_id}", response_model=dict)
+# 主状态查询路径
+@router.get("/generate/{task_id}", response_model=dict)
 def get_generate_status(task_id: str, user: User = Depends(get_current_user)):
     """查询后台画像提取任务状态"""
-    task = get_extract_task(task_id)
+    task = get_profile_generation_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     if task.user_id != user.id and user.role != "admin":
@@ -207,6 +182,11 @@ def get_generate_status(task_id: str, user: User = Depends(get_current_user)):
         result["result"] = task.result
     return result
 
+# 兼容别名：旧前端可能仍调用此路径
+@router.get("/generate-from-crawl/{task_id}", response_model=dict)
+def get_generate_status_compat(task_id: str, user: User = Depends(get_current_user)):
+    return get_generate_status(task_id, user)
+
 
 @router.get("", response_model=list[CompetitorProfileOut])
 def list_profiles(
@@ -220,7 +200,7 @@ def list_profiles(
     if user.org_id:
         q = db.query(CompetitorProfile).filter(
             (CompetitorProfile.org_id == user.org_id)
-            | ((CompetitorProfile.org_id == "") & _is_admin(user))
+            | ((CompetitorProfile.org_id == "") & is_admin(user))
         )
     else:
         q = db.query(CompetitorProfile).filter(
@@ -232,11 +212,11 @@ def list_profiles(
 @router.get("/tasks", response_model=list[dict])
 def list_extract_tasks(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """列出当前用户的画像提取任务（含进行中和历史）"""
-    from app.db.models import ProfileExtractTask as ProfileExtractTaskModel
+    from app.db.models import ProfileGenerationTask as ProfileGenerationTaskModel
     tasks = (
-        db.query(ProfileExtractTaskModel)
-        .filter(ProfileExtractTaskModel.user_id == user.id)
-        .order_by(ProfileExtractTaskModel.created_at.desc())
+        db.query(ProfileGenerationTaskModel)
+        .filter(ProfileGenerationTaskModel.user_id == user.id)
+        .order_by(ProfileGenerationTaskModel.created_at.desc())
         .limit(50)
         .all()
     )
@@ -265,7 +245,7 @@ def get_profile(pid: str, user: User = Depends(get_current_user), db: Session = 
 
 @router.post("/{pid}/freeze", response_model=dict)
 def freeze_profile_api(pid: str, user: User = Depends(get_current_user)):
-    if not _is_admin(user):
+    if not is_admin(user):
         raise HTTPException(status_code=403, detail="仅管理员可冻结画像")
     return freeze_profile(pid)
 
@@ -274,25 +254,18 @@ def freeze_profile_api(pid: str, user: User = Depends(get_current_user)):
 
 @router.get("/{pid}/report", response_model=dict)
 async def get_profile_report(pid: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """返回画像报告：优先读取预生成的缓存（profile_data.report_markdown），
-    缓存不存在时实时调用 LLM 生成。"""
+    """返回画像报告：优先读取预生成的独立列缓存，缓存不存在时实时调用 LLM 生成。"""
     p = db.get(CompetitorProfile, pid)
     _profile_access_check(p, user)
 
-    # Check pre-generated cache first
-    try:
-        raw = p.profile_data or "{}"
-        pd = json.loads(raw) if isinstance(raw, str) else dict(raw)
-        cached = pd.get("report_markdown")
-        if cached:
-            return {
-                "report_markdown": cached,
-                "source_index": pd.get("source_index", []),
-                "quality": pd.get("report_quality") or {},
-                "insights": pd.get("insights"),
-            }
-    except (ValueError, TypeError):
-        pass
+    # 优先读取独立列（拆分后）
+    if p.report_markdown:
+        return {
+            "report_markdown": p.report_markdown,
+            "source_index": json.loads(p.source_index_json or "[]"),
+            "quality": json.loads(p.profile_data or "{}").get("report_quality", {}),
+            "insights": json.loads(p.insights_json) if p.insights_json else None,
+        }
 
     # Fallback: generate on-demand
     result = await generate_profile_report(pid, user.id, p.org_id)
@@ -301,20 +274,16 @@ async def get_profile_report(pid: str, user: User = Depends(get_current_user), d
 
 @router.get("/{pid}/insights", response_model=ProfileInsightsOut)
 async def get_profile_insights(pid: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """返回画像洞察数据：优先读取预生成的缓存（profile_data.insights），
-    缓存不存在时实时调用 LLM 生成。"""
+    """返回画像洞察数据：优先读取预生成的独立列缓存，缓存不存在时实时调用 LLM 生成。"""
     p = db.get(CompetitorProfile, pid)
     _profile_access_check(p, user)
 
-    # Check pre-generated cache first
-    try:
-        raw = p.profile_data or "{}"
-        pd = json.loads(raw) if isinstance(raw, str) else dict(raw)
-        cached = pd.get("insights")
-        if cached and isinstance(cached, dict) and (cached.get("scores") or cached.get("verdict") or cached.get("swot")):
-            return cached
-    except (ValueError, TypeError):
-        pass
+    # 优先读取独立列
+    if p.insights_json and p.insights_json != "[]":
+        try:
+            return json.loads(p.insights_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     # Fallback: generate on-demand
     result = await generate_profile_insights(pid, user.id, p.org_id)
@@ -327,21 +296,14 @@ async def get_profile_report_full(pid: str, user: User = Depends(get_current_use
     p = db.get(CompetitorProfile, pid)
     _profile_access_check(p, user)
 
-    # Try pre-generated cache
-    try:
-        raw = p.profile_data or "{}"
-        pd = json.loads(raw) if isinstance(raw, str) else dict(raw)
-        cached_report = pd.get("report_markdown")
-        cached_insights = pd.get("insights")
-        if cached_report:
-            return {
-                "report_markdown": cached_report,
-                "source_index": pd.get("source_index", []),
-                "quality": pd.get("report_quality") or {},
-                "insights": cached_insights,
-            }
-    except (ValueError, TypeError):
-        pass
+    # 优先读取独立列
+    if p.report_markdown:
+        return {
+            "report_markdown": p.report_markdown,
+            "source_index": json.loads(p.source_index_json or "[]"),
+            "quality": json.loads(p.profile_data or "{}").get("report_quality", {}),
+            "insights": json.loads(p.insights_json) if p.insights_json else None,
+        }
 
     # Fallback: generate both on-demand
     from app.services.profile_report import generate_profile_report, generate_profile_insights
@@ -361,19 +323,20 @@ async def get_profile_report_full(pid: str, user: User = Depends(get_current_use
 def compare_profiles(payload: ComparisonIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     template = db.get(ProfileTemplate, payload.template_id)
     if not template:
-        raise HTTPException(status_code=404, detail="模板不存在")
-    # 企业模板：仅同企业用户可访问；个人模板：仅创建人可访问
-    if template.org_id != "" and template.org_id != user.org_id:
         raise HTTPException(status_code=403, detail="无权访问该模板")
-    if template.org_id == "" and template.created_by != user.id:
-        raise HTTPException(status_code=403, detail="无权访问该模板")
+    if template.org_id != user.org_id:
+        if template.org_id != "" or user.org_id:
+            raise HTTPException(status_code=403, detail="无权访问该模板")
+        # 两人都无企业：检查创建人
+        if template.created_by != user.id:
+            raise HTTPException(status_code=403, detail="无权访问该模板")
     valid_ids = []
-    for pid in payload.competitor_ids:
+    for pid in payload.profile_ids:
         p = db.get(CompetitorProfile, pid)
         if not p:
             raise HTTPException(status_code=404, detail=f"画像 {pid} 不存在")
         if p.org_id == "":
-            if not _is_admin(user):
+            if not is_admin(user):
                 if not user.org_id:
                     if p.user_id and p.user_id != user.id:
                         raise HTTPException(status_code=403, detail=f"无权访问画像 {pid}")
@@ -382,7 +345,4 @@ def compare_profiles(payload: ComparisonIn, user: User = Depends(get_current_use
         elif p.org_id != user.org_id:
             raise HTTPException(status_code=403, detail=f"无权访问画像 {pid}")
         valid_ids.append(pid)
-    try:
-        return generate_comparison(payload.template_id, valid_ids)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    return generate_comparison(payload.template_id, valid_ids)

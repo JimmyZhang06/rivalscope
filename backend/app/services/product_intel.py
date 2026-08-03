@@ -448,6 +448,15 @@ async def _layer3_synthesize(
     # 合并输出
     merged = _merge_results(broad_data, deep_data, dimensions)
 
+    # 新增：归一化维度字段值格式 + 写入 dimension_labels
+    from app.services.profile_extractor import _normalize_dimensions
+    dim_label_map = {d["key"]: d["label"] for d in dimensions}
+    merged["dimensions"] = _normalize_dimensions(
+        merged.get("dimensions", {}),
+        dim_label_map,
+    )
+    merged["dimension_labels"] = dim_label_map
+
     # 来源引用
     source_refs = _build_source_refs(search_results, crawled_pages)
 
