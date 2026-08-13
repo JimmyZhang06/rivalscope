@@ -1,502 +1,376 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Clock,
-  FileText,
-  LoaderCircle,
+  Activity,
+  AlertCircle,
+  AlertTriangle,
+  ArrowRight,
+  Bell,
+  Building2,
+  CheckCircle2,
+  Clock3,
+  FileSearch,
+  Network,
+  RadioTower,
   RefreshCw,
-  User,
-  Target,
+  Sparkles,
 } from 'lucide-react'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
-import { listResearch, listTrackers, listProfiles, getUnreadCount } from '../../api/client'
-import type { TaskBrief, Tracker, CompetitorProfile } from '../../api/types'
-import { useAuth } from '../../auth/AuthContext'
-import StatusBadge from '../../components/StatusBadge'
+import type { LucideIcon } from 'lucide-react'
+import {
+  getIntelligenceEventSummary,
+  listAssets,
+  listIntelligenceEvents,
+  listTrackers,
+} from '../../api/client'
+import type {
+  IntelligenceEvent,
+  IntelligenceEventStatus,
+  IntelligenceEventSummary,
+  IntelligenceEventType,
+  IntelligenceObject,
+  IntelligenceObjectType,
+  Tracker,
+} from '../../api/types'
+import { useAppLayoutContext } from '../../components/layout/AppLayoutContext'
 import { CardSkeleton, ListSkeleton } from '../../components/Skeleton'
-import { fmtDateTime } from '../../utils/time'
 import { usePageTitle } from '../../hooks/usePageTitle'
+import { fmtDateTime } from '../../utils/time'
 
-const TASK_STATUS_META: Record<string, { label: string; color: string }> = {
-  pending:    { label: '等待中', color: '#9ca3af' },
-  planning:   { label: '规划中', color: '#6366f1' },
-  searching:  { label: '检索中', color: '#06b6d4' },
-  analyzing:  { label: '分析中', color: '#f59e0b' },
-  reporting:  { label: '生成中', color: '#3b82f6' },
-  completed:  { label: '已完成', color: '#10b981' },
-  failed:     { label: '失败',   color: '#ef4444' },
+const EVENT_TYPE_META = {
+  research: { label: '专题调研', icon: FileSearch, classes: 'bg-blue-50 text-blue-700' },
+  tracker: { label: '监测', icon: RadioTower, classes: 'bg-violet-50 text-violet-700' },
+  graph: { label: '关系图谱', icon: Network, classes: 'bg-cyan-50 text-cyan-700' },
+} satisfies Record<IntelligenceEventType, { label: string; icon: LucideIcon; classes: string }>
+
+const EVENT_STATUS_META = {
+  queued: { label: '排队中', classes: 'bg-gray-100 text-gray-700', dot: 'bg-gray-400' },
+  running: { label: '运行中', classes: 'bg-blue-50 text-blue-700', dot: 'bg-blue-500' },
+  completed: { label: '已完成', classes: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
+  failed: { label: '失败', classes: 'bg-red-50 text-red-700', dot: 'bg-red-500' },
+} satisfies Record<IntelligenceEventStatus, { label: string; classes: string; dot: string }>
+
+const ASSET_TYPE_META = {
+  competitor: { label: '对象', icon: Building2, classes: 'bg-blue-50 text-blue-700' },
+  profile: { label: '画像', icon: Sparkles, classes: 'bg-violet-50 text-violet-700' },
+  research_task: { label: '调研', icon: FileSearch, classes: 'bg-emerald-50 text-emerald-700' },
+  graph_project: { label: '图谱', icon: Network, classes: 'bg-amber-50 text-amber-700' },
+} satisfies Record<IntelligenceObjectType, { label: string; icon: LucideIcon; classes: string }>
+
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-red-100 bg-red-50/60 px-5 text-center">
+      <AlertCircle className="h-5 w-5 text-red-500" />
+      <p className="mt-2 text-sm text-red-700">{message}</p>
+      <button type="button" onClick={onRetry} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-red-700 hover:underline">
+        <RefreshCw className="h-3.5 w-3.5" /> 重新加载
+      </button>
+    </div>
+  )
 }
 
-export default function DashboardPage() {
-  const { user } = useAuth()
-  usePageTitle('工作台')
-
-  const [tasks, setTasks] = useState<TaskBrief[]>([])
-  const [profiles, setProfiles] = useState<CompetitorProfile[]>([])
-  const [trackers, setTrackers] = useState<Tracker[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
-
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [retrying, setRetrying] = useState(false)
-
-  const fetchAll = useCallback(async () => {
-    setError(null)
-    let hasCriticalError = false
-    try {
-      const [tasksData, profilesData] = await Promise.all([
-        listResearch(),
-        listProfiles(),
-      ])
-      setTasks(tasksData)
-      setProfiles(profilesData)
-    } catch (e) {
-      console.warn('核心数据加载失败:', e)
-      hasCriticalError = true
-    }
-    // 追踪项（非企业用户会 403，静默忽略）
-    listTrackers()
-      .then(setTrackers)
-      .catch(() => {})
-    // 未读通知数
-    getUnreadCount()
-      .then((r: { count: number }) => setUnreadCount(r.count))
-      .catch(() => {})
-    setLoading(false)
-    if (hasCriticalError) {
-      setError('核心数据加载失败，请检查网络后重试')
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchAll()
-  }, [fetchAll])
-
-  // 30 秒定期刷新
-  useEffect(() => {
-    const timer = setInterval(fetchAll, 30_000)
-    return () => clearInterval(timer)
-  }, [fetchAll])
-
-  // 未读通知数单独刷新（与通知铃铛同步）
-  useEffect(() => {
-    getUnreadCount()
-      .then((r: { count: number }) => setUnreadCount(r.count))
-      .catch(() => {})
-  }, [fetchAll])
-
-  const handleRetry = async () => {
-    setRetrying(true)
-    await fetchAll()
-    setRetrying(false)
-  }
-
-  // ---- 计算 ----
-  const completed = tasks.filter((t) => t.status === 'completed').length
-  const running = tasks.filter((t) => !['completed', 'failed'].includes(t.status)).length
-  const profileCount = profiles.length
-  const trackerCount = trackers.length
-  const frozenCount = profiles.filter((p) => p.status === 'frozen').length
-  const draftCount = profiles.filter((p) => p.status === 'draft').length
-
-  const activeTrackers = trackers.filter((t) => t.enabled).slice(0, 5)
-
-  // 任务状态分布
-  const statusCounts = tasks.reduce<Record<string, number>>((acc, t) => {
-    acc[t.status] = (acc[t.status] || 0) + 1
-    return acc
-  }, {})
-  const statusDistribution = Object.entries(TASK_STATUS_META)
-    .filter(([key]) => (statusCounts[key] || 0) > 0)
-    .map(([key, meta]) => ({
-      name: meta.label,
-      value: statusCounts[key] || 0,
-      color: meta.color,
-    }))
-
-  // ---- 渲染 ----
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        <CardSkeleton />
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <CardSkeleton key={i} />
-          ))}
-        </div>
-        <div className="mt-8 grid gap-6 lg:grid-cols-2">
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
-        <div className="mt-8">
-          <ListSkeleton count={3} />
-        </div>
+function SectionHeader({ title, description, to, linkLabel }: { title: string; description: string; to?: string; linkLabel?: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+        <p className="mt-0.5 text-xs text-gray-500">{description}</p>
       </div>
-    )
-  }
+      {to && <Link to={to} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700">{linkLabel ?? '查看全部'} <ArrowRight className="h-3.5 w-3.5" /></Link>}
+    </div>
+  )
+}
 
-  if (error && tasks.length === 0) {
-    return (
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
-          <p className="text-sm text-red-700">{error}</p>
-          <button
-            onClick={handleRetry}
-            disabled={retrying}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
-          >
-            <RefreshCw className={`h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
-            {retrying ? '重试中…' : '重新加载'}
-          </button>
+function MetricCard({ label, value, note, icon: Icon, classes, to }: {
+  label: string
+  value: number
+  note: string
+  icon: LucideIcon
+  classes: string
+  to: string
+}) {
+  return (
+    <Link to={to} className="group rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-gray-500">{label}</p>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-gray-950">{value}</p>
         </div>
+        <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${classes}`}><Icon className="h-4 w-4" /></span>
+      </div>
+      <p className="mt-2 flex items-center justify-between text-xs text-gray-400"><span>{note}</span><ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" /></p>
+    </Link>
+  )
+}
+
+function EventFeed({ events }: { events: IntelligenceEvent[] }) {
+  if (events.length === 0) {
+    return (
+      <div className="flex min-h-64 flex-col items-center justify-center text-center">
+        <Activity className="h-8 w-8 text-gray-300" />
+        <p className="mt-3 text-sm font-medium text-gray-700">还没有情报事件</p>
+        <p className="mt-1 max-w-xs text-xs leading-5 text-gray-400">发起调研、运行监测或构建图谱后，变化会汇聚到这里。</p>
+        <Link to="/app/new" className="mt-3 text-xs font-semibold text-blue-600 hover:underline">发起首次分析</Link>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
-      {/* 欢迎栏 + 快捷操作 */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">你好，{user?.nickname || '朋友'}</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {unreadCount > 0
-              ? `你有 ${unreadCount} 条未读通知`
-              : '欢迎回到竞品调研工作台'}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/app/new"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
-          >
-            ＋ 新建调研
-          </Link>
-          <Link
-            to="/app/trackers"
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-400 hover:bg-gray-50"
-          >
-            <Clock className="inline-block h-4 w-4 -mt-0.5 mr-1" />
-            追踪
-          </Link>
-          <Link
-            to="/app/competitors"
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-400 hover:bg-gray-50"
-          >
-            竞品管理
-          </Link>
-        </div>
-      </div>
-
-      {/* 统计卡片 */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          icon={<FileText className="h-4 w-4" />}
-          label="已完成调研"
-          value={String(completed)}
-          subtitle={`共 ${tasks.length} 个任务`}
-        />
-        <StatCard
-          icon={<LoaderCircle className="h-4 w-4" />}
-          label="进行中"
-          value={String(running)}
-        />
-        <StatCard
-          icon={<Target className="h-4 w-4" />}
-          label="画像数量"
-          value={String(profileCount)}
-          subtitle={`${frozenCount} 已冻结 · ${draftCount} 草稿`}
-          link="/app/profiles"
-          linkLabel="管理画像 →"
-        />
-        <StatCard
-          icon={<Clock className="h-4 w-4" />}
-          label="追踪数量"
-          value={String(trackerCount)}
-          subtitle={`${trackers.filter((t) => t.enabled).length} 个已启用`}
-          link="/app/trackers"
-          linkLabel="管理追踪 →"
-        />
-      </div>
-
-      {/* 图表区：画像状态 + 任务状态分布 */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        {/* 画像板块 */}
-        <div className="lg:col-span-2 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-50 text-indigo-700">
-                <Target className="h-4 w-4" />
+    <div className="mt-4 divide-y divide-gray-100">
+      {events.slice(0, 6).map((event) => {
+        const type = EVENT_TYPE_META[event.event_type]
+        const status = EVENT_STATUS_META[event.status]
+        const TypeIcon = type.icon
+        return (
+          <Link key={event.id} to={event.href} className="group flex gap-3 py-3.5 first:pt-0 last:pb-0">
+            <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${type.classes}`}><TypeIcon className="h-4 w-4" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="truncate text-sm font-semibold text-gray-900 group-hover:text-blue-700">{event.title}</span>
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${status.classes}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />{status.label}
+                </span>
               </span>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">画像</h3>
-                <p className="text-xs text-gray-400">共 {profileCount} 个画像 · {frozenCount} 已冻结 · {draftCount} 草稿</p>
-              </div>
-            </div>
-            <Link to="/app/profiles" className="text-xs text-blue-600 hover:underline">
-              管理画像 →
-            </Link>
-          </div>
-
-          {/* 最近画像列表 */}
-          <div className="mt-4">
-            {profiles.length > 0 ? (
-              <ul className="space-y-2">
-                {profiles.slice(0, 5).map((p) => {
-                  const statusMeta = p.status === 'frozen'
-                    ? { label: '已冻结', cls: 'bg-emerald-50 text-emerald-700' }
-                    : p.status === 'reviewed'
-                      ? { label: '已审核', cls: 'bg-blue-50 text-blue-700' }
-                      : { label: '草稿', cls: 'bg-amber-50 text-amber-700' }
-                  const summary = typeof p.profile_data === 'object' && p.profile_data?.summary
-                    ? (typeof p.profile_data.summary === 'string' ? p.profile_data.summary : (p.profile_data.summary as any)?.key_points?.[0] || '')
-                    : ''
-                  return (
-                    <li key={p.id}>
-                      <Link
-                        to={`/app/profiles/${p.id}`}
-                        className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-2.5 transition hover:border-indigo-200 hover:bg-indigo-50/30"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate text-sm font-medium text-gray-800">
-                              竞品 ID：{p.competitor_id.slice(0, 8)}
-                            </span>
-                            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${statusMeta.cls}`}>
-                              {statusMeta.label}
-                            </span>
-                          </div>
-                          {summary && (
-                            <p className="mt-0.5 truncate text-xs text-gray-500">{String(summary).slice(0, 60)}</p>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-400">{p.source_refs?.length || 0} 来源</span>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-8">
-                <p className="text-sm text-gray-400">还没有画像</p>
-                <Link to="/app/profiles" className="mt-2 text-sm text-blue-600 hover:underline">
-                  去生成画像 →
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 任务状态分布 */}
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-purple-50 text-purple-700">
-              <FileText className="h-4 w-4" />
+              <span className="mt-1 block truncate text-xs text-gray-500">{event.summary || `${type.label}事件暂无摘要`}</span>
+              <span className="mt-1.5 block text-[11px] text-gray-400">{type.label} · {fmtDateTime(event.occurred_at)}</span>
             </span>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">任务状态分布</h3>
-              <p className="text-xs text-gray-400">共 {tasks.length} 个任务</p>
-            </div>
-          </div>
-          <div className="mt-3 flex items-center justify-center">
-            {statusDistribution.length > 0 ? (
-              <div className="h-52 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statusDistribution}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={48}
-                      outerRadius={80}
-                      paddingAngle={3}
-                      stroke="none"
-                    >
-                      {statusDistribution.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value: unknown, name: unknown) => [`${value as number} 个`, name as string]}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="mt-2 flex flex-wrap justify-center gap-3">
-                  {statusDistribution.map((entry) => (
-                    <span key={entry.name} className="flex items-center gap-1.5 text-xs text-gray-600">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
-                      {entry.name} {entry.value}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="h-52 flex items-center justify-center text-sm text-gray-400">
-                暂无任务
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 追踪项状态预览 */}
-      {activeTrackers.length > 0 && (
-        <section className="mt-6">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">
-              <Clock className="inline-block mr-1.5 h-5 w-5 -mt-0.5 text-gray-400" />
-              活跃追踪
-            </h2>
-            <Link to="/app/trackers" className="text-sm text-blue-600 hover:underline">
-              管理追踪 →
-            </Link>
-          </div>
-          <ul className="space-y-2">
-            {activeTrackers.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium text-gray-900">{t.product_name}</span>
-                    {t.running ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-xs text-cyan-700">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500" />
-                        执行中
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                        {t.frequency === 'daily' ? '每日' : t.frequency === 'weekly' ? '每周' : '每月'}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 truncate text-xs text-gray-500">
-                    {t.competitors && <>竞品：{t.competitors} · </>}
-                    {t.next_run_at ? `下次运行：${fmtDateTime(t.next_run_at)}` : '已启用'}
-                  </p>
-                </div>
-                <Link
-                  to={`/app/trackers/${t.id}`}
-                  className="text-sm font-medium text-blue-700 hover:underline"
-                >
-                  查看 →
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* 最近任务 */}
-      <section className="mt-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">最近调研</h2>
-          <Link to="/app/tasks" className="text-sm text-blue-600 hover:underline">
-            查看全部 →
+            <ArrowRight className="mt-2 h-4 w-4 shrink-0 text-gray-300 group-hover:text-blue-500" />
           </Link>
-        </div>
-        {tasks.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 py-12 text-center">
-            <p className="text-sm text-gray-400">还没有调研任务</p>
-            <Link to="/app/new" className="mt-2 inline-block text-sm text-blue-600 hover:underline">
-              发起第一次调研 →
-            </Link>
-          </div>
-        ) : (
-          <ul className="space-y-3">
-            {tasks.slice(0, 5).map((t) => (
-              <li key={t.id}>
-                <Link
-                  to={`/app/tasks/${t.id}`}
-                  className="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-gray-300"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-medium text-gray-900">{t.product_name}</span>
-                      <StatusBadge status={t.status} />
-                      {t.creator_nickname && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-xs text-cyan-800">
-                          <User className="h-3 w-3" /> {t.creator_nickname}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 truncate text-xs text-gray-500">
-                      {t.competitors && <>竞品：{t.competitors} · </>}
-                      {fmtDateTime(t.created_at)}
-                    </p>
-                  </div>
-                  <span className="text-gray-300">→</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        )
+      })}
     </div>
   )
 }
 
-// ---- 子组件 ----
+function AssetList({ assets }: { assets: IntelligenceObject[] }) {
+  if (assets.length === 0) {
+    return <div className="py-12 text-center text-sm text-gray-400">还没有可展示的情报资产</div>
+  }
+  return (
+    <div className="mt-4 space-y-1">
+      {assets.slice(0, 5).map((asset) => {
+        const meta = ASSET_TYPE_META[asset.type]
+        const Icon = meta.icon
+        return (
+          <Link key={asset.id} to={asset.detail_path} className="group flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-gray-50">
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.classes}`}><Icon className="h-4 w-4" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-gray-800 group-hover:text-blue-700">{asset.title}</span>
+              <span className="mt-0.5 block truncate text-[11px] text-gray-400">{meta.label} · 更新于 {fmtDateTime(asset.updated_at)}</span>
+            </span>
+            <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-blue-500" />
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
 
-function StatCard({
-  icon,
-  label,
-  value,
-  subtitle,
-  progress,
-  memberInfo,
-  link,
-  linkLabel,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  subtitle?: string
-  progress?: { percent: number; unlimited: boolean }
-  memberInfo?: string
-  link?: string
-  linkLabel?: string
-}) {
-  const content = (
-    <>
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{label}</p>
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-gray-50 text-gray-400">
-          {icon}
-        </span>
-      </div>
-      <p className="mt-1 text-2xl font-bold tracking-tight text-gray-900">{value}</p>
-      {progress && !progress.unlimited && (
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-          <div
-            className={`h-full rounded-full transition-all ${progress.percent >= 100 ? 'bg-red-500' : 'bg-blue-600'}`}
-            style={{ width: `${progress.percent}%` }}
-          />
+export default function DashboardPage() {
+  usePageTitle('情报总览')
+  const { unreadCount, unreadError, refreshUnreadCount } = useAppLayoutContext()
+  const [summary, setSummary] = useState<IntelligenceEventSummary | null>(null)
+  const [events, setEvents] = useState<IntelligenceEvent[]>([])
+  const [assets, setAssets] = useState<IntelligenceObject[]>([])
+  const [trackers, setTrackers] = useState<Tracker[]>([])
+  const [summaryError, setSummaryError] = useState('')
+  const [eventsError, setEventsError] = useState('')
+  const [assetsError, setAssetsError] = useState('')
+  const [trackersError, setTrackersError] = useState('')
+  const [criticalLoading, setCriticalLoading] = useState(true)
+  const [trackersLoading, setTrackersLoading] = useState(true)
+  const [refreshingEvents, setRefreshingEvents] = useState(false)
+
+  const loadSummary = useCallback(async () => {
+    setSummaryError('')
+    try {
+      setSummary(await getIntelligenceEventSummary())
+    } catch (error) {
+      setSummaryError(error instanceof Error ? error.message : '事件摘要加载失败')
+    }
+  }, [])
+
+  const loadEvents = useCallback(async () => {
+    setEventsError('')
+    try {
+      const result = await listIntelligenceEvents({ page: 1, pageSize: 12 })
+      setEvents(result.items)
+    } catch (error) {
+      setEventsError(error instanceof Error ? error.message : '最新事件加载失败')
+    }
+  }, [])
+
+  const loadAssets = useCallback(async () => {
+    setAssetsError('')
+    try {
+      const result = await listAssets({ page: 1, pageSize: 5 })
+      setAssets(result.items)
+    } catch (error) {
+      setAssetsError(error instanceof Error ? error.message : '最近资产加载失败')
+    }
+  }, [])
+
+  const loadTrackers = useCallback(async () => {
+    setTrackersLoading(true)
+    setTrackersError('')
+    try {
+      setTrackers(await listTrackers(1, 20))
+    } catch (error) {
+      setTrackersError(error instanceof Error ? error.message : '监测数据不可用，可能需要企业权限')
+    } finally {
+      setTrackersLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    setCriticalLoading(true)
+    Promise.allSettled([loadSummary(), loadEvents(), loadAssets()]).finally(() => {
+      if (active) setCriticalLoading(false)
+    })
+    loadTrackers()
+    return () => { active = false }
+  }, [loadAssets, loadEvents, loadSummary, loadTrackers])
+
+  const hasRunningEvent = events.some((event) => event.status === 'running')
+  useEffect(() => {
+    if (!hasRunningEvent) return
+    const timer = window.setInterval(async () => {
+      setRefreshingEvents(true)
+      await Promise.allSettled([loadEvents(), loadSummary()])
+      setRefreshingEvents(false)
+    }, 15_000)
+    return () => window.clearInterval(timer)
+  }, [hasRunningEvent, loadEvents, loadSummary])
+
+  const failedEvents = useMemo(() => events.filter((event) => event.status === 'failed'), [events])
+  const runningEvents = useMemo(() => events.filter((event) => event.status === 'running'), [events])
+  const activeTrackers = useMemo(() => trackers.filter((tracker) => tracker.enabled).slice(0, 5), [trackers])
+  const needsAttention = (summary?.failed ?? failedEvents.length) + unreadCount
+
+  const retryCritical = () => {
+    setCriticalLoading(true)
+    Promise.allSettled([loadSummary(), loadEvents(), loadAssets()]).finally(() => setCriticalLoading(false))
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 px-5 py-6 text-white shadow-sm sm:px-7">
+        <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-300">Intelligence overview</p>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">今天的情报，从事件开始</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+              {criticalLoading
+                ? '正在汇聚最新事件与资产…'
+                : `共 ${summary?.total ?? events.length} 条事件，${summary?.active ?? runningEvents.length} 项正在运行，${needsAttention} 项需要关注。`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/app/competitors" className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 hover:bg-blue-50"><Building2 className="h-4 w-4" />添加对象</Link>
+            <Link to="/app/trackers" className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:border-slate-500"><RadioTower className="h-4 w-4" />创建监测</Link>
+            <Link to="/app/new" className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:border-slate-500"><Sparkles className="h-4 w-4" />发起分析</Link>
+          </div>
+        </div>
+      </section>
+
+      {criticalLoading ? (
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <CardSkeleton key={index} />)}</div>
+      ) : summaryError ? (
+        <div className="mt-5"><ErrorState message={summaryError} onRetry={loadSummary} /></div>
+      ) : (
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard label="事件总量" value={summary?.total ?? events.length} note="查看全部事件" icon={Activity} classes="bg-slate-100 text-slate-700" to="/app/intelligence" />
+          <MetricCard label="正在运行" value={summary?.active ?? runningEvents.length} note={refreshingEvents ? '正在刷新状态' : hasRunningEvent ? '每 15 秒自动更新' : '当前无运行事件'} icon={Clock3} classes="bg-blue-50 text-blue-700" to="/app/intelligence" />
+          <MetricCard label="已完成" value={summary?.completed ?? 0} note="查看分析成果" icon={CheckCircle2} classes="bg-emerald-50 text-emerald-700" to="/app/intelligence" />
+          <MetricCard label="需要关注" value={summary?.failed ?? failedEvents.length} note="检查失败事件" icon={AlertTriangle} classes="bg-red-50 text-red-700" to="/app/intelligence" />
         </div>
       )}
-      {progress && progress.unlimited && (
-        <p className="mt-1 text-xs text-emerald-600">企业版不限次数</p>
-      )}
-      {subtitle && <p className="mt-1 text-xs text-gray-400">{subtitle}</p>}
-      {memberInfo && <p className="mt-1 text-xs text-blue-500">{memberInfo}</p>}
-      {link && linkLabel && (
-        <a href={link} className="mt-1 inline-block text-xs text-blue-600 hover:underline">
-          {linkLabel}
-        </a>
-      )}
-    </>
-  )
 
-  if (link) {
-    return (
-      <Link to={link} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300">
-        {content}
-      </Link>
-    )
-  }
-  return <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">{content}</div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <SectionHeader title="最新情报事件" description="调研、监测与图谱的最新变化" to="/app/intelligence" />
+          {criticalLoading ? <div className="mt-4"><ListSkeleton count={5} /></div> : eventsError ? <div className="mt-4"><ErrorState message={eventsError} onRetry={loadEvents} /></div> : <EventFeed events={events} />}
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <SectionHeader title="需要处理" description="失败、运行中事项与未读通知" />
+          <div className="mt-4 space-y-2.5">
+            {failedEvents.slice(0, 3).map((event) => (
+              <Link key={event.id} to={event.href} className="flex items-start gap-3 rounded-lg border border-red-100 bg-red-50/70 p-3 hover:border-red-200">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-red-900">{event.title}</span><span className="mt-0.5 block text-xs text-red-600">处理失败事件</span></span>
+                <ArrowRight className="mt-1 h-3.5 w-3.5 text-red-400" />
+              </Link>
+            ))}
+            {runningEvents.slice(0, 3).map((event) => (
+              <Link key={event.id} to={event.href} className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50/70 p-3 hover:border-blue-200">
+                <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-blue-600 motion-reduce:animate-none" />
+                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-blue-900">{event.title}</span><span className="mt-0.5 block text-xs text-blue-600">查看运行进度</span></span>
+                <ArrowRight className="mt-1 h-3.5 w-3.5 text-blue-400" />
+              </Link>
+            ))}
+            {unreadCount > 0 && (
+              <button type="button" onClick={() => window.dispatchEvent(new Event('open-notifications'))} className="flex w-full items-start gap-3 rounded-lg border border-amber-100 bg-amber-50/70 p-3 text-left hover:border-amber-200">
+                <Bell className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-amber-950">{unreadCount} 条未读通知</span><span className="mt-0.5 block text-xs text-amber-700">打开通知中心查看</span></span>
+                <ArrowRight className="mt-1 h-3.5 w-3.5 text-amber-500" />
+              </button>
+            )}
+            {unreadError && <ErrorState message={unreadError} onRetry={refreshUnreadCount} />}
+            {!eventsError && failedEvents.length === 0 && runningEvents.length === 0 && unreadCount === 0 && !unreadError && (
+              <div className="flex min-h-44 flex-col items-center justify-center text-center">
+                <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+                <p className="mt-3 text-sm font-medium text-gray-700">当前没有待处理事项</p>
+                <p className="mt-1 text-xs text-gray-400">有新变化时会在这里提示你。</p>
+              </div>
+            )}
+            {eventsError && <ErrorState message="待处理事件暂时无法加载" onRetry={loadEvents} />}
+          </div>
+        </section>
+      </div>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <SectionHeader title="最近情报资产" description="最近更新的对象、报告、画像与图谱" to="/app/assets" />
+          {criticalLoading ? <div className="mt-4"><ListSkeleton count={4} /></div> : assetsError ? <div className="mt-4"><ErrorState message={assetsError} onRetry={loadAssets} /></div> : <AssetList assets={assets} />}
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <SectionHeader title="活跃监测" description="已启用的自动监测规则" to="/app/trackers" />
+          {trackersLoading ? <div className="mt-4"><ListSkeleton count={4} /></div> : trackersError ? <div className="mt-4"><ErrorState message={trackersError} onRetry={loadTrackers} /></div> : activeTrackers.length ? (
+            <div className="mt-4 space-y-1">
+              {activeTrackers.map((tracker) => (
+                <Link key={tracker.id} to={`/app/trackers/${tracker.id}`} className="group flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-gray-50">
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${tracker.running ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}><RadioTower className="h-4 w-4" /></span>
+                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-gray-800 group-hover:text-blue-700">{tracker.product_name}</span><span className="mt-0.5 block text-[11px] text-gray-400">{tracker.running ? '正在运行' : tracker.next_run_at ? `下次 ${fmtDateTime(tracker.next_run_at)}` : '已启用'}</span></span>
+                  <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-blue-500" />
+                </Link>
+              ))}
+            </div>
+          ) : <div className="py-12 text-center"><RadioTower className="mx-auto h-7 w-7 text-gray-300" /><p className="mt-2 text-sm text-gray-500">暂无活跃监测</p><Link to="/app/trackers" className="mt-2 inline-block text-xs font-semibold text-blue-600 hover:underline">创建监测</Link></div>}
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <SectionHeader title="快速分析" description="从问题出发，选择合适的分析方式" />
+          <div className="mt-4 space-y-2">
+            {[
+              { to: '/app/new', label: '专题调研', description: '围绕产品与市场问题生成研究报告', icon: FileSearch, classes: 'bg-blue-50 text-blue-700' },
+              { to: '/app/profiles', label: '画像与对比', description: '沉淀对象画像并进行横向比较', icon: Sparkles, classes: 'bg-violet-50 text-violet-700' },
+              { to: '/app/graph', label: '关系图谱', description: '发现产业链实体与关系网络', icon: Network, classes: 'bg-cyan-50 text-cyan-700' },
+            ].map((action) => (
+              <Link key={action.label} to={action.to} className="group flex items-center gap-3 rounded-xl border border-gray-100 p-3 hover:border-blue-100 hover:bg-blue-50/30">
+                <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${action.classes}`}><action.icon className="h-4 w-4" /></span>
+                <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-gray-800 group-hover:text-blue-700">{action.label}</span><span className="mt-0.5 block text-xs text-gray-400">{action.description}</span></span>
+                <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      {(summaryError || eventsError || assetsError) && !criticalLoading && (
+        <button type="button" onClick={retryCritical} className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-gray-500 hover:text-blue-700"><RefreshCw className="h-3.5 w-3.5" />重试所有失败模块</button>
+      )}
+    </div>
+  )
 }

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, Inbox } from 'lucide-react'
-import { getUnreadCount, listNotifications, markNotificationsRead } from '../api/client'
+import { listNotifications, markNotificationsRead } from '../api/client'
 import type { NotificationItem } from '../api/types'
 
 /** 相对时间：刚刚 / n 分钟前 / n 小时前 / 日期 */
@@ -14,26 +14,18 @@ function timeAgo(iso: string) {
   return new Date(t).toLocaleDateString('zh-CN')
 }
 
-/** 站内通知铃铛：未读红点 + 下拉最近通知，30s 轮询未读数 */
-export default function NotificationBell() {
+interface NotificationBellProps {
+  count: number
+  onCountChange: () => void
+}
+
+/** 站内通知铃铛：未读计数由应用框架统一加载，避免页面重复请求。 */
+export default function NotificationBell({ count, onCountChange }: NotificationBellProps) {
   const navigate = useNavigate()
-  const [count, setCount] = useState(0)
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-
-  const refreshCount = useCallback(() => {
-    getUnreadCount()
-      .then((r) => setCount(r.count))
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    refreshCount()
-    const timer = setInterval(refreshCount, 30_000)
-    return () => clearInterval(timer)
-  }, [refreshCount])
 
   // 点击外部关闭下拉
   useEffect(() => {
@@ -41,9 +33,29 @@ export default function NotificationBell() {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onEscape)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onEscape)
+    }
   }, [open])
+
+  useEffect(() => {
+    const openNotifications = () => {
+      setOpen(true)
+      setLoading(true)
+      listNotifications()
+        .then(setItems)
+        .catch(() => setItems([]))
+        .finally(() => setLoading(false))
+    }
+    window.addEventListener('open-notifications', openNotifications)
+    return () => window.removeEventListener('open-notifications', openNotifications)
+  }, [])
 
   const handleToggle = async () => {
     const next = !open
@@ -68,7 +80,7 @@ export default function NotificationBell() {
       } catch {
         // 标记失败不阻断跳转
       }
-      refreshCount()
+      onCountChange()
     }
     if (n.link) navigate(n.link)
   }
@@ -77,14 +89,14 @@ export default function NotificationBell() {
     try {
       await markNotificationsRead()
       setItems((prev) => prev.map((n) => ({ ...n, read: true })))
-      setCount(0)
+      onCountChange()
     } catch {
       // 忽略
     }
   }
 
   return (
-    <div ref={ref} className="fixed right-6 top-5 z-30">
+    <div ref={ref} className="relative">
       <button
         onClick={handleToggle}
         aria-label="站内通知"
