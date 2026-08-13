@@ -15,6 +15,7 @@ from app.api.billing import router as billing_router
 from app.api.competitors import router as competitors_router
 from app.api.crawl import router as crawl_router
 from app.api.graph import router as graph_router
+from app.api.intelligence import router as intelligence_router
 from app.api.notifications import router as notifications_router
 from app.api.org import router as org_router
 from app.api.permissions import router as permissions_router
@@ -492,6 +493,7 @@ app.include_router(org_router)
 app.include_router(notifications_router)
 app.include_router(trackers_router)
 app.include_router(graph_router)
+app.include_router(intelligence_router)
 app.include_router(assistant_router)
 
 

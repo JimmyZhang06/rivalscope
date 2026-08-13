@@ -10,6 +10,7 @@ import {
   GitCompare,
   LayoutDashboard,
   Layers,
+  Radio,
   Network,
   Plus,
   Search,
@@ -36,6 +37,7 @@ const NAV_GROUPS = [
   {
     label: '追踪',
     items: [
+      { to: '/app/intelligence', label: '事件与监测', icon: Radio },
       { to: '/app/trackers', label: '定时追踪', icon: Clock },
       { to: '/app/competitors', label: '竞品管理', icon: Building2 },
     ],

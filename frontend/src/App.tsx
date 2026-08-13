@@ -21,6 +21,7 @@ const ProfileDetailPage = lazy(() => import('./pages/app/ProfileDetailPage'))
 const ProfileTasksPage = lazy(() => import('./pages/app/ProfileTasksPage'))
 const GraphDetailPage = lazy(() => import('./pages/app/GraphDetailPage'))
 const GraphPage = lazy(() => import('./pages/app/GraphPage'))
+const IntelligenceEventsPage = lazy(() => import('./pages/app/IntelligenceEventsPage'))
 const NewResearchPage = lazy(() => import('./pages/app/NewResearchPage'))
 const PricingPage = lazy(() => import('./pages/app/PricingPage'))
 const TaskDetailPage = lazy(() => import('./pages/app/TaskDetailPage'))
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="tasks/:id" element={<TaskDetailPage />} />
           <Route path="trackers" element={<TrackersPage />} />
           <Route path="trackers/:id" element={<TrackerDetailPage />} />
+          <Route path="intelligence" element={<IntelligenceEventsPage />} />
           <Route path="competitors" element={<CompetitorsPage />} />
           <Route path="profiles/templates" element={<ProfileTemplatesPage />} />
           <Route path="profiles" element={<ProfilesPage />} />

@@ -16,6 +16,10 @@ import type {
   GraphDetail,
   GraphProject,
   InsightsData,
+  IntelligenceEventList,
+  IntelligenceEventStatus,
+  IntelligenceEventSummary,
+  IntelligenceEventType,
   LoginLog,
   NotificationItem,
   Order,
@@ -677,6 +681,27 @@ export function refreshGraph(id: string): Promise<GraphProject> {
 
 export function deleteGraph(id: string): Promise<void> {
   return request(`/api/graph/${id}`, { method: 'DELETE' })
+}
+
+// ---------- 事件流与监测中心 ----------
+
+export function listIntelligenceEvents(params?: {
+  eventType?: 'all' | IntelligenceEventType
+  status?: 'all' | IntelligenceEventStatus
+  page?: number
+  pageSize?: number
+}): Promise<IntelligenceEventList> {
+  const query = new URLSearchParams({
+    event_type: params?.eventType ?? 'all',
+    status: params?.status ?? 'all',
+    page: String(params?.page ?? 1),
+    page_size: String(params?.pageSize ?? 30),
+  })
+  return request(`/api/intelligence/events?${query}`)
+}
+
+export function getIntelligenceEventSummary(): Promise<IntelligenceEventSummary> {
+  return request('/api/intelligence/summary')
 }
 
 // ---------- 站内通知 ----------

@@ -458,6 +458,41 @@ export interface GraphCreate {
   time_range: TimeRange
 }
 
+// ---------- 事件流与监测中心 ----------
+
+export type IntelligenceEventType = 'research' | 'tracker' | 'graph'
+export type IntelligenceEventStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+export interface IntelligenceEvent {
+  id: string
+  event_type: IntelligenceEventType
+  status: IntelligenceEventStatus
+  title: string
+  summary: string
+  source_id: string
+  href: string
+  occurred_at: string
+  updated_at: string
+  context: Record<string, string | number | boolean | null>
+}
+
+export interface IntelligenceEventList {
+  items: IntelligenceEvent[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface IntelligenceEventSummary {
+  total: number
+  active: number
+  completed: number
+  failed: number
+  by_type: Record<IntelligenceEventType, number>
+  by_status: Record<IntelligenceEventStatus, number>
+  latest_at: string | null
+}
+
 // ---------- 站内通知 ----------
 
 export interface NotificationItem {
