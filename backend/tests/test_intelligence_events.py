@@ -23,12 +23,13 @@ def _session() -> Session:
     return Session(engine)
 
 
-def _user(user_id: str, *, org_id: str = "") -> User:
+def _user(user_id: str, *, org_id: str = "", role: str = "user") -> User:
     return User(
         id=user_id,
         email=f"{user_id}@example.com",
         password_hash="hash",
         org_id=org_id,
+        role=role,
     )
 
 
@@ -131,6 +132,25 @@ def test_visibility_matches_personal_and_same_org_rules():
 
     assert total == 2
     assert {event.source_id for event in events} == {"own", "shared"}
+
+
+def test_admin_events_do_not_implicitly_enumerate_other_tenants():
+    db = _session()
+    admin = _user("admin", org_id="org-a", role="admin")
+    org_a = _user("a-member", org_id="org-a")
+    org_b = _user("b-member", org_id="org-b")
+    db.add_all([admin, org_a, org_b])
+    db.add_all([
+        ResearchTask(id="visible", user_id=org_a.id, org_id="org-a", product_name="Visible"),
+        ResearchTask(id="hidden", user_id=org_b.id, org_id="org-b", product_name="Hidden"),
+    ])
+    db.commit()
+
+    events, total = list_events(db, admin)
+
+    assert total == 1
+    assert [event.source_id for event in events] == ["visible"]
+    db.close()
 
 
 def test_summary_counts_types_statuses_and_latest_event():

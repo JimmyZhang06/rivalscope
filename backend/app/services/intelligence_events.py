@@ -6,6 +6,7 @@ from typing import Literal
 from sqlalchemy import func
 from sqlalchemy.orm import Query, Session
 
+from app.core.tenant_scope import TENANT_OR_OWNER, TenantScope
 from app.db.models import GraphProject, ResearchTask, User
 from app.schemas.intelligence import IntelligenceEvent, IntelligenceEventStatus
 
@@ -31,9 +32,7 @@ _GRAPH_STATUS_MAP: dict[str, IntelligenceEventStatus] = {
 
 def _accessible(query: Query, model: type[ResearchTask] | type[GraphProject], user: User) -> Query:
     """沿用各模块现有的本人 + 同企业可见规则。"""
-    if user.org_id:
-        return query.filter((model.user_id == user.id) | (model.org_id == user.org_id))
-    return query.filter(model.user_id == user.id)
+    return TenantScope(user).filter(query, model, TENANT_OR_OWNER)
 
 
 def _native_statuses(

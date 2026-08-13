@@ -131,6 +131,27 @@ def test_personal_and_cross_org_assets_are_not_exposed(db: Session) -> None:
     assert {item.owner_id for item in result.items} == {"teammate"}
 
 
+def test_admin_assets_do_not_implicitly_enumerate_other_tenants(db: Session) -> None:
+    admin = _user("admin", org_id="org-a", role="admin")
+    org_a = _user("org-a-member", org_id="org-a")
+    org_b = _user("org-b-member", org_id="org-b")
+    personal = _user("personal")
+    db.add_all([admin, org_a, org_b, personal])
+    db.commit()
+    _seed_all_types(db, org_a, "org-a")
+    _seed_all_types(db, org_b, "org-b")
+    _seed_all_types(db, personal, "personal")
+
+    result = list_intelligence_objects(db, admin, page_size=100)
+
+    # Compatibility: admins in an org historically saw personal competitors
+    # and profiles, but not personal research/graph records.
+    assert result.total == 6
+    assert {item.org_id for item in result.items} == {"", "org-a"}
+    assert {item.owner_id for item in result.items if not item.org_id} == {"personal"}
+    assert not any(item.owner_id == "org-b-member" for item in result.items)
+
+
 def test_search_type_filter_and_facets_share_one_contract(db: Session) -> None:
     owner = _user("owner")
     db.add(owner)

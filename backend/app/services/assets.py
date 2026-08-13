@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from sqlalchemy import Select, func, literal, or_, select, union_all
 from sqlalchemy.orm import Session
 
+from app.core.tenant_scope import (
+    TENANT_OR_OWNER,
+    TENANT_OR_OWNER_WITH_LEGACY,
+    TenantScope,
+)
 from app.db.models import (
     Competitor,
     CompetitorProfile,
@@ -33,30 +38,6 @@ class IntelligenceObjectPage:
     items: list[IntelligenceObjectOut]
     total: int
     type_counts: dict[IntelligenceObjectType, int]
-
-
-def _visible_competitors(user: User):
-    if user.org_id:
-        return or_(
-            Competitor.org_id == user.org_id,
-            (Competitor.org_id == "") & (literal(user.role) == "admin"),
-        )
-    return or_(Competitor.user_id == user.id, Competitor.user_id == "")
-
-
-def _visible_profiles(user: User):
-    if user.org_id:
-        return or_(
-            CompetitorProfile.org_id == user.org_id,
-            (CompetitorProfile.org_id == "") & (literal(user.role) == "admin"),
-        )
-    return or_(CompetitorProfile.user_id == user.id, CompetitorProfile.user_id == "")
-
-
-def _visible_owned_or_org(model, user: User):
-    if user.org_id:
-        return or_(model.user_id == user.id, model.org_id == user.org_id)
-    return model.user_id == user.id
 
 
 def _projection(
@@ -97,6 +78,7 @@ def _projection(
 
 
 def _base_union(user: User):
+    scope = TenantScope(user)
     competitors = _projection(
         "competitor",
         Competitor.id,
@@ -113,7 +95,7 @@ def _base_union(user: User):
         Competitor.alias,
         "crawl_status",
         Competitor.crawl_status,
-    ).where(_visible_competitors(user))
+    ).where(scope.visible_clause(Competitor, TENANT_OR_OWNER_WITH_LEGACY))
 
     profiles = _projection(
         "profile",
@@ -135,7 +117,7 @@ def _base_union(user: User):
         Competitor, Competitor.id == CompetitorProfile.competitor_id
     ).outerjoin(
         ProfileTemplate, ProfileTemplate.id == CompetitorProfile.template_id
-    ).where(_visible_profiles(user))
+    ).where(scope.visible_clause(CompetitorProfile, TENANT_OR_OWNER_WITH_LEGACY))
 
     research = _projection(
         "research_task",
@@ -153,7 +135,7 @@ def _base_union(user: User):
         ResearchTask.time_range,
         "tracker_id",
         ResearchTask.tracker_id,
-    ).where(_visible_owned_or_org(ResearchTask, user))
+    ).where(scope.visible_clause(ResearchTask, TENANT_OR_OWNER))
 
     graphs = _projection(
         "graph_project",
@@ -169,7 +151,7 @@ def _base_union(user: User):
         GraphProject.industry,
         "time_range",
         GraphProject.time_range,
-    ).where(_visible_owned_or_org(GraphProject, user))
+    ).where(scope.visible_clause(GraphProject, TENANT_OR_OWNER))
 
     return union_all(competitors, profiles, research, graphs).subquery("intelligence_objects")
 
