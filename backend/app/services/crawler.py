@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 from readability import Document
 
 from app.core.timeutil import utcnow
+from app.core.url_security import normalize_and_validate_url, safe_external_request
 from app.db.database import SessionLocal
 from app.db.models import Competitor, CompetitorPage, CrawlTask
 
@@ -61,6 +62,7 @@ async def discover_urls(base_url: str, max_pages: int = _MAX_PAGES_DEFAULT) -> l
     优先级：Sitemap > 首页链接发现 + 启发式路径
     """
     urls: set[str] = set()
+    base_url = normalize_and_validate_url(base_url, allow_missing_scheme=True)
     base = _normalize_base(base_url)
     parsed = urlparse(base)
 
@@ -147,8 +149,8 @@ async def _fetch_sitemap_urls(base: str, lang_prefix: str = "", max_urls: int = 
     for sm_path in candidates:
         sm_url = urljoin(base, sm_path)
         try:
-            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-                resp = await client.get(sm_url, headers={"User-Agent": _USER_AGENT})
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await safe_external_request(client, "GET", sm_url, headers={"User-Agent": _USER_AGENT})
                 if resp.status_code != 200:
                     continue
                 content = resp.text
@@ -179,8 +181,8 @@ async def _fetch_sitemap_urls(base: str, lang_prefix: str = "", max_urls: int = 
                 async def _fetch_child(child_url: str) -> list[str]:
                     try:
                         async with semaphore:
-                            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-                                r = await client.get(child_url, headers={"User-Agent": _USER_AGENT})
+                            async with httpx.AsyncClient(timeout=10) as client:
+                                r = await safe_external_request(client, "GET", child_url, headers={"User-Agent": _USER_AGENT})
                                 if r.status_code != 200:
                                     return []
                                 text = r.text
@@ -246,8 +248,8 @@ async def _extract_links(page_url: str, parsed_base: Any) -> list[str]:
     """从页面提取有效内部链接"""
     links: list[str] = []
     try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(page_url, headers={"User-Agent": _USER_AGENT})
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await safe_external_request(client, "GET", page_url, headers={"User-Agent": _USER_AGENT})
             if resp.status_code != 200:
                 return links
             soup = BeautifulSoup(resp.text[:200_000], "html.parser")
@@ -323,8 +325,8 @@ async def _fetch_single(url: str) -> dict[str, Any]:
 
     html = ""
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": _USER_AGENT})
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await safe_external_request(client, "GET", url, headers={"User-Agent": _USER_AGENT})
             resp.raise_for_status()
             html = resp.text[:500_000]
     except Exception as exc:
@@ -470,9 +472,10 @@ async def _extract_via_jina(url: str) -> tuple[str, str]:
     """
     try:
         import httpx
-        api_url = f"https://r.jina.ai/{url}"
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(api_url, headers={
+        target_url = normalize_and_validate_url(url)
+        api_url = f"https://r.jina.ai/{target_url}"
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await safe_external_request(client, "GET", api_url, headers={
                 "User-Agent": "Mozilla/5.0 (compatible; CompAgent/1.0)",
                 "Accept": "text/plain",
             })
@@ -621,9 +624,7 @@ async def crawl_competitor_site(
 # ---------------------------------------------------------------------------
 
 def _normalize_base(url: str) -> str:
-    url = url.strip()
-    if not url.startswith(("http://", "https://")):
-        url = "https://" + url
+    url = normalize_and_validate_url(url, allow_missing_scheme=True)
     parsed = urlparse(url)
     return f"{parsed.scheme}://{parsed.netloc}"
 
@@ -736,8 +737,8 @@ async def _fetch_single_with_limit(url: str, max_chars: int = 5000) -> dict[str,
 
     html = ""
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": _USER_AGENT})
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await safe_external_request(client, "GET", url, headers={"User-Agent": _USER_AGENT})
             resp.raise_for_status()
             html = resp.text[:500_000]
     except Exception as exc:

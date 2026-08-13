@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from app.db.database import SessionLocal
 from app.db.models import SourceArchive
+from app.core.url_security import safe_external_request
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,13 @@ async def capture_snapshot(url: str, raw_content: str = "") -> dict[str, Any]:
         html = f"<html><body><pre>{raw_content}</pre></body></html>"
 
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; ResearchAgent/1.0)"})
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await safe_external_request(
+                client,
+                "GET",
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; ResearchAgent/1.0)"},
+            )
             resp.raise_for_status()
             html = resp.text[:500_000]
             soup = BeautifulSoup(html, "html.parser")

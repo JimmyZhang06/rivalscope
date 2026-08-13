@@ -44,7 +44,12 @@ class LLMClient:
     def __init__(self, user_id: str = "", org_id: str = "", ip: str = "", user_agent: str = ""):
         settings = get_settings()
         self.model = settings.llm_model
-        self.client = AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
+        timeout = settings.llm_timeout_seconds
+        self.client = AsyncOpenAI(
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+            timeout=timeout,
+        )
         self.user_id = user_id
         self.org_id = org_id
         self.ip = ip

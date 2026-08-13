@@ -206,9 +206,9 @@
 | **联网检索** | Tavily API |
 | **认证安全** | JWT + Refresh Token · bcrypt · Fernet 加密 · 令牌桶限流 |
 | **调度** | 后端内置线程调度器（60 秒轮询，无外部依赖） |
-| **前端框架** | React 18 · TypeScript · Vite 5 |
+| **前端框架** | React 18 · TypeScript · Vite 7 |
 | **UI 样式** | Tailwind CSS 4 |
-| **路由** | react-router-dom 6 |
+| **路由** | react-router-dom 7 |
 | **图表** | recharts · ReactFlow |
 | **报告渲染** | react-markdown + remark-gfm |
 | **报告导出** | html2pdf.js（PDF）· 浏览器打印（Word） |
@@ -352,7 +352,7 @@ comp-agent/
 ### 环境要求
 
 - **Python 3.12+**
-- **Node.js 18+**
+- **Node.js 20.19+**
 - **LLM API Key**（任意 OpenAI 兼容服务）
 - **Tavily API Key**（[tavily.com](https://tavily.com) 注册，免费 1000 次/月）
 
@@ -380,7 +380,7 @@ python -m venv .venv
 
 首次启动自动完成：
 - 创建 23 张数据库表
-- 播种默认管理员账号
+- 按显式环境变量初始化管理员账号（可选）
 - 启动追踪调度器线程
 
 API 文档：`http://localhost:8000/docs`
@@ -395,14 +395,14 @@ npm run dev
 
 浏览器访问 `http://localhost:5173`，Vite 自动代理 `/api` 到后端。
 
-### 默认账号（仅开发环境）
+### 管理员初始化
 
 | 项目 | 值 |
 |------|-----|
-| 邮箱 | `admin@example.com` |
-| 密码 | `Admin123456` |
+| 邮箱 | 通过 `SEED_ADMIN_EMAIL` 显式配置 |
+| 密码 | 通过 `SEED_ADMIN_PASSWORD` 显式配置 |
 
-> 生产部署前务必修改默认密码、`JWT_SECRET` 和 `MASTER_KEY`。
+> 项目不提供固定默认密码。生产环境必须设置 `APP_ENV=production`、强 `JWT_SECRET`、`MASTER_KEY`，并仅在首次初始化时提供管理员凭据。
 
 ---
 
@@ -581,7 +581,7 @@ npm run dev
 
 - [ ] 修改 `JWT_SECRET` 为高强度随机字符串
 - [ ] 配置 `MASTER_KEY`（Fernet 加密密钥，32 字节 base64）
-- [ ] 修改默认管理员密码
+- [ ] 通过 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` 初始化管理员后清空配置
 - [ ] 配置 `SMTP` 相关环境变量（用于邮件推送）
 - [ ] 修改 `frontend_base` 为实际域名
 - [ ] 配置 `frontend_origins` CORS 白名单

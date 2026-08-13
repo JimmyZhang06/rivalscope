@@ -519,6 +519,25 @@ export interface AuditLog {
   created_at: string
 }
 
+export interface ComparisonMatrixRow {
+  dimension: string
+  values: Record<string, string>
+}
+
+export interface ComparisonResponse {
+  template_name: string
+  dimensions: string[]
+  matrix: ComparisonMatrixRow[]
+  source_refs: Array<Array<Record<string, unknown>>>
+}
+
+export interface AuditLogListResponse {
+  items: AuditLog[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export interface ExecutionSnapshot {
   id: string
   org_id: string

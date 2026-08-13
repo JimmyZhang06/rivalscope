@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.url_security import normalize_and_validate_url
+
 
 class CompetitorIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
@@ -13,6 +15,14 @@ class CompetitorIn(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     crawl_status: str = Field("", max_length=20)
     crawl_error: str = Field("", max_length=500)
+
+    @field_validator("website", mode="before")
+    @classmethod
+    def validate_website(cls, v: Any) -> str:
+        value = "" if v is None else str(v).strip()
+        if not value:
+            return ""
+        return normalize_and_validate_url(value, allow_missing_scheme=True)
 
 
 class CompetitorOut(BaseModel):

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -6,11 +7,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """应用配置，从环境变量 / .env 文件读取"""
 
+    # 运行环境与初始化。管理员账号必须显式配置，避免部署后遗留固定凭据。
+    app_env: Literal["development", "test", "production"] = "development"
+    seed_admin_email: str = ""
+    seed_admin_password: str = ""
+
     # LLM（OpenAI 兼容接口）
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = "deepseek-chat"
-    llm_timeout_seconds: int = 60
+    llm_timeout_seconds: int = 180
 
     # Tavily 联网检索
     tavily_api_key: str = ""

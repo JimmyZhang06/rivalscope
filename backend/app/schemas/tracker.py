@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.url_security import normalize_and_validate_url
+
 FREQUENCIES = ("daily", "weekly", "monthly")
 WEBHOOK_TYPES = ("wecom", "dingtalk", "feishu", "generic")
 TIME_RANGES = ("", "day", "week", "month", "year")
@@ -44,6 +46,12 @@ class TrackerCreateIn(BaseModel):
             raise ValueError("webhook 类型仅支持 wecom / dingtalk / feishu / generic")
         return v
 
+    @field_validator("webhook_url", mode="before")
+    @classmethod
+    def validate_webhook_url(cls, v: Any) -> str:
+        value = "" if v is None else str(v).strip()
+        return normalize_and_validate_url(value) if value else ""
+
 
 class TrackerUpdateIn(BaseModel):
     product_name: str | None = Field(default=None, min_length=1, max_length=200)
@@ -78,6 +86,14 @@ class TrackerUpdateIn(BaseModel):
         if v is not None and v not in WEBHOOK_TYPES:
             raise ValueError("webhook 类型仅支持 wecom / dingtalk / feishu / generic")
         return v
+
+    @field_validator("webhook_url", mode="before")
+    @classmethod
+    def validate_webhook_url(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        value = str(v).strip()
+        return normalize_and_validate_url(value) if value else ""
 
 
 class TrackerOut(BaseModel):

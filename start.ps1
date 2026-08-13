@@ -33,26 +33,55 @@ function Write-Ok($msg)   { Write-Host "    $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "    $msg" -ForegroundColor Yellow }
 
 # ---------------------------------------------------------------------------
-# 0. 前置检查：python 与 node 是否可用
+# 0. 前置检查：Python 与 Node.js 是否可用
 # ---------------------------------------------------------------------------
 Write-Step "检查运行环境"
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    throw "未找到 python，请先安装 Python 3.11+ 并加入 PATH"
+$SystemPython = $null
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    $SystemPython = "python"
+} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    $SystemPython = "py"
+} else {
+    throw "未找到 Python，请先安装 Python 3.12+（python 或 py 命令需可用）"
 }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-    throw "未找到 npm，请先安装 Node.js 18+ 并加入 PATH"
+    throw "未找到 npm，请先安装 Node.js 20.19+ 并加入 PATH"
 }
-Write-Ok ("python: " + (python --version 2>&1))
+Write-Ok ("python: " + (& $SystemPython --version 2>&1))
 Write-Ok ("node:   " + (node --version 2>&1))
+$nodeParts = (node --version).TrimStart('v').Split('.')
+$nodeMajor = [int]$nodeParts[0]
+$nodeMinor = [int]$nodeParts[1]
+if ($nodeMajor -lt 20 -or ($nodeMajor -eq 20 -and $nodeMinor -lt 19) -or ($nodeMajor -eq 22 -and $nodeMinor -lt 12)) {
+    throw "Node.js 版本过低；Vite 7 需要 Node.js 20.19+ 或 22.12+"
+}
 
 # ---------------------------------------------------------------------------
 # 1. 后端虚拟环境与依赖
 # ---------------------------------------------------------------------------
 Write-Step "准备后端虚拟环境"
 $venvCreated = $false
+if (Test-Path $VenvPython) {
+    # venv 中的启动器会记录创建时的基础 Python 路径；移动项目或卸载 Python 后文件仍在但无法执行。
+    & $VenvPython -c "import sys; print(sys.executable)" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $resolvedBackend = [System.IO.Path]::GetFullPath($Backend)
+        $resolvedVenv = [System.IO.Path]::GetFullPath($VenvDir)
+        if (-not $resolvedVenv.StartsWith($resolvedBackend + [System.IO.Path]::DirectorySeparatorChar)) {
+            throw "虚拟环境路径不在 backend 目录内，拒绝自动处理：$resolvedVenv"
+        }
+        $backupVenv = "$VenvDir.invalid.$(Get-Date -Format 'yyyyMMddHHmmss')"
+        Write-Warn "检测到失效的虚拟环境，保留为 $backupVenv"
+        Move-Item -LiteralPath $VenvDir -Destination $backupVenv
+    }
+}
+
 if (-not (Test-Path $VenvPython)) {
     Write-Warn "未检测到虚拟环境，正在创建 .venv ..."
-    python -m venv $VenvDir
+    & $SystemPython -m venv $VenvDir
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPython)) {
+        throw "创建 Python 虚拟环境失败"
+    }
     $venvCreated = $true
     Write-Ok "虚拟环境创建完成"
 } else {
@@ -89,9 +118,9 @@ if (-not (Test-Path $envFile)) {
 Write-Step "检查前端依赖"
 $nodeModules = Join-Path $Frontend "node_modules"
 if ((-not (Test-Path $nodeModules)) -or $Reinstall) {
-    Write-Warn "正在安装前端依赖（npm install）..."
+    Write-Warn "正在按锁文件安装前端依赖（npm ci）..."
     Push-Location $Frontend
-    npm install
+    npm ci
     Pop-Location
     Write-Ok "前端依赖安装完成"
 } else {
@@ -124,6 +153,6 @@ Write-Host "`n========================================================" -Foregro
 Write-Host " 启动完成" -ForegroundColor Green
 Write-Host "   前端： http://localhost:5173" -ForegroundColor Green
 Write-Host "   后端： http://127.0.0.1:8000   (接口文档 /docs)" -ForegroundColor Green
-Write-Host "   默认管理员： admin@example.com / Admin123456" -ForegroundColor Green
+Write-Host "   管理员：通过 backend\.env 的 SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD 显式初始化" -ForegroundColor Green
 Write-Host " 关闭对应窗口即可停止各自服务" -ForegroundColor Green
 Write-Host "========================================================" -ForegroundColor Green

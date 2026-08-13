@@ -136,7 +136,7 @@
 #### 环境要求
 
 - Python 3.12+
-- Node.js 18+
+- Node.js 20.19+
 - LLM API Key（任意 OpenAI 兼容服务：DeepSeek / 通义千问 / Kimi / OpenAI 等）
 - Tavily API Key（[tavily.com](https://tavily.com) 免费注册，1000 次/月）
 
@@ -150,8 +150,10 @@ Copy-Item backend\.env.example backend\.env
 
 - `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`：例如 DeepSeek 填 `https://api.deepseek.com/v1` + `deepseek-chat`；通义千问填 `https://dashscope.aliyuncs.com/compatible-mode/v1` + `qwen-plus`
 - `TAVILY_API_KEY`：Tavily 检索密钥
-- `JWT_SECRET`：生产环境务必改为随机长字符串
+- `APP_ENV`：本地使用 `development`，生产环境必须设为 `production`
+- `JWT_SECRET`：生产环境必须使用至少 32 字符的随机字符串，否则应用拒绝启动
 - `MASTER_KEY`：生产环境必须配置（Fernet 加密密钥，32 字节 base64）
+- `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`：可选的首次管理员初始化；只有两项都显式填写时才创建
 - SMTP 相关变量可选：未配置时邮件推送以演示模式落库（email_logs.status=demo）
 
 #### 后端启动（端口 8000）
@@ -163,7 +165,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn app.main:app --port 8000
 ```
 
-首次启动自动建表 + 轻量迁移并播种默认管理员，同时启动追踪调度器线程。API 文档在 `http://localhost:8000/docs`。
+首次启动自动建表 + 轻量迁移，同时启动追踪调度器线程。若需初始化管理员，请先在 `.env` 中显式配置 `SEED_ADMIN_EMAIL` 与强密码 `SEED_ADMIN_PASSWORD`。API 文档在 `http://localhost:8000/docs`。
 
 #### 前端启动（端口 5173）
 
@@ -183,7 +185,7 @@ npm run dev
 | Agent | OpenAI 兼容 LLM（DeepSeek / 通义千问 / Kimi / StepFun 等），Tavily 联网检索 |
 | 安全 | bcrypt · JWT + Refresh Token · Fernet 加密 · 令牌桶限流 · 审计日志 · 执行快照 |
 | 调度 | 后端内置线程调度器（60 秒轮询，无外部依赖） |
-| 前端 | React 18, TypeScript, Vite 5, Tailwind CSS 4, react-router 6 |
+| 前端 | React 18, TypeScript, Vite 7, Tailwind CSS 4, react-router 7 |
 | 报告渲染 | react-markdown + remark-gfm, recharts, html2pdf.js |
 | 数据校验 | Pydantic v2 |
 | 存储 | SQLite（MVP），可迁移到 PostgreSQL |
@@ -319,14 +321,9 @@ agent/
 | GET | `/api/admin/audit-logs` | 审计日志（分页 + 5 种筛选） | 管理员 |
 | GET | `/api/admin/execution-snapshots` | 执行快照列表 | 管理员 |
 
-### 11. 默认账号（仅开发环境）
+### 11. 管理员初始化
 
-首次启动自动创建管理员账号：
-
-- 邮箱：`admin@example.com`
-- 密码：`Admin123456`
-
-正式部署前请修改 `JWT_SECRET`、`MASTER_KEY` 和管理员密码。
+项目不再提供固定默认管理员。首次部署时，在 `backend/.env` 中同时填写 `SEED_ADMIN_EMAIL` 和 `SEED_ADMIN_PASSWORD`；创建完成后建议清空这两项。生产环境还必须配置强 `JWT_SECRET` 与 `MASTER_KEY`。
 
 ### 12. 详细文档
 
@@ -468,7 +465,7 @@ Tracker runs additionally produce a **change digest** against the previous run a
 #### Requirements
 
 - Python 3.12+
-- Node.js 18+
+- Node.js 20.19+
 - An LLM API key (any OpenAI-compatible service: DeepSeek / Qwen / Kimi / OpenAI, etc.)
 - A Tavily API key ([tavily.com](https://tavily.com), free tier 1000 calls/month)
 
@@ -482,8 +479,10 @@ Edit `backend/.env`:
 
 - `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` — e.g. DeepSeek: `https://api.deepseek.com/v1` + `deepseek-chat`; Qwen: `https://dashscope.aliyuncs.com/compatible-mode/v1` + `qwen-plus`
 - `TAVILY_API_KEY` — Tavily search key
-- `JWT_SECRET` — change to a long random string in production
+- `APP_ENV` — use `development` locally and set `production` in production
+- `JWT_SECRET` — production requires a random string of at least 32 characters or startup is refused
 - `MASTER_KEY` — required in production for Fernet encryption (32-byte base64)
+- `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` — optional one-time admin bootstrap; both must be set explicitly
 - SMTP variables optional: without them, email pushes are logged in demo mode (email_logs.status=demo)
 
 #### Backend (port 8000)
@@ -495,7 +494,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn app.main:app --port 8000
 ```
 
-Tables are created (with light migration), a default admin is seeded, and the tracker scheduler thread starts on boot. API docs at `http://localhost:8000/docs`.
+Tables are created (with light migration) and the tracker scheduler starts on boot. To bootstrap an admin, explicitly set `SEED_ADMIN_EMAIL` and a strong `SEED_ADMIN_PASSWORD` in `.env`. API docs are available at `http://localhost:8000/docs`.
 
 #### Frontend (port 5173)
 
@@ -515,7 +514,7 @@ Open `http://localhost:5173`; the Vite proxy forwards `/api` requests to the bac
 | Agent | OpenAI-compatible LLM (DeepSeek / Qwen / Kimi / StepFun, etc.), Tavily web search |
 | Security | JWT + Refresh Token, Fernet encryption, Token Bucket rate limiting, Audit logs, Execution snapshots |
 | Scheduling | Built-in thread scheduler (60 s polling, no external dependency) |
-| Frontend | React 18, TypeScript, Vite 5, Tailwind CSS 4, react-router-dom 6, react-markdown + remark-gfm, recharts, ReactFlow, html2pdf.js |
+| Frontend | React 18, TypeScript, Vite 7, Tailwind CSS 4, react-router-dom 7, react-markdown + remark-gfm, recharts, ReactFlow, html2pdf.js |
 | Validation | Pydantic v2 |
 | Storage | SQLite (MVP), migratable to PostgreSQL |
 
@@ -620,14 +619,9 @@ agent/
 | GET | `/api/admin/audit-logs` | Audit logs (paginated + filtered) | Admin |
 | GET | `/api/admin/execution-snapshots` | Execution snapshots list | Admin |
 
-### 11. Default Account (dev only)
+### 11. Admin Bootstrap
 
-A default admin is seeded on first start:
-
-- Email: `admin@example.com`
-- Password: `Admin123456`
-
-Change `JWT_SECRET`, `MASTER_KEY`, and the admin password before production deployment.
+There is no fixed default administrator. On first deployment, set both `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` in `backend/.env`, then clear them after the account is created. Production also requires strong `JWT_SECRET` and `MASTER_KEY` values.
 
 ### 12. Documentation
 

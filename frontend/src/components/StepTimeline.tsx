@@ -1,7 +1,6 @@
 import { BarChart3, CheckCircle2, Compass, Dot, PenLine, Search, XCircle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Step } from '../api/types'
-import { parseUtc, fmtDateTime } from '../utils/time'
 
 const PHASE_STYLE: Record<string, { icon: LucideIcon; ring: string; bg: string; text: string }> = {
   planning: { icon: Compass, ring: 'ring-blue-200', bg: 'bg-blue-50', text: 'text-blue-600' },

@@ -3,16 +3,19 @@ import type {
   AdminOrgListResponse,
   AdminStats,
   AdminUserListResponse,
+  AuditLogListResponse,
   AssistantMessage,
   AssistantSession,
   Competitor,
   CompetitorPage,
   CompetitorProfile,
+  ComparisonResponse,
   CrawlTask,
   ForgotResponse,
   GraphCreate,
   GraphDetail,
   GraphProject,
+  InsightsData,
   LoginLog,
   NotificationItem,
   Order,
@@ -555,7 +558,7 @@ export function getProfileReport(id: string): Promise<{ report_markdown: string;
   return request(`/api/profiles/${id}/report`)
 }
 
-export function getProfileInsights(id: string): Promise<any> {
+export function getProfileInsights(id: string): Promise<InsightsData> {
   return request(`/api/profiles/${id}/insights`)
 }
 
@@ -566,7 +569,7 @@ export function getProfileFullReport(id: string): Promise<{ report_markdown: str
 
 // ---------- 横向对比 ----------
 
-export function compareProfiles(payload: { template_id: string; competitor_ids: string[] }): Promise<any> {
+export function compareProfiles(payload: { template_id: string; profile_ids: string[] }): Promise<ComparisonResponse> {
   return request('/api/profiles/compare', { method: 'POST', body: JSON.stringify(payload) })
 }
 
@@ -590,7 +593,7 @@ export function listAuditLogs(params?: {
   end?: string
   page?: number
   page_size?: number
-}): Promise<AdminUserListResponse> {
+}): Promise<AuditLogListResponse> {
   const p = new URLSearchParams()
   if (params?.action) p.set('action', params.action)
   if (params?.resource_type) p.set('resource_type', params.resource_type)

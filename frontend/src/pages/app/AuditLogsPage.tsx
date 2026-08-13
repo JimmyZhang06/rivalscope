@@ -43,7 +43,7 @@ export default function AuditLogsPage() {
         page,
         page_size: PAGE_SIZE,
       })
-      setLogs(res.items as AuditLog[])
+      setLogs(res.items)
       setTotal(res.total)
     } catch {
       /* 静默失败 */

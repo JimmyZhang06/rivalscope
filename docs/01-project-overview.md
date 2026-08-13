@@ -49,7 +49,7 @@
 | 前端框架 | React + TypeScript | 18.x / ~5.6.2 |
 | 构建 | Vite | ^5.4.10 |
 | 样式 | Tailwind CSS | v4 |
-| 路由 | react-router-dom | v6 |
+| 路由 | react-router-dom | v7 |
 | 图表 | recharts | ^3.10.1 |
 | 图谱可视化 | ReactFlow | ^11.11.4 |
 | Markdown | react-markdown + remark-gfm | ^9.0.1 |

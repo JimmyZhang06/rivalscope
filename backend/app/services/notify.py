@@ -15,6 +15,7 @@ from email.mime.text import MIMEText
 import httpx
 
 from app.core.config import get_settings
+from app.core.url_security import safe_external_request
 from app.db.database import SessionLocal
 from app.db.models import EmailLog, Notification, ResearchTask, Tracker, User
 
@@ -140,7 +141,12 @@ def _webhook_payload(webhook_type: str, title: str, text: str, link: str) -> dic
 async def push_webhook(webhook_type: str, url: str, title: str, text: str, link: str) -> bool:
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(url, json=_webhook_payload(webhook_type, title, text, link))
+            resp = await safe_external_request(
+                client,
+                "POST",
+                url,
+                json=_webhook_payload(webhook_type, title, text, link),
+            )
             resp.raise_for_status()
         return True
     except Exception as exc:

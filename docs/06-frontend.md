@@ -9,9 +9,9 @@
 |----|------|
 | React 18 | UI 框架 |
 | TypeScript | 类型系统 |
-| Vite 5 | 构建工具 |
+| Vite 7 | 构建工具 |
 | Tailwind CSS 4 | 样式框架 |
-| react-router-dom v6 | 路由 |
+| react-router-dom v7 | 路由 |
 | lucide-react | 图标库 |
 | recharts | 图表（雷达图、评分条、趋势图） |
 | ReactFlow | 图谱可视化画布 |

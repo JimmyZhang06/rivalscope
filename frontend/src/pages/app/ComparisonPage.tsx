@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { RefreshCw, Table2 } from 'lucide-react'
 import { compareProfiles, getProfileInsights } from '../../api/client'
+import type { ComparisonResponse, InsightsData, ReportData } from '../../api/types'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useProfileStore } from '../../stores/profileStore'
 import ScoreRadar from '../../components/ScoreRadar'
@@ -11,9 +12,9 @@ export default function ComparisonPage() {
   const [notice, setNotice] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<ComparisonResponse | null>(null)
   const [comparing, setComparing] = useState(false)
-  const [insightsMap, setInsightsMap] = useState<Record<string, any>>({})
+  const [insightsMap, setInsightsMap] = useState<Record<string, InsightsData>>({})
   const [insightsLoading, setInsightsLoading] = useState(false)
 
   // 从 store 读取
@@ -21,10 +22,11 @@ export default function ComparisonPage() {
   const allProfiles = useProfileStore((s) => s.profiles)
   const competitors = useProfileStore((s) => s.competitors)
   const storeReload = useProfileStore((s) => s.reload)
+  const storeLoading = useProfileStore((s) => s.loading)
 
   // 根据选中模板过滤画像
   const profiles = useMemo(() => {
-    return allProfiles.filter((p: any) => p.template_id === selectedTemplate && p.status === 'frozen')
+    return allProfiles.filter((p) => p.template_id === selectedTemplate && p.status === 'frozen')
   }, [allProfiles, selectedTemplate])
 
   // 首次挂载加载数据
@@ -41,7 +43,7 @@ export default function ComparisonPage() {
     if (storeLoading || allProfiles.length === 0) return
     const pre = urlProfileRef.current
     if (pre && selectedIds.length === 0) {
-      const p = allProfiles.find((x: any) => x.id === pre)
+      const p = allProfiles.find((x) => x.id === pre)
       if (p && p.status === 'frozen') {
         setSelectedIds([p.id])
       }
@@ -75,7 +77,7 @@ export default function ComparisonPage() {
           }
         }),
       )
-      const next: Record<string, any> = {}
+      const next: Record<string, InsightsData> = {}
       pairs.forEach(({ pid, insights }) => { if (insights) next[pid] = insights })
       setInsightsMap(next)
 
@@ -92,18 +94,28 @@ export default function ComparisonPage() {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
   }
 
-  // profile.id → competitor name 映射
+  // profile.id → competitor_id 映射（用于后端矩阵数据查找）
+  const competitorIdMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    profiles.forEach((p) => { m[p.id] = p.competitor_id })
+    return m
+  }, [profiles])
+
+  // competitor.id → competitor name 映射
+  const cNameMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    competitors.forEach((c) => { m[c.id] = c.name })
+    return m
+  }, [competitors])
+
+  // profile.id → competitor name 映射（用于页面显示）
   const nameMap = useMemo(() => {
     const m: Record<string, string> = {}
-    profiles.forEach((p: any) => { m[p.id] = p.competitor_id })
-    const cMap: Record<string, string> = {}
-    competitors.forEach((c: any) => { cMap[c.id] = c.name })
-    Object.keys(m).forEach((pid) => {
-      const cid = m[pid]
-      m[pid] = cMap[cid] || cid.slice(0, 8)
+    profiles.forEach((p) => {
+      m[p.id] = cNameMap[p.competitor_id] || p.competitor_id.slice(0, 8)
     })
     return m
-  }, [profiles, competitors])
+  }, [profiles, cNameMap])
 
   // 构建雷达图数据
   const radarData: ReportData | null = useMemo(() => {
@@ -210,15 +222,19 @@ export default function ComparisonPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {result.matrix.map((row: any, i: number) => {
-                    // 检测同行差异
-                    const values = selectedIds.map((id) => row.values[id] || '—')
+                  {result.matrix.map((row, i) => {
+                    // 检测同行差异（后端用 competitor_id 作为 values 的键）
+                    const values = selectedIds.map((id) => {
+                      const cid = competitorIdMap[id] || id
+                      return row.values[cid] || '—'
+                    })
                     const allSame = values.length > 1 && values.every((v) => v === values[0])
                     return (
                       <tr key={i} className={!allSame ? 'bg-amber-50/30' : 'hover:bg-gray-50/60'}>
                         <td className="px-4 py-3 text-xs font-medium text-gray-600">{row.dimension}</td>
                         {selectedIds.map((id) => {
-                          const val = row.values[id] || '—'
+                          const cid = competitorIdMap[id] || id
+                          const val = row.values[cid] || '—'
                           const isDiff = !allSame
                           return (
                             <td

@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 from readability import Document
 
 from app.core.timeutil import baseline_now
+from app.core.url_security import normalize_and_validate_url, safe_external_request
 from app.db.database import SessionLocal
 from app.db.models import Competitor, CompetitorPage, CompetitorProfile, ProfileTemplate
 from app.services.dedup import dedup_by_content, estimate_confidence
@@ -189,6 +190,10 @@ def _extract_key_urls(results: list[dict], website: str) -> list[str]:
     seen: set[str] = set()
     unique: list[str] = []
     for u in candidates:
+        try:
+            u = normalize_and_validate_url(u)
+        except ValueError:
+            continue
         if u not in seen:
             seen.add(u)
             unique.append(u)
@@ -234,8 +239,8 @@ async def _fetch_single_page(url: str, competitor_id: str) -> dict:
 
     html = ""
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": _USER_AGENT})
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await safe_external_request(client, "GET", url, headers={"User-Agent": _USER_AGENT})
             resp.raise_for_status()
             html = resp.text[:500_000]
     except Exception as exc:

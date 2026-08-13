@@ -24,7 +24,6 @@ export default defineConfig({
           'vendor-pdf': ['html2pdf.js'],
           'vendor-flow': ['reactflow'],
           'vendor-state': ['zustand', 'zustand/middleware'],
-          'vendor-utils': ['zod'],
         },
       },
     },

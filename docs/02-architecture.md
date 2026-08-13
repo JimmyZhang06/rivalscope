@@ -54,7 +54,7 @@
 
 ### 前端架构
 
-- **路由**：`react-router-dom` v6，`/app/*` 全部路由需认证
+- **路由**：`react-router-dom` v7，`/app/*` 全部路由需认证
 - **状态管理**：`AuthContext`（用户登录态）+ `useState`/`useEffect`（组件级）+ `useErrorHandler` + `usePageTitle`
 - **实时更新**：TasksPage/TrackersPage/GraphPage 使用轮询（3s~5s），TaskDetail 使用 SSE
 - **文件导出**：`exportReport.tsx` 支持 PDF (`html2pdf.js`)、Word（HTML MIME）、Markdown（blob 下载）、浏览器打印

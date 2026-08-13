@@ -325,16 +325,19 @@ def compare_profiles(payload: ComparisonIn, user: User = Depends(get_current_use
     if not template:
         raise HTTPException(status_code=403, detail="无权访问该模板")
     if template.org_id != user.org_id:
-        if template.org_id != "" or user.org_id:
-            raise HTTPException(status_code=403, detail="无权访问该模板")
-        # 两人都无企业：检查创建人
-        if template.created_by != user.id:
-            raise HTTPException(status_code=403, detail="无权访问该模板")
+        if not is_admin(user):
+            if template.org_id != "" or user.org_id:
+                raise HTTPException(status_code=403, detail="无权访问该模板")
+            # 两人都无企业：检查创建人
+            if template.created_by != user.id:
+                raise HTTPException(status_code=403, detail="无权访问该模板")
     valid_ids = []
     for pid in payload.profile_ids:
         p = db.get(CompetitorProfile, pid)
         if not p:
             raise HTTPException(status_code=404, detail=f"画像 {pid} 不存在")
+        if p.template_id != payload.template_id:
+            raise HTTPException(status_code=400, detail=f"画像 {pid} 不属于所选模板")
         if p.org_id == "":
             if not is_admin(user):
                 if not user.org_id:
@@ -345,4 +348,7 @@ def compare_profiles(payload: ComparisonIn, user: User = Depends(get_current_use
         elif p.org_id != user.org_id:
             raise HTTPException(status_code=403, detail=f"无权访问画像 {pid}")
         valid_ids.append(pid)
-    return generate_comparison(payload.template_id, valid_ids)
+    try:
+        return generate_comparison(payload.template_id, valid_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
