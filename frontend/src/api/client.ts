@@ -20,6 +20,8 @@ import type {
   IntelligenceEventStatus,
   IntelligenceEventSummary,
   IntelligenceEventType,
+  IntelligenceObjectListResponse,
+  IntelligenceObjectType,
   LoginLog,
   NotificationItem,
   Order,
@@ -291,6 +293,25 @@ export function getSourceDetail(taskId: string, sourceId: number): Promise<Sourc
 
 export function deleteResearch(id: string): Promise<void> {
   return request(`/api/research/${id}`, { method: 'DELETE' })
+}
+
+// ---------- 统一情报资产 ----------
+
+export function listAssets(params: {
+  page?: number
+  pageSize?: number
+  types?: IntelligenceObjectType[]
+  query?: string
+  status?: string
+} = {}): Promise<IntelligenceObjectListResponse> {
+  const search = new URLSearchParams({
+    page: String(params.page ?? 1),
+    page_size: String(params.pageSize ?? 20),
+  })
+  params.types?.forEach((type) => search.append('types', type))
+  if (params.query?.trim()) search.set('q', params.query.trim())
+  if (params.status) search.set('status', params.status)
+  return request('/api/assets?' + search)
 }
 
 export function getQuota(): Promise<Quota> {

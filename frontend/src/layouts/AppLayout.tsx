@@ -17,6 +17,7 @@ import {
   Shield,
   Sparkles,
   ClipboardList,
+  Database,
 } from 'lucide-react'
 import { getQuota } from '../api/client'
 import type { Plan } from '../api/types'
@@ -30,6 +31,7 @@ const NAV_GROUPS = [
     label: '调研',
     items: [
       { to: '/app', label: '仪表盘', icon: LayoutDashboard, end: true },
+      { to: '/app/assets', label: '情报资产', icon: Database },
       { to: '/app/new', label: '新建调研', icon: Plus },
       { to: '/app/tasks', label: '调研记录', icon: FileText },
     ],

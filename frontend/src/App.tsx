@@ -12,6 +12,7 @@ const AccountPage = lazy(() => import('./pages/app/AccountPage'))
 const AdminPage = lazy(() => import('./pages/app/AdminPage'))
 const AuditLogsPage = lazy(() => import('./pages/app/AuditLogsPage'))
 const AssistantPage = lazy(() => import('./pages/app/AssistantPage'))
+const AssetsPage = lazy(() => import('./pages/app/AssetsPage'))
 const ComparisonPage = lazy(() => import('./pages/app/ComparisonPage'))
 const CompetitorsPage = lazy(() => import('./pages/app/CompetitorsPage'))
 const DashboardPage = lazy(() => import('./pages/app/DashboardPage'))
@@ -50,6 +51,7 @@ export default function App() {
           }
         >
           <Route index element={<DashboardPage />} />
+          <Route path="assets" element={<AssetsPage />} />
           <Route path="new" element={<NewResearchPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="tasks/:id" element={<TaskDetailPage />} />

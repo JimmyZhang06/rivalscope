@@ -97,6 +97,33 @@ export interface ResearchCreate {
   time_range: TimeRange
 }
 
+// ---------- 统一情报资产 ----------
+
+export type IntelligenceObjectType = 'competitor' | 'profile' | 'research_task' | 'graph_project'
+
+export interface IntelligenceObject {
+  id: string
+  type: IntelligenceObjectType
+  source_id: string
+  title: string
+  summary: string
+  status: string
+  org_id: string
+  owner_id: string
+  detail_path: string
+  attributes: Record<string, string>
+  created_at: string
+  updated_at: string
+}
+
+export interface IntelligenceObjectListResponse {
+  items: IntelligenceObject[]
+  total: number
+  page: number
+  page_size: number
+  type_counts: Record<IntelligenceObjectType, number>
+}
+
 // ---------- 账号体系 ----------
 
 export type Role = 'user' | 'admin'
