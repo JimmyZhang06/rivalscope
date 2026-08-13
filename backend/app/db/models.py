@@ -3,7 +3,7 @@ import string
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, event
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -350,6 +350,96 @@ class ProfileGenerationTask(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class Job(Base):
+    """可持久化后台作业；第一阶段不替换现有 BackgroundTasks。"""
+
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    queue: Mapped[str] = mapped_column(String(64), default="default")
+    kind: Mapped[str] = mapped_column(String(100))
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    priority: Mapped[int] = mapped_column(default=0)
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=3)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    lease_owner: Mapped[str] = mapped_column(String(100), default="")
+    lease_token: Mapped[str] = mapped_column(String(32), default="")
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("queue", "idempotency_key", name="uq_jobs_queue_idempotency"),
+        Index("idx_jobs_claim", "queue", "status", "available_at", "priority", "created_at"),
+        Index("idx_jobs_lease_expiry", "status", "lease_expires_at"),
+    )
+
+    steps: Mapped[list["JobStep"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan", order_by="JobStep.seq"
+    )
+
+
+class JobStep(Base):
+    """作业内部阶段记录，供后续迁移现有进度时间线。"""
+
+    __tablename__ = "job_steps"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    seq: Mapped[int] = mapped_column(default=0)
+    name: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    detail: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "seq", name="uq_job_steps_job_seq"),
+    )
+
+    job: Mapped[Job] = relationship(back_populates="steps")
+
+
+class Outbox(Base):
+    """与业务事务一同写入、由独立投递器可靠发送的事件。"""
+
+    __tablename__ = "outbox"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    topic: Mapped[str] = mapped_column(String(100))
+    idempotency_key: Mapped[str] = mapped_column(String(255), unique=True)
+    aggregate_type: Mapped[str] = mapped_column(String(100), default="")
+    aggregate_id: Mapped[str] = mapped_column(String(64), default="")
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=5)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    lease_owner: Mapped[str] = mapped_column(String(100), default="")
+    lease_token: Mapped[str] = mapped_column(String(32), default="")
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_outbox_claim", "status", "available_at", "created_at"),
+        Index("idx_outbox_lease_expiry", "status", "lease_expires_at"),
+    )
 
 
 class Organization(Base):
