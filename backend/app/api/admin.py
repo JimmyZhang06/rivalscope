@@ -22,9 +22,17 @@ from app.schemas.auth import (
     AuditStatsOut,
     UserOut,
 )
-from app.services.audit import log_audit
+from app.services.audit import AuditWriteError, log_audit_required
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(get_current_admin)])
+
+
+def _required_audit(db: Session, **kwargs) -> None:
+    """敏感管理操作缺少审计时拒绝提交业务变更。"""
+    try:
+        log_audit_required(db=db, **kwargs)
+    except AuditWriteError as exc:
+        raise HTTPException(status_code=503, detail="审计服务暂时不可用，操作未生效") from exc
 
 
 @router.get("/stats", response_model=AdminStatsOut)
@@ -105,17 +113,15 @@ def update_user(
         if user.id == admin.id and payload.role != "admin":
             raise HTTPException(status_code=400, detail="不能取消自己的管理员权限")
         user.role = payload.role
+    _required_audit(
+        db,
+        user_id=admin.id, org_id=admin.org_id or "",
+        action="admin.user_update", resource_type="user", resource_id=user.id,
+        input_data=json.dumps({"plan": payload.plan, "role": payload.role}),
+        status="success",
+    )
     db.commit()
     db.refresh(user)
-    try:
-        log_audit(
-            user_id=admin.id, org_id=admin.org_id or "",
-            action="admin.user_update", resource_type="user", resource_id=user.id,
-            input_data=json.dumps({"plan": payload.plan, "role": payload.role}),
-            status="success",
-        )
-    except Exception:
-        pass
     return user
 
 
@@ -228,17 +234,15 @@ def update_org(
         org.plan_expires_at = (
             None if payload.plan == "free" else datetime.now(timezone.utc) + timedelta(days=30)
         )
+    _required_audit(
+        db,
+        user_id=admin.id, org_id=admin.org_id or "",
+        action="admin.org_update", resource_type="organization", resource_id=org.id,
+        input_data=json.dumps({"plan": payload.plan}),
+        status="success",
+    )
     db.commit()
     db.refresh(org)
-    try:
-        log_audit(
-            user_id=admin.id, org_id=admin.org_id or "",
-            action="admin.org_update", resource_type="organization", resource_id=org.id,
-            input_data=json.dumps({"plan": payload.plan}),
-            status="success",
-        )
-    except Exception:
-        pass
     return _org_out(db, org)
 
 

@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     seed_admin_email: str = ""
     seed_admin_password: str = ""
 
+    # 模拟支付仅供本地开发和自动化测试使用。必须显式开启，且生产环境永远禁用。
+    enable_simulated_billing: bool = False
+
     # LLM（OpenAI 兼容接口）
     llm_base_url: str = ""
     llm_api_key: str = ""

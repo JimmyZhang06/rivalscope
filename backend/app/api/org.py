@@ -13,9 +13,17 @@ from app.db.models import GraphProject, Organization, ResearchTask, Tracker, Use
 from app.schemas.org import (
     MemberOut, MemberUpdateIn, OrgCreateIn, OrgJoinIn, OrgMeOut, OrgOut, OrgUpdateIn,
 )
-from app.services.audit import log_audit
+from app.services.audit import AuditWriteError, log_audit_required
 
 router = APIRouter(prefix="/api/org", tags=["org"])
+
+
+def _required_audit(db: Session, **kwargs) -> None:
+    """权限和组织管理操作缺少审计时拒绝提交业务变更。"""
+    try:
+        log_audit_required(db=db, **kwargs)
+    except AuditWriteError as exc:
+        raise HTTPException(status_code=503, detail="审计服务暂时不可用，操作未生效") from exc
 
 
 def _require_org(db: Session, user: User) -> Organization:
@@ -41,17 +49,15 @@ def create_org(payload: OrgCreateIn, user: User = Depends(get_current_user), db:
     db.flush()
     user.org_id = org.id
     user.org_role = "owner"
+    _required_audit(
+        db,
+        user_id=user.id, org_id=org.id,
+        action="org.create", resource_type="organization", resource_id=org.id,
+        input_data=payload.name.strip(),
+        status="success",
+    )
     db.commit()
     db.refresh(org)
-    try:
-        log_audit(
-            user_id=user.id, org_id=org.id,
-            action="org.create", resource_type="organization", resource_id=org.id,
-            input_data=payload.name.strip(),
-            status="success",
-        )
-    except Exception:
-        pass
     return org
 
 
@@ -68,17 +74,15 @@ def my_org(user: User = Depends(get_current_user), db: Session = Depends(get_db)
 def update_org(payload: OrgUpdateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     org = _require_org_admin(db, user)
     org.name = payload.name.strip()
+    _required_audit(
+        db,
+        user_id=user.id, org_id=org.id,
+        action="org.update", resource_type="organization", resource_id=org.id,
+        input_data=payload.name.strip(),
+        status="success",
+    )
     db.commit()
     db.refresh(org)
-    try:
-        log_audit(
-            user_id=user.id, org_id=org.id,
-            action="org.update", resource_type="organization", resource_id=org.id,
-            input_data=payload.name.strip(),
-            status="success",
-        )
-    except Exception:
-        pass
     return org
 
 
@@ -86,16 +90,14 @@ def update_org(payload: OrgUpdateIn, user: User = Depends(get_current_user), db:
 def reset_invite_code(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     org = _require_org_admin(db, user)
     org.invite_code = _invite_code()
+    _required_audit(
+        db,
+        user_id=user.id, org_id=org.id,
+        action="org.invite_code_reset", resource_type="organization", resource_id=org.id,
+        status="success",
+    )
     db.commit()
     db.refresh(org)
-    try:
-        log_audit(
-            user_id=user.id, org_id=org.id,
-            action="org.invite_code_reset", resource_type="organization", resource_id=org.id,
-            status="success",
-        )
-    except Exception:
-        pass
     return org
 
 
@@ -109,16 +111,14 @@ def join_org(payload: OrgJoinIn, user: User = Depends(get_current_user), db: Ses
         raise HTTPException(status_code=404, detail="邀请码无效，请与企业管理员确认")
     user.org_id = org.id
     user.org_role = "member"
+    _required_audit(
+        db,
+        user_id=user.id, org_id=org.id,
+        action="org.join", resource_type="organization", resource_id=org.id,
+        status="success",
+    )
     db.commit()
     db.refresh(org)
-    try:
-        log_audit(
-            user_id=user.id, org_id=org.id,
-            action="org.join", resource_type="organization", resource_id=org.id,
-            status="success",
-        )
-    except Exception:
-        pass
     return org
 
 
@@ -206,17 +206,15 @@ def update_member(
         member.org_role = payload.org_role
     if payload.org_monthly_limit is not None:
         member.org_monthly_limit = payload.org_monthly_limit
+    _required_audit(
+        db,
+        user_id=user.id, org_id=org.id,
+        action="org.member_update", resource_type="user", resource_id=member_id,
+        input_data=json.dumps({"org_role": payload.org_role, "org_monthly_limit": payload.org_monthly_limit}),
+        status="success",
+    )
     db.commit()
     db.refresh(member)
-    try:
-        log_audit(
-            user_id=user.id, org_id=org.id,
-            action="org.member_update", resource_type="user", resource_id=member_id,
-            input_data=json.dumps({"org_role": payload.org_role, "org_monthly_limit": payload.org_monthly_limit}),
-            status="success",
-        )
-    except Exception:
-        pass
     out = MemberOut.model_validate(member)
     out.month_used = member_month_usage(db, member.id)
     return out
@@ -247,17 +245,15 @@ def set_member_permissions(
     db.query(UserPermission).filter(UserPermission.user_id == member_id).delete()
     if perms:
         db.add(UserPermission(user_id=member_id, permissions=json.dumps(perms, ensure_ascii=False)))
+    _required_audit(
+        db,
+        user_id=user.id, org_id=org.id,
+        action="org.permission_set", resource_type="user", resource_id=member_id,
+        input_data=json.dumps({"permissions": perms}),
+        status="success",
+    )
     db.commit()
     invalidate_perm_cache(member_id)
-    try:
-        log_audit(
-            user_id=user.id, org_id=org.id,
-            action="org.permission_set", resource_type="user", resource_id=member_id,
-            input_data=json.dumps({"permissions": perms}),
-            status="success",
-        )
-    except Exception:
-        pass
     out = MemberOut.model_validate(member)
     out.month_used = member_month_usage(db, member.id)
     out.permissions = sorted(perms)
@@ -277,15 +273,13 @@ def remove_member(member_id: str, user: User = Depends(get_current_user), db: Se
     member.org_id = ""
     member.org_role = ""
     member.org_monthly_limit = -1
+    _required_audit(
+        db,
+        user_id=user.id, org_id=org.id,
+        action="org.member_remove", resource_type="user", resource_id=member_id,
+        status="success",
+    )
     db.commit()
-    try:
-        log_audit(
-            user_id=user.id, org_id=org.id,
-            action="org.member_remove", resource_type="user", resource_id=member_id,
-            status="success",
-        )
-    except Exception:
-        pass
 
 
 @router.post("/leave", status_code=204)
@@ -302,12 +296,10 @@ def leave_org(user: User = Depends(get_current_user), db: Session = Depends(get_
     user.org_id = ""
     user.org_role = ""
     user.org_monthly_limit = -1
+    _required_audit(
+        db,
+        user_id=user.id, org_id=org_id,
+        action="org.leave", resource_type="organization", resource_id=org_id,
+        status="success",
+    )
     db.commit()
-    try:
-        log_audit(
-            user_id=user.id, org_id=org_id,
-            action="org.leave", resource_type="organization", resource_id=org_id,
-            status="success",
-        )
-    except Exception:
-        pass
