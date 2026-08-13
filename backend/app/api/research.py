@@ -1,13 +1,13 @@
 import asyncio
 import json
-
-import asyncio
+import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.deps import check_quota_or_403, get_current_user, get_quota, get_user_from_query_token
+from app.api.deps import check_quota_or_403, get_current_user, get_quota, get_user_from_stream_ticket
+from app.core.security import create_stream_ticket
 from app.db.database import SessionLocal, get_db
 from app.db.models import ResearchTask, Source, TaskStep, User
 from app.schemas.auth import QuotaOut
@@ -19,6 +19,7 @@ from app.schemas.research import (
     SourceArchiveOut,
     SourceDetail,
     StepOut,
+    StreamTicketOut,
     TaskBrief,
     TaskDetail,
 )
@@ -26,6 +27,7 @@ from app.services.agent import run_research
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/research", tags=["research"])
+logger = logging.getLogger(__name__)
 
 FINAL_STATUSES = {"completed", "failed"}
 
@@ -269,13 +271,26 @@ async def email_report(
     return EmailReportOut(status=status, recipients=len(recipients))
 
 
+@router.post("/{task_id}/events/ticket", response_model=StreamTicketOut)
+def create_research_stream_ticket(
+    task_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """用 Authorization 换取 60 秒、仅绑定当前任务的 SSE ticket。"""
+    _get_owned_task(task_id, user, db)
+    return StreamTicketOut(
+        ticket=create_stream_ticket(user.id, task_id, user.token_version or 0)
+    )
+
+
 @router.get("/{task_id}/events")
-async def research_events(task_id: str, token: str = Query(...)):
-    """SSE 实时推送任务步骤与状态（EventSource 不支持 Header，用查询参数鉴权）"""
+async def research_events(task_id: str, ticket: str = Query(...)):
+    """SSE 实时推送任务步骤与状态；URL 中只允许短期、任务绑定的 ticket。"""
     # 鉴权用临时 session（stream 有独立 session）
     auth_db = SessionLocal()
     try:
-        user = get_user_from_query_token(token, auth_db)
+        user = get_user_from_stream_ticket(ticket, task_id, auth_db)
         _get_owned_task(task_id, user, auth_db)
     finally:
         auth_db.close()
@@ -305,4 +320,7 @@ async def research_events(task_id: str, token: str = Query(...)):
         finally:
             db.close()
 
-    return EventSourceResponse(event_stream())
+    return EventSourceResponse(
+        event_stream(),
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )

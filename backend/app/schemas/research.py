@@ -136,3 +136,10 @@ class EmailReportOut(BaseModel):
 
     status: str  # sent / demo / failed
     recipients: int
+
+
+class StreamTicketOut(BaseModel):
+    """短期、任务绑定的 SSE 连接凭据。"""
+
+    ticket: str
+    expires_in: int = 60

@@ -349,7 +349,7 @@ export async function emailReport(
   return resp.json()
 }
 
-/** 订阅任务 SSE 进度（token 走查询参数），返回取消订阅函数 */
+/** 订阅任务 SSE 进度；URL 仅携带 60 秒、任务绑定的 stream ticket。 */
 export function subscribeEvents(
   id: string,
   onStep: (step: Step) => void,
@@ -358,11 +358,16 @@ export function subscribeEvents(
   let es: EventSource | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectAttempts = 0
-  let currentToken = tokenStore.get() ?? ''
+  let cancelled = false
   const MAX_RECONNECT = 5
 
-  function connect(token: string) {
-    es = new EventSource(`/api/research/${id}/events?token=${encodeURIComponent(token)}`)
+  async function connect() {
+    const { ticket } = await request<{ ticket: string; expires_in: number }>(
+      `/api/research/${id}/events/ticket`,
+      { method: 'POST' },
+    )
+    if (cancelled) return
+    es = new EventSource(`/api/research/${id}/events?ticket=${encodeURIComponent(ticket)}`)
 
     es.addEventListener('step', (e) => {
       onStep(JSON.parse((e as MessageEvent).data))
@@ -384,23 +389,17 @@ export function subscribeEvents(
           reconnectAttempts++
           const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000) // exponential backoff
           reconnectTimer = setTimeout(() => {
-            // Try refreshing token before reconnecting
-            tryProactiveRefresh().then(() => {
-              currentToken = tokenStore.get() ?? currentToken
-              connect(currentToken)
-            }).catch(() => {
-              // Refresh also failed, retry with current token
-              connect(currentToken)
-            })
+            connect().catch(() => {})
           }, delay)
         }
       }
     }
   }
 
-  connect(currentToken)
+  connect().catch(() => {})
 
   return () => {
+    cancelled = true
     if (reconnectTimer) clearTimeout(reconnectTimer)
     es?.close()
   }

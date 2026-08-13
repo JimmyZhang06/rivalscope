@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.plans import UNLIMITED, effective_org_plan, effective_plan, plan_limits
 from app.core.rate_limit import check_rate_limit
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, decode_stream_ticket
 from app.db.database import SessionLocal, get_db
 from app.db.models import GraphProject, Notification, Organization, ResearchTask, User, UserPermission
 
@@ -45,9 +45,18 @@ def get_current_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def get_user_from_query_token(token: str, db: Session) -> User:
-    """SSE 场景：EventSource 无法携带 Header，从查询参数取 token"""
-    return _get_user_by_token(token, db)
+def get_user_from_stream_ticket(ticket: str, task_id: str, db: Session) -> User:
+    """校验短期且绑定任务的 SSE ticket；拒绝 access/refresh token。"""
+    decoded = decode_stream_ticket(ticket)
+    if not decoded:
+        raise HTTPException(status_code=401, detail="实时连接凭据无效或已过期")
+    user_id, ver, ticket_task_id = decoded
+    if ticket_task_id != task_id:
+        raise HTTPException(status_code=401, detail="实时连接凭据与任务不匹配")
+    user = db.get(User, user_id)
+    if not user or ver != (user.token_version or 0):
+        raise HTTPException(status_code=401, detail="登录状态已失效，请重新登录")
+    return user
 
 
 def month_start_utc() -> datetime:
