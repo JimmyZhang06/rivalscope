@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, CheckCircle2, X } from 'lucide-react'
-import { listPlans, upgradePlan } from '../../api/client'
-import type { Plan, PlanInfo } from '../../api/types'
+import { getOrgMe, getQuota, listPlans, upgradePlan } from '../../api/client'
+import type { OrgMe, Plan, PlanInfo, Quota } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import { fmtDate } from '../../utils/time'
 import { usePageTitle } from '../../hooks/usePageTitle'
@@ -10,14 +10,31 @@ export default function PricingPage() {
   usePageTitle('套餐升级')
   const { user, refreshUser } = useAuth()
   const [plans, setPlans] = useState<PlanInfo[]>([])
+  const [quota, setQuota] = useState<Quota | null>(null)
+  const [orgMe, setOrgMe] = useState<OrgMe | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [paying, setPaying] = useState<PlanInfo | null>(null) // 模拟支付弹窗
   const [processing, setProcessing] = useState(false)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    listPlans().then(setPlans).catch(() => {})
-  }, [])
+  const loadPage = async () => {
+    setLoading(true)
+    setLoadError('')
+    try {
+      const [planData, quotaData, orgData] = await Promise.all([listPlans(), getQuota(), getOrgMe()])
+      setPlans(planData)
+      setQuota(quotaData)
+      setOrgMe(orgData)
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : '套餐信息加载失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { loadPage() }, [])
 
   const handlePay = async () => {
     if (!paying) return
@@ -26,6 +43,8 @@ export default function PricingPage() {
     try {
       await upgradePlan(paying.key as Plan)
       await refreshUser()
+      await loadPage()
+      window.dispatchEvent(new Event('account-plan-updated'))
       setSuccess(`已成功开通${paying.name}，套餐立即生效`)
       setPaying(null)
     } catch (err) {
@@ -35,15 +54,27 @@ export default function PricingPage() {
     }
   }
 
+  if (loading) return <div className="mx-auto max-w-5xl px-4 py-8 text-sm text-gray-500 sm:px-6" role="status">正在加载套餐信息…</div>
+
+  if (loadError || !quota) {
+    return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><div className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700"><p>{loadError || '套餐信息加载失败'}</p><button onClick={loadPage} className="mt-2 font-medium underline underline-offset-2">重新加载</button></div></div>
+  }
+
+  const effectivePlan = quota.plan
+  const canManageBilling = !orgMe?.org || orgMe.org_role === 'owner' || orgMe.org_role === 'admin'
+  const expiresAt = orgMe?.org ? orgMe.org.plan_expires_at : user?.plan_expires_at
+
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
       <h1 className="text-2xl font-bold tracking-tight text-gray-900">套餐升级</h1>
       <p className="mt-1 text-sm text-gray-500">
-        当前套餐：<span className="font-medium text-gray-900">{plans.find((p) => p.key === user?.plan)?.name ?? user?.plan}</span>
-        {user?.plan_expires_at && (
-          <> · 有效期至 {fmtDate(user.plan_expires_at)}</>
+        当前有效套餐：<span className="font-medium text-gray-900">{plans.find((p) => p.key === effectivePlan)?.name ?? effectivePlan}</span>
+        {orgMe?.org && <> · 由工作区“{orgMe.org.name}”提供</>}
+        {expiresAt && (
+          <> · 有效期至 {fmtDate(expiresAt)}</>
         )}
       </p>
+      {!canManageBilling && <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">你可以查看套餐权益，但只有工作区所有者或管理员可以升级和续费。</div>}
 
       {success && (
         <div className="mt-4 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -53,7 +84,7 @@ export default function PricingPage() {
 
       <div className="mt-8 grid gap-6 md:grid-cols-3">
         {plans.map((p) => {
-          const isCurrent = user?.plan === p.key
+          const isCurrent = effectivePlan === p.key
           const highlight = p.key === 'pro'
           return (
             <div
@@ -98,6 +129,8 @@ export default function PricingPage() {
                 >
                   当前套餐
                 </button>
+              ) : !canManageBilling ? (
+                <button disabled className="mt-8 rounded-md border border-gray-200 bg-gray-50 py-2.5 text-sm font-semibold text-gray-500">联系工作区管理员</button>
               ) : p.price === 0 ? (
                 <button
                   disabled
@@ -118,7 +151,7 @@ export default function PricingPage() {
                       : 'border border-blue-600 text-blue-700 hover:bg-blue-50'
                   }`}
                 >
-                  {user?.plan === 'free' ? '立即升级' : '切换 / 续费'}
+                  {effectivePlan === 'free' ? '立即升级' : '切换 / 续费'}
                 </button>
               )}
             </div>

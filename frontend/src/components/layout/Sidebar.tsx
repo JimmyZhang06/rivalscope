@@ -168,7 +168,7 @@ export default function Sidebar({
           <NavLink
             to="/app/account"
             onClick={onCloseMobile}
-            title={hideLabels ? '账号与企业' : undefined}
+            title={hideLabels ? '账户设置' : undefined}
             className={`flex items-center rounded-lg p-2 text-slate-300 transition hover:bg-slate-800 motion-reduce:transition-none ${hideLabels ? 'justify-center' : 'gap-3'}`}
           >
             {user?.avatar?.startsWith('data:image/') ? (

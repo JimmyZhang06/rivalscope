@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -23,6 +23,40 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const messageId = useId()
+
+  useEffect(() => {
+    if (!open) return
+    const previousFocus = document.activeElement as HTMLElement | null
+    cancelRef.current?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !loading) onCancel()
+      if (event.key === 'Tab') {
+        const focusable = Array.from(
+          dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]') ?? [],
+        )
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      previousFocus?.focus()
+    }
+  }, [loading, open])
+
   if (!open) return null
 
   const handleConfirm = async () => {
@@ -34,15 +68,21 @@ export default function ConfirmDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !loading && onCancel()}>
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={messageId}
         className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-        <p className="mt-2 text-sm text-gray-500">{message}</p>
+        <h3 id={titleId} className="text-base font-semibold text-gray-900">{title}</h3>
+        <div id={messageId} className="mt-2 text-sm text-gray-500">{message}</div>
         <div className="mt-5 flex justify-end gap-2">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             disabled={loading}

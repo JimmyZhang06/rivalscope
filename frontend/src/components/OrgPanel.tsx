@@ -15,6 +15,7 @@ import type { OrgMe, OrgMember } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { fmtDate } from '../utils/time'
 import PlanBadge from './PlanBadge'
+import ConfirmDialog from './ConfirmDialog'
 
 const ROLE_LABELS: Record<string, string> = { owner: '所有者', admin: '管理员', member: '成员' }
 const ROLE_BADGE: Record<string, string> = {
@@ -56,6 +57,7 @@ export default function OrgPanel() {
   // 成员月额度行内编辑
   const [editingLimitId, setEditingLimitId] = useState('')
   const [limitDraft, setLimitDraft] = useState('')
+  const [confirmAction, setConfirmAction] = useState<{ kind: 'leave' | 'remove'; member?: OrgMember } | null>(null)
 
   const canManage = me?.org_role === 'owner' || me?.org_role === 'admin'
 
@@ -83,6 +85,7 @@ export default function OrgPanel() {
     try {
       await fn()
       await reload()
+      window.dispatchEvent(new Event('account-plan-updated'))
       if (successMsg) setNotice(successMsg)
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败')
@@ -131,12 +134,13 @@ export default function OrgPanel() {
       {!me?.org ? (
         /* 未加入企业：创建 / 邀请码加入 双卡 */
         <div className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-lg border border-gray-200 bg-white p-7 shadow-sm">
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
             <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
               <Building2 className="h-5 w-5 text-blue-600" /> 创建企业
             </h3>
             <p className="mt-1 text-sm text-gray-500">创建后您将成为企业所有者，可邀请同事加入</p>
             <input
+              aria-label="企业名称"
               value={createName}
               onChange={(e) => setCreateName(e.target.value)}
               placeholder="企业名称，如：字节跳动市场部"
@@ -151,12 +155,13 @@ export default function OrgPanel() {
               创建企业
             </button>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-7 shadow-sm">
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
             <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
               <Ticket className="h-5 w-5 text-blue-600" /> 加入企业
             </h3>
             <p className="mt-1 text-sm text-gray-500">输入企业管理员提供的 8 位邀请码</p>
             <input
+              aria-label="企业邀请码"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
               placeholder="8 位邀请码"
@@ -175,12 +180,13 @@ export default function OrgPanel() {
       ) : (
         <>
           {/* 企业信息卡 */}
-          <section className="rounded-lg border border-gray-200 bg-white p-7 shadow-sm">
+          <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 {editingName ? (
                   <div className="flex items-center gap-2">
                     <input
+                      aria-label="企业名称"
                       value={nameDraft}
                       onChange={(e) => setNameDraft(e.target.value)}
                       maxLength={100}
@@ -230,11 +236,7 @@ export default function OrgPanel() {
                 </div>
               </div>
               <button
-                onClick={() => {
-                  if (window.confirm(me.org_role === 'owner' ? '退出将解散企业（仅当无其他成员时），确认？' : '确认退出该企业？')) {
-                    run(() => leaveOrg(), '已退出企业')
-                  }
-                }}
+                onClick={() => setConfirmAction({ kind: 'leave' })}
                 disabled={submitting}
                 className="rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50"
               >
@@ -305,6 +307,7 @@ export default function OrgPanel() {
                         {editingLimitId === m.id ? (
                           <span className="flex items-center gap-1.5">
                             <input
+                              aria-label={`设置 ${m.nickname || m.email} 的成员月额度`}
                               autoFocus
                               value={limitDraft}
                               onChange={(e) => setLimitDraft(e.target.value)}
@@ -342,6 +345,7 @@ export default function OrgPanel() {
                           </button>
                         )}
                         <select
+                          aria-label={`设置 ${m.nickname || m.email} 的角色`}
                           value={m.org_role}
                           onChange={(e) =>
                             run(() => updateOrgMember(m.id, { org_role: e.target.value as 'admin' | 'member' }), '角色已更新')
@@ -353,11 +357,7 @@ export default function OrgPanel() {
                           <option value="member">成员</option>
                         </select>
                         <button
-                          onClick={() => {
-                            if (window.confirm(`确认将 ${m.nickname || m.email} 移出企业？`)) {
-                              run(() => removeOrgMember(m.id), '已移出成员')
-                            }
-                          }}
+                          onClick={() => setConfirmAction({ kind: 'remove', member: m })}
                           disabled={submitting}
                           className="rounded-md border border-red-200 px-2.5 py-1.5 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
                         >
@@ -370,6 +370,27 @@ export default function OrgPanel() {
               })}
             </ul>
           </section>
+          <ConfirmDialog
+            open={confirmAction !== null}
+            title={confirmAction?.kind === 'remove' ? '移出成员？' : '退出工作区？'}
+            message={confirmAction?.kind === 'remove'
+              ? `确认将 ${confirmAction.member?.nickname || confirmAction.member?.email || '该成员'} 移出工作区？`
+              : me.org_role === 'owner'
+                ? '只有最后一名成员可以退出并解散工作区；如仍有其他成员，操作会被拒绝。'
+                : '退出后将无法继续访问该工作区的共享数据。'}
+            confirmText={confirmAction?.kind === 'remove' ? '确认移出' : '确认退出'}
+            danger
+            loading={submitting}
+            onCancel={() => setConfirmAction(null)}
+            onConfirm={async () => {
+              if (confirmAction?.kind === 'remove' && confirmAction.member) {
+                await run(() => removeOrgMember(confirmAction.member!.id), '已移出成员')
+              } else {
+                await run(() => leaveOrg(), '已退出企业')
+              }
+              setConfirmAction(null)
+            }}
+          />
         </>
       )}
     </div>

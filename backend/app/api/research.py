@@ -8,6 +8,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import check_quota_or_403, get_current_user, get_quota, get_user_from_stream_ticket
 from app.core.security import create_stream_ticket
+from app.core.background import run_coroutine_in_worker
 from app.db.database import SessionLocal, get_db
 from app.db.models import ResearchTask, Source, TaskStep, User
 from app.schemas.auth import QuotaOut
@@ -33,9 +34,9 @@ FINAL_STATUSES = {"completed", "failed"}
 
 
 async def _run_research_bg(task_id: str) -> None:
-    """BackgroundTasks 包装器：async 函数作为 coroutine 直接 await"""
+    """在独立工作线程中运行，避免同步数据库写入阻塞 API 事件循环。"""
     try:
-        await run_research(task_id)
+        await run_coroutine_in_worker(run_research, task_id)
     except Exception:
         logger.exception("research bg task %s failed", task_id)
 

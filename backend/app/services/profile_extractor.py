@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from app.core.timeutil import utcnow
+from app.core.background import run_coroutine_in_worker
 from app.db.database import SessionLocal
 from app.db.models import Competitor, CompetitorPage, CompetitorProfile, ProfileTemplate
 from app.db.models import ProfileGenerationTask as ProfileGenerationTaskModel
@@ -589,14 +590,14 @@ async def _run_profile_generation_task(task_id: str) -> None:
             try:
                 _on_progress("正在生成画像报告…")
                 from app.services.profile_report import generate_profile_report
-                report_data = await generate_profile_report(profile_id, task.user_id, result.get("org_id", ""))
+                report_data = await generate_profile_report(profile_id, task.user_id, task.org_id)
                 report_markdown = report_data.get("report_markdown", "")
                 source_index = report_data.get("source_index", [])
                 quality = report_data.get("quality", {})
 
                 _on_progress("正在分析洞察数据…")
                 from app.services.profile_report import generate_profile_insights
-                insights = await generate_profile_insights(profile_id, task.user_id, result.get("org_id", ""))
+                insights = await generate_profile_insights(profile_id, task.user_id, task.org_id)
 
                 # Persist pre-generated content into independent columns
                 with SessionLocal() as db:
@@ -655,7 +656,9 @@ def create_profile_generation_task(competitor_id: str, template_id: str, user_id
         _generation_tasks[task.task_id] = task
     # 立即持久化，确保进程崩溃后也能恢复
     _persist_generation_task(task)
-    asyncio.get_running_loop().create_task(_run_profile_generation_task(task.task_id))
+    asyncio.get_running_loop().create_task(
+        run_coroutine_in_worker(_run_profile_generation_task, task.task_id)
+    )
     return task
 
 
@@ -703,7 +706,9 @@ def recover_orphaned_generation_tasks() -> list[ProfileGenerationTask]:
             with _extract_lock:
                 _generation_tasks[task.task_id] = task
             # 重新启动后台任务
-            asyncio.get_running_loop().create_task(_run_profile_generation_task(task.task_id))
+            asyncio.get_running_loop().create_task(
+                run_coroutine_in_worker(_run_profile_generation_task, task.task_id)
+            )
             recovered.append(task)
             logger.info("recovered stale extract task %s for competitor %s", task.task_id, task.competitor_id)
 

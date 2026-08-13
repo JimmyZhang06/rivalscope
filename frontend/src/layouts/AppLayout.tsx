@@ -16,6 +16,10 @@ export default function AppLayout() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [unreadError, setUnreadError] = useState('')
 
+  const refreshEffectivePlan = useCallback(() => {
+    getQuota().then((quota) => setEffectivePlan(quota.plan)).catch(() => {})
+  }, [])
+
   const refreshUnreadCount = useCallback(() => {
     getUnreadCount()
       .then((result) => {
@@ -26,8 +30,10 @@ export default function AppLayout() {
   }, [])
 
   useEffect(() => {
-    getQuota().then((quota) => setEffectivePlan(quota.plan)).catch(() => {})
-  }, [])
+    refreshEffectivePlan()
+    window.addEventListener('account-plan-updated', refreshEffectivePlan)
+    return () => window.removeEventListener('account-plan-updated', refreshEffectivePlan)
+  }, [refreshEffectivePlan])
 
   useEffect(() => {
     refreshUnreadCount()

@@ -13,6 +13,7 @@ from app.db.database import get_db
 from app.db.models import Organization, ResearchTask, Tracker, User
 from app.schemas.tracker import TrackerCreateIn, TrackerOut, TrackerRunOut, TrackerUpdateIn
 from app.services.agent import run_research
+from app.core.background import run_coroutine_in_worker
 from app.services.audit import log_audit
 from app.services.scheduler import initial_next_run
 
@@ -281,7 +282,7 @@ def run_now(
         )
     except Exception:
         pass
-    background.add_task(run_research, task.id)
+    background.add_task(run_coroutine_in_worker, run_research, task.id)
     return task
 
 

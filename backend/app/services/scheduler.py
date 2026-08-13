@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from app.db.database import SessionLocal
 from app.db.models import ExecutionSnapshot, Notification, ResearchTask, Tracker, User
 from app.services.agent import run_research
+from app.core.background import run_coroutine_in_worker
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ def advance_next_run(tracker: Tracker, now: datetime) -> datetime:
 
 async def _run_and_release(tracker_id: str, task_id: str) -> None:
     try:
-        await run_research(task_id)
+        await run_coroutine_in_worker(run_research, task_id)
     finally:
         _running.discard(tracker_id)
 

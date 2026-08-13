@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import check_quota_or_403, get_current_user
+from app.core.background import run_coroutine_in_worker
 from app.db.database import get_db
 from app.db.models import GraphEntity, GraphProject, GraphRelation, User
 from app.schemas.graph import GraphCreate, GraphDetailOut, GraphProjectOut
@@ -56,7 +57,7 @@ def create_graph(
         )
     except Exception:
         pass
-    background.add_task(build_graph, project.id)
+    background.add_task(run_coroutine_in_worker, build_graph, project.id)
     return project
 
 
@@ -108,7 +109,7 @@ def refresh_graph(
         )
     except Exception:
         pass
-    background.add_task(build_graph, project.id)
+    background.add_task(run_coroutine_in_worker, build_graph, project.id)
     return project
 
 

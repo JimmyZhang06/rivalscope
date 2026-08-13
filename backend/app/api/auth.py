@@ -226,6 +226,8 @@ def delete_account(
 ):
     if user.role == "admin":
         raise HTTPException(status_code=400, detail="管理员账号不能注销")
+    if user.org_id:
+        raise HTTPException(status_code=400, detail="请先退出所属企业，再注销账号")
     if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=400, detail="密码不正确，无法注销")
     # 级联清理：批量删除任务（触发 ORM 级联删步骤/来源）→ 订单 → 登录日志 → 用户

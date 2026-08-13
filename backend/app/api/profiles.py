@@ -35,7 +35,7 @@ def _profile_access_check(p: CompetitorProfile, user: User) -> None:
         raise HTTPException(status_code=404, detail="画像不存在")
     check_access(
         p.org_id, p.user_id, user,
-        system_access="admin_only",
+        system_access="owner_or_admin",
         resource_name="画像",
     )
 
@@ -244,10 +244,19 @@ def get_profile(pid: str, user: User = Depends(get_current_user), db: Session = 
 
 
 @router.post("/{pid}/freeze", response_model=dict)
-def freeze_profile_api(pid: str, user: User = Depends(get_current_user)):
-    if not is_admin(user):
-        raise HTTPException(status_code=403, detail="仅管理员可冻结画像")
-    return freeze_profile(pid)
+def freeze_profile_api(
+    pid: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    profile = db.get(CompetitorProfile, pid)
+    _profile_access_check(profile, user)
+    if profile.org_id and not is_admin(user) and user.org_role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="需要企业管理员权限")
+    try:
+        return freeze_profile(pid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ---------- 画像报告与洞察 ----------

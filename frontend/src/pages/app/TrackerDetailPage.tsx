@@ -19,13 +19,14 @@ export default function TrackerDetailPage() {
   const [error, setError] = useState('')
   const [running, setRunning] = useState(false)
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (showError = true) => {
     try {
       const [t, r] = await Promise.all([getTracker(id), listTrackerRuns(id)])
       setTracker(t)
       setRuns(r)
+      setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      if (showError) setError(err instanceof Error ? err.message : '加载失败')
     } finally {
       setLoading(false)
     }
@@ -39,7 +40,7 @@ export default function TrackerDetailPage() {
   useEffect(() => {
     const active = runs.some((r) => !['completed', 'failed'].includes(r.status))
     if (!active) return
-    const timer = setInterval(reload, 5000)
+    const timer = setInterval(() => reload(false), 5000)
     return () => clearInterval(timer)
   }, [runs, reload])
 

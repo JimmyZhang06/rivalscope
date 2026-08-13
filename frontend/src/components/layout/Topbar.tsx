@@ -79,8 +79,8 @@ export default function Topbar({ unreadCount, user, onOpenMobile, onLogout, onRe
                 <p className="truncate text-sm font-semibold text-gray-900">{user?.nickname || '用户'}</p>
                 <p className="truncate text-xs text-gray-400">{user?.email}</p>
               </div>
-              <Link role="menuitem" to="/app/account" onClick={() => setUserMenuOpen(false)} className="mt-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"><UserRound className="h-4 w-4" />账号与企业</Link>
-              <Link role="menuitem" to="/app/pricing" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"><Gem className="h-4 w-4" />套餐与用量</Link>
+              <Link role="menuitem" to="/app/account" onClick={() => setUserMenuOpen(false)} className="mt-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"><UserRound className="h-4 w-4" />账户设置</Link>
+              <Link role="menuitem" to="/app/account?tab=billing" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"><Gem className="h-4 w-4" />套餐与账单</Link>
               {user?.role === 'admin' && <Link role="menuitem" to="/app/admin" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"><Shield className="h-4 w-4" />管理后台</Link>}
               <button role="menuitem" type="button" onClick={onLogout} className="mt-1 flex w-full items-center gap-3 border-t border-gray-100 px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />退出登录</button>
             </div>

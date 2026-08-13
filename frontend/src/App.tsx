@@ -68,7 +68,7 @@ export default function App() {
           <Route path="graph/:id" element={<GraphDetailPage />} />
           <Route path="assistant" element={<AssistantPage />} />
           {/* 企业管理已并入个人中心「企业」Tab，保留旧链接重定向 */}
-          <Route path="org" element={<Navigate to="/app/account?tab=org" replace />} />
+          <Route path="org" element={<Navigate to="/app/account?tab=workspace" replace />} />
           <Route path="pricing" element={<PricingPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route

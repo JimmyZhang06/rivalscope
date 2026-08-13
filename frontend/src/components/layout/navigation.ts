@@ -4,13 +4,13 @@ import {
   Building2,
   Database,
   FileSearch,
-  Gem,
+  Layers,
   LayoutDashboard,
   Network,
   RadioTower,
   Scale,
+  Settings,
   Sparkles,
-  UserRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -31,7 +31,8 @@ export const PLATFORM_NAVIGATION: NavigationItem[] = [
 
 export const ANALYSIS_NAVIGATION: NavigationItem[] = [
   { to: '/app/new', label: '专题调研', icon: FileSearch },
-  { to: '/app/profiles', label: '画像与对比', icon: Sparkles },
+  { to: '/app/profiles/templates', label: '画像模板', icon: Layers, end: true },
+  { to: '/app/profiles', label: '画像与对比', icon: Sparkles, end: true },
   { to: '/app/graph', label: '关系图谱', icon: Network },
 ]
 
@@ -42,8 +43,7 @@ export const ASSISTANT_NAVIGATION: NavigationItem = {
 }
 
 export const ACCOUNT_NAVIGATION: NavigationItem[] = [
-  { to: '/app/pricing', label: '套餐与用量', icon: Gem },
-  { to: '/app/account', label: '账号与企业', icon: UserRound },
+  { to: '/app/account', label: '设置', icon: Settings },
 ]
 
 export const CREATE_ACTIONS: NavigationItem[] = [
@@ -68,8 +68,8 @@ const PAGE_TITLES: Array<{ test: (pathname: string) => boolean; title: string }>
   { test: (path) => path.startsWith('/app/new'), title: '专题调研' },
   { test: (path) => path.startsWith('/app/graph'), title: '关系图谱' },
   { test: (path) => path.startsWith('/app/assistant'), title: 'AI 助手' },
-  { test: (path) => path.startsWith('/app/pricing'), title: '套餐与用量' },
-  { test: (path) => path.startsWith('/app/account') || path.startsWith('/app/org'), title: '账号与企业' },
+  { test: (path) => path.startsWith('/app/pricing'), title: '套餐升级' },
+  { test: (path) => path.startsWith('/app/account') || path.startsWith('/app/org'), title: '设置' },
   { test: (path) => path.startsWith('/app/admin/audit-logs'), title: '审计日志' },
   { test: (path) => path.startsWith('/app/admin'), title: '管理后台' },
 ]

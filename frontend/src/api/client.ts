@@ -175,6 +175,22 @@ export async function request<T>(url: string, init: RequestInit = {}): Promise<T
   const isAuthEndpoint = url.startsWith('/api/auth/')
 
   if (resp.status === 401) {
+    // 匿名认证请求不存在可刷新的有效会话，应直接呈现后端错误。
+    // 否则 undefined 会继续流入 saveTokens，向用户暴露运行时异常。
+    const anonymousAuthEndpoints = [
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/auth/forgot',
+      '/api/auth/reset',
+      '/api/auth/refresh',
+    ]
+    if (anonymousAuthEndpoints.includes(url)) {
+      const body = await resp.json().catch(() => null)
+      let detail = body?.detail
+      if (Array.isArray(detail)) detail = detail[0]?.msg ?? '请求参数有误'
+      throw new ApiError(resp.status, detail ?? '认证失败')
+    }
+
     const refreshed = await tryRefreshToken()
 
     if (!refreshed) {
@@ -183,7 +199,10 @@ export async function request<T>(url: string, init: RequestInit = {}): Promise<T
       if (!isAuthEndpoint && !url.includes('/api/auth/refresh')) {
         window.location.href = '/login'
       }
-      return undefined as T
+      const body = await resp.json().catch(() => null)
+      let detail = body?.detail
+      if (Array.isArray(detail)) detail = detail[0]?.msg ?? '请求参数有误'
+      throw new ApiError(resp.status, detail ?? '登录状态已失效，请重新登录')
     }
 
     // Refresh succeeded, retry with new token

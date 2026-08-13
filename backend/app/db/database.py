@@ -7,10 +7,13 @@ from app.core.config import get_settings
 settings = get_settings()
 
 if settings.database_url.startswith("sqlite"):
+    sqlite_connect_args = {"check_same_thread": False, "timeout": 60}
+    is_memory_database = settings.database_url in {"sqlite://", "sqlite:///:memory:"} or "mode=memory" in settings.database_url
+    sqlite_pool_options = {"poolclass": StaticPool} if is_memory_database else {"pool_pre_ping": True}
     engine = create_engine(
         settings.database_url,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        connect_args=sqlite_connect_args,
+        **sqlite_pool_options,
     )
 else:
     engine = create_engine(
