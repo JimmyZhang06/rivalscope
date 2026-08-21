@@ -1,4 +1,4 @@
-# Competitive Intelligence Agent
+# RivalScope
 
 一套面向产品、市场和战略团队的竞品情报工作台。系统将联网检索、网页采集、结构化分析、企业画像、关系图谱和持续追踪整合在一个可审计的工作流中。
 
