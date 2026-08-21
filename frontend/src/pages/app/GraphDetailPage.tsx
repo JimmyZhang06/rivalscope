@@ -17,6 +17,7 @@ import { AlertTriangle, CheckCircle2, FileText, Link2, Radar, RefreshCw, X } fro
 import { createTracker, getGraph, listTrackers, refreshGraph } from '../../api/client'
 import type { EntityType, GraphDetail, GraphEntity, GraphRelation, RelationType, TrackerCreate } from '../../api/types'
 import TrackerForm from '../../components/TrackerForm'
+import { useAuth } from '../../auth/AuthContext'
 
 // 关系类型 → 中文标签、颜色、放射方向（相对根节点）
 const RELATION_META: Record<RelationType, { label: string; color: string; dir: 'left' | 'right' | 'top' | 'bottom' }> = {
@@ -106,6 +107,7 @@ function computeLayout(detail: GraphDetail): Record<string, { x: number; y: numb
 }
 
 export default function GraphDetailPage() {
+  const { user } = useAuth()
   const { id = '' } = useParams()
   const [detail, setDetail] = useState<GraphDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -255,6 +257,7 @@ export default function GraphDetailPage() {
       </div>
     )
   }
+  const canManage = detail.user_id === user?.id || user?.role === 'admin' || user?.org_role === 'owner' || user?.org_role === 'admin'
 
   const building = detail.status === 'building' || detail.status === 'pending'
 
@@ -282,14 +285,16 @@ export default function GraphDetailPage() {
             分析报告
           </button>
         )}
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing || building}
-          className="flex items-center gap-1.5 rounded-md border border-gray-200 px-4 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          {refreshing ? '重建中…' : '重建图谱'}
-        </button>
+        {canManage && (
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || building}
+            className="flex items-center gap-1.5 rounded-md border border-gray-200 px-4 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {refreshing ? '重建中…' : '重建图谱'}
+          </button>
+        )}
         <button
           onClick={() => flowApiRef.current?.fitView({ padding: 0.2, duration: 300 })}
           disabled={!detail || detail.status !== 'completed'}
@@ -343,13 +348,15 @@ export default function GraphDetailPage() {
             </span>
             <p className="mt-4 font-medium text-gray-900">图谱构建失败</p>
             <p className="mt-1 max-w-lg text-sm text-red-600">{detail.error || '未知错误'}</p>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="mt-5 rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
-            >
-              {refreshing ? '重建中…' : '重新构建'}
-            </button>
+            {canManage && (
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="mt-5 rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+              >
+                {refreshing ? '重建中…' : '重新构建'}
+              </button>
+            )}
           </div>
         ) : (
           <ReactFlow
@@ -489,6 +496,9 @@ export default function GraphDetailPage() {
       {showReport && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={() => setShowReport(false)}>
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="graph-report-title"
             className="flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -498,11 +508,11 @@ export default function GraphDetailPage() {
                   <FileText className="h-4 w-4" />
                 </span>
                 <div>
-                  <h2 className="text-sm font-semibold text-gray-900">关系网络分析报告</h2>
+                  <h2 id="graph-report-title" className="text-sm font-semibold text-gray-900">关系网络分析报告</h2>
                   <p className="text-xs text-gray-400">基于 {detail.root_name} 的产业链关系自动生成</p>
                 </div>
               </div>
-              <button onClick={() => setShowReport(false)} className="text-gray-400 transition hover:text-gray-600">
+              <button aria-label="关闭关系网络分析报告" onClick={() => setShowReport(false)} className="text-gray-400 transition hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -518,8 +528,8 @@ export default function GraphDetailPage() {
       {/* 纳入追踪弹窗（复用 TrackerForm，图谱数据预填） */}
       {showTrackForm && selectedEntity && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
-          <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900">将「{selectedEntity.name}」纳入定时追踪</h3>
+          <div role="dialog" aria-modal="true" aria-labelledby="graph-tracker-title" className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+            <h3 id="graph-tracker-title" className="text-lg font-bold text-gray-900">将「{selectedEntity.name}」纳入定时追踪</h3>
             <p className="mt-1 text-xs text-gray-400">已按图谱信息预填竞品与时效，可调整后创建</p>
             {trackError && (
               <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">

@@ -23,7 +23,6 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             'vendor-react': ['react', 'react-dom', 'react-router-dom'],
             'vendor-charts': ['recharts'],
-            'vendor-editor': ['react-markdown', 'remark-gfm'],
             'vendor-pdf': ['html2pdf.js'],
             'vendor-flow': ['reactflow'],
             'vendor-state': ['zustand', 'zustand/middleware'],

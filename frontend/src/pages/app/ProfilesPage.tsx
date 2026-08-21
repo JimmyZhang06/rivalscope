@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Sparkles, RefreshCw, Globe, ChevronRight, FileText, Lock, Eye } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { generateProfileApi, generateProfileFromCrawl, getGenerateStatus } from '../../api/client'
+import { generateProfileApi, getGenerateStatus } from '../../api/client'
 import { fmtDateTime } from '../../utils/time'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useProfileStore } from '../../stores/profileStore'
@@ -11,10 +11,9 @@ export default function ProfilesPage() {
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [selectedCompetitor, setSelectedCompetitor] = useState('')
   const [generating, setGenerating] = useState(false)
-  const [generatingFromCrawl, setGeneratingFromCrawl] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [genPollTimer, setGenPollTimer] = useState<number | null>(null)
+  const genPollTimerRef = useRef<number | null>(null)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
 
   const navigate = useNavigate()
@@ -33,7 +32,8 @@ export default function ProfilesPage() {
   }
 
   const handleGenerate = async () => {
-    if (!selectedTemplate || !selectedCompetitor) return
+    if (!selectedTemplate || !selectedCompetitor || generating) return
+    const competitorId = selectedCompetitor
     setGenerating(true)
     setError('')
     try {
@@ -45,16 +45,18 @@ export default function ProfilesPage() {
           const status = await getGenerateStatus(taskId)
           if (status.status === 'done') {
             clearInterval(tid)
-            setGenPollTimer(null)
+            genPollTimerRef.current = null
+            setGenerating(false)
             if (status.error) {
               setError(`画像数据生成完成，但报告/洞察预生成失败：${status.error}`)
             } else {
-              showNotice(`${getCompetitorName(selectedCompetitor)} 画像已生成（含报告与洞察）`)
+              showNotice(`${getCompetitorName(competitorId)} 画像已生成（含报告与洞察）`)
             }
             await reload()
           } else if (status.status === 'error') {
             clearInterval(tid)
-            setGenPollTimer(null)
+            genPollTimerRef.current = null
+            setGenerating(false)
             setError(`画像生成失败：${status.error || '未知错误'}`)
           } else if (status.current_step) {
             showNotice(status.current_step)
@@ -64,55 +66,16 @@ export default function ProfilesPage() {
           // 非致命：轮询偶发失败不中断
         }
       }, 2000)
-      setGenPollTimer(tid)
+      genPollTimerRef.current = tid
     } catch (err) {
-      setError(err instanceof Error ? err.message : '启动画像生成失败')
-    } finally {
       setGenerating(false)
-    }
-  }
-
-  const handleGenerateFromCrawl = async () => {
-    if (!selectedTemplate || !selectedCompetitor) return
-    setGeneratingFromCrawl(true)
-    setError('')
-    try {
-      const result = await generateProfileFromCrawl({ competitor_id: selectedCompetitor, template_id: selectedTemplate })
-      const taskId = result.task_id
-      showNotice('基于爬取页面的画像生成中…')
-      const tid = window.setInterval(async () => {
-        try {
-          const status = await getGenerateStatus(taskId)
-          if (status.status === 'done') {
-            clearInterval(tid)
-            setGenPollTimer(null)
-            if (status.error) {
-              setError(`画像数据生成完成，但报告/洞察预生成失败：${status.error}`)
-            } else {
-              showNotice(`${getCompetitorName(selectedCompetitor)} 画像已生成（含报告与洞察）`)
-            }
-            await reload()
-          } else if (status.status === 'error') {
-            clearInterval(tid)
-            setGenPollTimer(null)
-            setError(`画像生成失败：${status.error || '未知错误'}`)
-          } else if (status.current_step) {
-            showNotice(status.current_step)
-          }
-        } catch (err) {
-          console.error(`[ProfilePoll] task ${taskId} poll failed:`, err)
-          // 非致命：轮询偶发失败不中断
-        }
-      }, 2000)
-      setGenPollTimer(tid)
-    } catch (err) {
       setError(err instanceof Error ? err.message : '启动画像生成失败')
-    } finally {
-      setGeneratingFromCrawl(false)
     }
   }
 
-  useEffect(() => () => { if (genPollTimer) clearInterval(genPollTimer) }, [genPollTimer])
+  useEffect(() => () => {
+    if (genPollTimerRef.current) clearInterval(genPollTimerRef.current)
+  }, [])
 
   const getCompetitorName = (cid: string) => {
     const c = competitors.find((x) => x.id === cid)
@@ -122,11 +85,6 @@ export default function ProfilesPage() {
   const getTemplateName = (tid: string) => {
     const t = templates.find((x) => x.id === tid)
     return t?.name || tid.slice(0, 8)
-  }
-
-  const hasCrawlData = (cid: string) => {
-    const c = competitors.find((x) => x.id === cid)
-    return c?.crawl_status === 'done'
   }
 
   const getProfileSummary = (p: any): string => {
@@ -180,9 +138,11 @@ export default function ProfilesPage() {
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">竞品画像</h1>
           <p className="mt-1 text-sm text-gray-500">按模板维度生成竞品结构化画像</p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <FileText className="h-4 w-4" />
-          <span>{profiles.length} 个画像</span>
+        <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+          <button type="button" onClick={() => navigate('/app/profiles/compare')} className="rounded-md border border-gray-200 px-3 py-2 font-medium text-gray-600 hover:bg-gray-50">横向对比</button>
+          <button type="button" onClick={() => navigate('/app/profiles/tasks')} className="rounded-md border border-gray-200 px-3 py-2 font-medium text-gray-600 hover:bg-gray-50">画像任务</button>
+          <button type="button" onClick={() => navigate('/app/profiles/templates')} className="rounded-md border border-gray-200 px-3 py-2 font-medium text-gray-600 hover:bg-gray-50">模板管理</button>
+          <span className="inline-flex items-center gap-1 text-gray-400"><FileText className="h-4 w-4" />{profiles.length} 个画像</span>
         </div>
       </div>
 
@@ -223,14 +183,6 @@ export default function ProfilesPage() {
             </select>
           </div>
           <div className="flex gap-2">
-            {selectedCompetitor && hasCrawlData(selectedCompetitor) && (
-              <button onClick={handleGenerateFromCrawl} disabled={generatingFromCrawl || !selectedTemplate}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
-                title="基于已爬取的官网页面生成">
-                <Globe className="h-4 w-4" />
-                {generatingFromCrawl ? '生成中…' : '基于爬取页面'}
-              </button>
-            )}
             <button onClick={handleGenerate} disabled={generating || !selectedTemplate || !selectedCompetitor}
               className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50 shadow-sm">
               {generating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}

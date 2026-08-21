@@ -23,7 +23,7 @@ import {
   listLogins,
   listOrders,
   logoutAll,
-  tokenStore,
+  saveTokens,
   updateProfile,
 } from '../../api/client'
 import type { LoginLog, Order, OrgMe, UsageStats } from '../../api/types'
@@ -419,7 +419,7 @@ function SecurityTab() {
     setPwdSaving(true)
     try {
       const resp = await changePassword(oldPwd, newPwd)
-      tokenStore.set(resp.access_token) // 当前设备无感换新 token
+      await saveTokens(resp)
       updateUser(resp.user)
       setOldPwd('')
       setNewPwd('')
@@ -436,7 +436,7 @@ function SecurityTab() {
     setLogoutAllSaving(true)
     try {
       const resp = await logoutAll()
-      tokenStore.set(resp.access_token)
+      await saveTokens(resp)
       updateUser(resp.user)
       setLogoutAllMsg('已退出所有其他设备，当前设备保持登录')
       setShowLogoutAll(false)

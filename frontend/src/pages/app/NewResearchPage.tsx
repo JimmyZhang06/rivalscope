@@ -32,9 +32,21 @@ export default function NewResearchPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const competitorRef = useRef<HTMLInputElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
     getQuota().then(setQuota).catch(() => setQuotaError(true))
+  }, [])
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.isComposing) {
+        event.preventDefault()
+        formRef.current?.requestSubmit()
+      }
+    }
+    document.addEventListener('keydown', handleShortcut)
+    return () => document.removeEventListener('keydown', handleShortcut)
   }, [])
 
   const exhausted =
@@ -59,7 +71,7 @@ export default function NewResearchPage() {
   }
 
   const handleCompetitorKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ',') {
+    if (!(e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.key === ',')) {
       e.preventDefault()
       addCompetitor()
     }
@@ -70,13 +82,18 @@ export default function NewResearchPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!productName.trim() || exhausted) return
+    if (!productName.trim() || exhausted || submitting) return
     setSubmitting(true)
     setError('')
     try {
+      const pendingCompetitors = competitorInput
+        .split(/[,，、\s]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+      const submittedCompetitors = [...new Set([...competitors, ...pendingCompetitors])].slice(0, 10)
       const task = await createResearch({
         product_name: productName.trim(),
-        competitors: competitors.join(', '),
+        competitors: submittedCompetitors.join(', '),
         focus: focus.trim(),
         time_range: timeRange,
       })
@@ -160,7 +177,7 @@ export default function NewResearchPage() {
       )}
 
       {/* 表单 */}
-      <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+      <form ref={formRef} onSubmit={handleSubmit} className="mt-6 space-y-5">
         {/* 调研对象 */}
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
           <label className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
@@ -297,7 +314,7 @@ export default function NewResearchPage() {
         {/* 提交 */}
         <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <div className="text-xs text-gray-400">
-            <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-gray-500">Ctrl</kbd>
+            <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-gray-500">Ctrl / ⌘</kbd>
             {' + '}
             <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-gray-500">Enter</kbd>
             {' '}快速提交

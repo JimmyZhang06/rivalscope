@@ -29,6 +29,14 @@ def _get_owned_project(project_id: str, user: User, db: Session) -> GraphProject
     return project
 
 
+def _require_manage_project(project: GraphProject, user: User) -> None:
+    if project.user_id == user.id or user.role == "admin":
+        return
+    if user.org_id and project.org_id == user.org_id and user.org_role in {"owner", "admin"}:
+        return
+    raise HTTPException(status_code=403, detail="仅创建人或企业管理员可管理该图谱")
+
+
 @router.post("", response_model=GraphProjectOut, status_code=201)
 def create_graph(
     payload: GraphCreate,
@@ -91,6 +99,7 @@ def refresh_graph(
 ):
     """重建图谱：清空既有实体与关系后在后台重新构建（占用调研配额）"""
     project = _get_owned_project(project_id, user, db)
+    _require_manage_project(project, user)
     if project.status == "building":
         raise HTTPException(status_code=400, detail="图谱正在构建中，请等待完成")
     check_quota_or_403(db, user)
@@ -116,6 +125,7 @@ def refresh_graph(
 @router.delete("/{project_id}", status_code=204)
 def delete_graph(project_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = _get_owned_project(project_id, user, db)
+    _require_manage_project(project, user)
     pid = project.id
     db.delete(project)
     db.commit()

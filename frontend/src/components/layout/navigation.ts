@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   Building2,
+  ClipboardList,
   Database,
   FileSearch,
   Layers,
@@ -31,6 +32,7 @@ export const PLATFORM_NAVIGATION: NavigationItem[] = [
 
 export const ANALYSIS_NAVIGATION: NavigationItem[] = [
   { to: '/app/new', label: '专题调研', icon: FileSearch },
+  { to: '/app/tasks', label: '调研记录', icon: ClipboardList },
   { to: '/app/profiles/templates', label: '画像模板', icon: Layers, end: true },
   { to: '/app/profiles', label: '画像与对比', icon: Sparkles, end: true },
   { to: '/app/graph', label: '关系图谱', icon: Network },

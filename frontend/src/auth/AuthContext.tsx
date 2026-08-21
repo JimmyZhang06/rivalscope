@@ -3,6 +3,11 @@ import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { ApiError, fetchMe, login as apiLogin, register as apiRegister, request, saveTokens, tokenStore, tryProactiveRefresh } from '../api/client'
 import type { User } from '../api/types'
+import { useCompetitorStore } from '../stores/competitorStore'
+import { useGraphStore } from '../stores/graphStore'
+import { useProfileStore } from '../stores/profileStore'
+import { useTaskStore } from '../stores/taskStore'
+import { useTrackerStore } from '../stores/trackerStore'
 
 interface AuthState {
   user: User | null
@@ -19,9 +24,22 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null)
 
+function clearBusinessState() {
+  useTaskStore.setState({ tasks: [], filter: 'all', loading: false })
+  useCompetitorStore.setState({ items: [], templates: [], loading: false })
+  useProfileStore.setState({ profiles: [], templates: [], competitors: [], loading: false })
+  useGraphStore.setState({ projects: [], loading: false })
+  useTrackerStore.setState({ trackers: [], hasOrg: null, loading: false })
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    window.addEventListener('auth-session-cleared', clearBusinessState)
+    return () => window.removeEventListener('auth-session-cleared', clearBusinessState)
+  }, [])
 
   // 启动时如有 token 则尝试恢复会话
   useEffect(() => {
@@ -53,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const resp = await apiLogin(email, password)
+    clearBusinessState()
     saveTokens(resp)
     setUser(resp.user)
     return resp.user
@@ -60,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(async (email: string, password: string, nickname: string) => {
     const resp = await apiRegister(email, password, nickname)
+    clearBusinessState()
     saveTokens(resp)
     setUser(resp.user)
     return resp.user
@@ -68,11 +88,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     tokenStore.clear()
     setUser(null)
-    // Clear all persisted zustand stores to prevent data leakage
-    const STORE_KEYS = ['task-store', 'competitor-store', 'profile-store', 'graph-store', 'tracker-store']
-    STORE_KEYS.forEach(key => localStorage.removeItem(key))
-    // Clear any remaining transient state
-    sessionStorage.clear()
   }, [])
 
   const refreshUser = useCallback(async () => {
@@ -111,7 +126,10 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       </div>
     )
   }
-  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />
+  if (!user) {
+    const from = `${location.pathname}${location.search}${location.hash}`
+    return <Navigate to="/login" state={{ from }} replace />
+  }
   return <>{children}</>
 }
 

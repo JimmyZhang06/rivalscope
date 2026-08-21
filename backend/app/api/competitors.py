@@ -77,16 +77,7 @@ def create_competitor(payload: CompetitorIn, user: User = Depends(get_current_us
 @router.patch("/{cid}", response_model=CompetitorOut)
 def update_competitor(cid: str, payload: CompetitorIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     c = db.get(Competitor, cid)
-    if not c:
-        raise HTTPException(status_code=404, detail="竞品不存在")
-    if c.org_id == "":
-        if not user.org_id:
-            if not c.user_id or c.user_id != user.id:
-                raise HTTPException(status_code=403, detail="无权修改他人的竞品")
-    elif c.org_id != user.org_id:
-        raise HTTPException(status_code=403, detail="无权修改其他企业的竞品")
-    if c.org_id == "" and not is_admin(user):
-        raise HTTPException(status_code=403, detail="系统级竞品仅管理员可修改")
+    _competitor_access_check(c, user)
     c.name = payload.name.strip()
     c.alias = payload.alias.strip()
     c.website = payload.website.strip()
@@ -109,16 +100,7 @@ def update_competitor(cid: str, payload: CompetitorIn, user: User = Depends(get_
 @router.delete("/{cid}", status_code=204)
 def delete_competitor(cid: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     c = db.get(Competitor, cid)
-    if not c:
-        raise HTTPException(status_code=404, detail="竞品不存在")
-    if c.org_id == "":
-        if not user.org_id:
-            if not c.user_id or c.user_id != user.id:
-                raise HTTPException(status_code=403, detail="无权删除他人的竞品")
-    elif c.org_id != user.org_id:
-        raise HTTPException(status_code=403, detail="无权删除其他企业的竞品")
-    if c.org_id == "" and not is_admin(user):
-        raise HTTPException(status_code=403, detail="系统级竞品仅管理员可删除")
+    _competitor_access_check(c, user)
     # 应用层外键保护：检查关联画像
     linked = db.query(CompetitorProfile).filter(CompetitorProfile.competitor_id == cid).count()
     if linked > 0:

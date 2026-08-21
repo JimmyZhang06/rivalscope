@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Pencil, Trash2, Building2, Globe, RefreshCw, ChevronDown, ChevronUp, FileText, AlertCircle, Sparkles } from 'lucide-react'
 import { createCompetitor, deleteCompetitor, getCrawlStatus, generateProfileFromCrawl, getGenerateStatus, listCrawlPages, startCrawl, updateCompetitor } from '../../api/client'
 import type { Competitor, CrawlTask, CompetitorPage, GenerateTaskStatus } from '../../api/types'
@@ -103,10 +103,10 @@ export default function CompetitorsPage() {
   // 各竞品的页面列表
   const [crawlPages, setCrawlPages] = useState<Record<string, CompetitorPage[]>>({})
   // 轮询定时器
-  const [pollTimers, setPollTimers] = useState<Record<string, number>>({})
+  const pollTimersRef = useRef<Record<string, number>>({})
   // 画像生成任务状态
   const [genTasks, setGenTasks] = useState<Record<string, GenerateTaskStatus | null>>({})
-  const [genPollTimers, setGenPollTimers] = useState<Record<string, number>>({})
+  const genPollTimersRef = useRef<Record<string, number>>({})
 
   // 首次挂载加载数据
   useEffect(() => {
@@ -116,10 +116,12 @@ export default function CompetitorsPage() {
   // 清理轮询
   useEffect(() => {
     return () => {
-      Object.values(pollTimers).forEach((tid) => clearInterval(tid))
-      Object.values(genPollTimers).forEach((tid) => clearInterval(tid))
+      Object.values(pollTimersRef.current).forEach((tid) => clearInterval(tid))
+      Object.values(genPollTimersRef.current).forEach((tid) => clearInterval(tid))
+      pollTimersRef.current = {}
+      genPollTimersRef.current = {}
     }
-  }, [pollTimers, genPollTimers])
+  }, [])
 
   const resetForm = () => {
     setName('')
@@ -195,6 +197,7 @@ export default function CompetitorsPage() {
   // ---------- 批量生成画像（后台任务模式） ----------
 
   const handleQuickGenerate = async (c: Competitor) => {
+    if (genPollTimersRef.current[c.id]) return
     if (templates.length === 0) {
       setError('请先在「画像模板」页面创建并冻结一个模板')
       return
@@ -226,11 +229,7 @@ export default function CompetitorsPage() {
           })
           if (status.status === 'done' || status.status === 'error') {
             clearInterval(tid)
-            setGenPollTimers((prev) => {
-              const next = { ...prev }
-              delete next[c.id]
-              return next
-            })
+            delete genPollTimersRef.current[c.id]
             if (status.status === 'done') {
               setNotice(`${c.name} 画像已生成`)
               await storeReload()
@@ -243,7 +242,7 @@ export default function CompetitorsPage() {
           // 非致命：轮询偶发失败不中断
         }
       }, 2000)
-      setGenPollTimers((prev) => ({ ...prev, [c.id]: tid }))
+      genPollTimersRef.current[c.id] = tid
     } catch (err) {
       setError(err instanceof Error ? err.message : '启动画像生成失败')
     }
@@ -274,6 +273,7 @@ export default function CompetitorsPage() {
   }
 
   const handleStartCrawl = async (c: Competitor) => {
+    if (pollTimersRef.current[c.id]) return
     setError('')
     setCrawling((prev) => ({ ...prev, [c.id]: true }))
     try {
@@ -291,11 +291,7 @@ export default function CompetitorsPage() {
               delete next[c.id]
               return next
             })
-            setPollTimers((prev) => {
-              const next = { ...prev }
-              delete next[c.id]
-              return next
-            })
+            delete pollTimersRef.current[c.id]
             // 加载页面列表
             const pages = await listCrawlPages(c.id)
             setCrawlPages((prev) => ({ ...prev, [c.id]: pages }))
@@ -307,7 +303,7 @@ export default function CompetitorsPage() {
           // 非致命：轮询偶发失败不中断
         }
       }, 2000)
-      setPollTimers((prev) => ({ ...prev, [c.id]: tid }))
+      pollTimersRef.current[c.id] = tid
     } catch (err) {
       setError(err instanceof Error ? err.message : '启动爬取失败')
       setCrawling((prev) => {
@@ -520,28 +516,28 @@ export default function CompetitorsPage() {
       {/* 新建/编辑弹窗 */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={resetForm}>
-          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-semibold text-gray-900">{editing ? '编辑竞品' : '新增竞品'}</h3>
+          <div role="dialog" aria-modal="true" aria-labelledby="competitor-dialog-title" className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 id="competitor-dialog-title" className="text-base font-semibold text-gray-900">{editing ? '编辑竞品' : '新增竞品'}</h3>
             <form onSubmit={handleSubmit} className="mt-4 space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500">竞品名称 *</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} className={inputCls} />
+                <label htmlFor="competitor-name" className="block text-xs font-medium text-gray-500">竞品名称 *</label>
+                <input id="competitor-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500">别名（逗号分隔）</label>
-                <input value={alias} onChange={(e) => setAlias(e.target.value)} maxLength={500} className={inputCls} />
+                <label htmlFor="competitor-alias" className="block text-xs font-medium text-gray-500">别名（逗号分隔）</label>
+                <input id="competitor-alias" value={alias} onChange={(e) => setAlias(e.target.value)} maxLength={500} className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500">官网</label>
-                <input value={website} onChange={(e) => setWebsite(e.target.value)} maxLength={500} placeholder="https://" className={inputCls} />
+                <label htmlFor="competitor-website" className="block text-xs font-medium text-gray-500">官网</label>
+                <input id="competitor-website" value={website} onChange={(e) => setWebsite(e.target.value)} maxLength={500} placeholder="https://" className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500">技术主题</label>
-                <textarea value={techFocus} onChange={(e) => setTechFocus(e.target.value)} maxLength={2000} rows={2} className={inputCls} />
+                <label htmlFor="competitor-tech-focus" className="block text-xs font-medium text-gray-500">技术主题</label>
+                <textarea id="competitor-tech-focus" value={techFocus} onChange={(e) => setTechFocus(e.target.value)} maxLength={2000} rows={2} className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500">监测关键词（逗号分隔）</label>
-                <input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="AI芯片, 自动驾驶, 大模型" className={inputCls} />
+                <label htmlFor="competitor-keywords" className="block text-xs font-medium text-gray-500">监测关键词（逗号分隔）</label>
+                <input id="competitor-keywords" value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="AI芯片, 自动驾驶, 大模型" className={inputCls} />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={resetForm} className="rounded-md px-4 py-2 text-sm text-gray-500 hover:bg-gray-50">取消</button>

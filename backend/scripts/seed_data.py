@@ -1,12 +1,20 @@
 """Seed sample data for comp-agent demo."""
 import json
 import sqlite3
-import hashlib
 import uuid
 import random
+import sys
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
-conn = sqlite3.connect("research.db")
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from app.core.security import hash_password
+
+DB_PATH = BACKEND_DIR / "research.db"
+conn = sqlite3.connect(DB_PATH)
 now = datetime.now(timezone.utc)
 now_str = now.isoformat()
 
@@ -16,7 +24,7 @@ def uid():
 
 
 def pw_hash():
-    return hashlib.sha256("Test123456".encode()).hexdigest()
+    return hash_password("Test123456")
 
 
 def invite_code():
@@ -112,7 +120,7 @@ for cname, website, tech, keywords, oid in comp_defs:
         "(id,org_id,name,alias,website,tech_focus,keywords,"
         "status,crawl_status,crawl_error,created_at,updated_at) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (cid, oid, cname, cname, website, tech, keywords,
+        (cid, oid, cname, cname, website, tech, json.dumps([item.strip() for item in keywords.split(",")], ensure_ascii=False),
          "active", "done", "", now_str, now_str),
     )
 
@@ -191,9 +199,9 @@ template_defs = [
 for td in template_defs:
     tid = uid()
     conn.execute(
-        "INSERT INTO profile_templates (id,org_id,name,dimensions,version,created_by,created_at) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (tid, "", td["name"], td["dims"], 1, users["admin@example.com"], now_str),
+        "INSERT INTO profile_templates (id,org_id,name,dimensions,version,frozen_at,created_by,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (tid, "", td["name"], td["dims"], 1, now_str, users["admin@example.com"], now_str),
     )
 
 # ============================================================

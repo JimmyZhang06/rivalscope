@@ -63,7 +63,7 @@ class Competitor(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     org_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     user_id: Mapped[str] = mapped_column(String(32), default="", index=True)  # 创建人，用于个人用户隔离
-    # 空 org_id 表示系统级模板竞品（仅管理员创建）
+    # 空 org_id 表示个人资源，归属由 user_id 区分；历史系统资源的 user_id 为空。
     name: Mapped[str] = mapped_column(String(200))
     alias: Mapped[str] = mapped_column(String(500), default="")
     website: Mapped[str] = mapped_column(String(500), default="")

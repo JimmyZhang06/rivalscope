@@ -23,15 +23,20 @@ async def generate_profile(competitor_id: str, template_id: str, user_id: str = 
 
         dimensions = json.loads(template.dimensions)
         name = competitor.name
-        tasks = (
+        task_query = (
             db.query(ResearchTask)
             .filter(ResearchTask.status == "completed")
             .filter(
                 (ResearchTask.product_name.like(f"%{name}%"))
                 | (ResearchTask.competitors.like(f"%{name}%"))
             )
-            .all()
         )
+        org_id = competitor.org_id
+        if org_id:
+            task_query = task_query.filter(ResearchTask.org_id == org_id)
+        else:
+            task_query = task_query.filter(ResearchTask.org_id == "", ResearchTask.user_id == user_id)
+        tasks = task_query.all()
         task_ids = [t.id for t in tasks]
         sources = (
             db.query(Source)
@@ -40,7 +45,6 @@ async def generate_profile(competitor_id: str, template_id: str, user_id: str = 
             .limit(20)
             .all()
         ) if task_ids else []
-        org_id = competitor.org_id
 
     llm = LLMClient(user_id=user_id, org_id=org_id)
 
@@ -114,6 +118,7 @@ async def generate_profile(competitor_id: str, template_id: str, user_id: str = 
                 user_id=user_id,
                 competitor_id=competitor_id,
                 template_id=template_id,
+                template_version=template.version,
                 profile_data=final_data_str,
                 source_refs=json.dumps(
                     [{"url": s.url, "title": s.title, "snippet": s.snippet[:200]} for s in sources[:10]],

@@ -103,8 +103,8 @@ def freeze_template(tid: str, user: User = Depends(get_current_user), db: Sessio
     if not t:
         raise HTTPException(status_code=404, detail="模板不存在")
     if t.org_id == "":
-        if not is_admin(user):
-            raise HTTPException(status_code=403, detail="仅管理员可冻结系统级模板")
+        if not is_admin(user) and t.created_by != user.id:
+            raise HTTPException(status_code=403, detail="无权冻结他人的模板")
     elif t.org_id != user.org_id:
         raise HTTPException(status_code=403, detail="无权冻结其他企业的模板")
     if t.frozen_at is not None:
@@ -140,10 +140,22 @@ async def generate_profile_api(payload: ProfileGenerateIn, user: User = Depends(
     """后台触发：生成竞品画像（使用异步任务模式）"""
     check_quota_or_403(db, user)
     competitor = db.get(Competitor, payload.competitor_id)
-    if not competitor or (competitor.org_id != user.org_id and competitor.org_id != ""):
+    if not competitor:
         raise HTTPException(status_code=404, detail="竞品不存在")
+    check_access(
+        competitor.org_id,
+        competitor.user_id,
+        user,
+        system_access="owner_or_admin",
+        resource_name="竞品",
+    )
     template = db.get(ProfileTemplate, payload.template_id)
-    if not template or (template.org_id != user.org_id and template.org_id != ""):
+    if not template:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    if template.org_id == "":
+        if not is_admin(user) and template.created_by != user.id:
+            raise HTTPException(status_code=404, detail="模板不存在")
+    elif template.org_id != user.org_id:
         raise HTTPException(status_code=404, detail="模板不存在")
     if template.frozen_at is None:
         raise HTTPException(status_code=400, detail="模板未冻结")

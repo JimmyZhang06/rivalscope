@@ -475,6 +475,7 @@ async def _layer3_synthesize(
                 user_id=user_id,
                 competitor_id=competitor.id,
                 template_id=template_id,
+                template_version=template.version,
                 profile_data=json.dumps(merged, ensure_ascii=False),
                 source_refs=json.dumps(source_refs, ensure_ascii=False),
                 status="draft",

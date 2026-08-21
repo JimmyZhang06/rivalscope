@@ -348,8 +348,8 @@ export default function TrackersPage() {
       />
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
-          <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900">{editing ? '编辑追踪项' : '新建追踪项'}</h3>
+          <div role="dialog" aria-modal="true" aria-labelledby="tracker-dialog-title" className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+            <h3 id="tracker-dialog-title" className="text-lg font-bold text-gray-900">{editing ? '编辑追踪项' : '新建追踪项'}</h3>
             <div className="mt-5">
               <TrackerForm
                 initial={editing ?? undefined}

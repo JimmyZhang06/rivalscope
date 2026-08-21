@@ -8,6 +8,7 @@ import QuotaErrorBanner from '../../components/QuotaErrorBanner'
 import { fmtDateTime } from '../../utils/time'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useGraphStore } from '../../stores/graphStore'
+import { useAuth } from '../../auth/AuthContext'
 
 const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: '', label: '不限' },
@@ -24,6 +25,7 @@ const STATUS_META: Record<GraphStatus, { label: string; cls: string }> = {
 }
 
 export default function GraphPage() {
+  const { user } = useAuth()
   usePageTitle('关系图谱')
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -142,6 +144,7 @@ export default function GraphPage() {
           {projects.map((p) => {
             const meta = STATUS_META[p.status] ?? STATUS_META.pending
             const building = p.status === 'building' || p.status === 'pending'
+            const canManage = p.user_id === user?.id || user?.role === 'admin' || user?.org_role === 'owner' || user?.org_role === 'admin'
             const inner = (
               <>
                 <div className="flex items-center gap-2">
@@ -177,12 +180,14 @@ export default function GraphPage() {
                     </Link>
                   )}
                   <span className="flex-1" />
-                  <button
-                    onClick={() => handleDelete(p)}
-                    className="rounded-md border border-red-200 px-4 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50"
-                  >
-                    删除
-                  </button>
+                  {canManage && (
+                    <button
+                      onClick={() => handleDelete(p)}
+                      className="rounded-md border border-red-200 px-4 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                    >
+                      删除
+                    </button>
+                  )}
                 </div>
               </div>
             )
@@ -203,8 +208,8 @@ export default function GraphPage() {
       {/* 新建弹窗 */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
-          <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900">新建关系图谱</h3>
+          <div role="dialog" aria-modal="true" aria-labelledby="graph-create-title" className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+            <h3 id="graph-create-title" className="text-lg font-bold text-gray-900">新建关系图谱</h3>
             <form onSubmit={handleSubmit} className="mt-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">核心企业 / 产品 *</label>

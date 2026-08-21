@@ -2,11 +2,14 @@
 __pycache__/
 *.py[cod]
 backend/.venv/
+backend/.venv.invalid.*/
 backend/.review-test-deps/
 backend/.env
-backend/*.db
-backend/*.db-shm
-backend/*.db-wal
+*.db
+*.db-shm
+*.db-wal
+.pytest_cache/
+backend/.run-*/
 
 # Node
 frontend/node_modules/
@@ -15,6 +18,13 @@ frontend/dist/
 # IDE / misc
 .vscode/
 .idea/
+.claude/
+.run/
+.local-docs/
+.local-dev/
+/docs/
+/plan/
+task_state.json
 *.log
 task-detail-notion.png
 *.png

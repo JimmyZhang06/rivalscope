@@ -200,8 +200,8 @@ export default function ProfileTemplatesPage() {
       {/* ---------- 表单弹窗 ---------- */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-8" onClick={resetForm}>
-          <form onSubmit={handleSubmit} className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-semibold text-gray-900">{editing ? '编辑模板' : '新建模板'}</h3>
+          <form role="dialog" aria-modal="true" aria-labelledby="template-dialog-title" onSubmit={handleSubmit} className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 id="template-dialog-title" className="text-base font-semibold text-gray-900">{editing ? '编辑模板' : '新建模板'}</h3>
 
             {/* 模板名称 */}
             <div className="mt-4">
@@ -238,14 +238,14 @@ export default function ProfileTemplatesPage() {
                     {/* 维度标题行 */}
                     <div className="flex items-center gap-2">
                       <GripVertical className="h-4 w-4 shrink-0 text-gray-300" />
-                      <div className="flex-1 grid grid-cols-5 gap-2">
-                        <div className="col-span-2">
+                      <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-5">
+                        <div className="sm:col-span-2">
                           <label className="block text-[10px] text-gray-400">维度标识（key）</label>
                           <input value={dim.key} onChange={(e) => updateDim(di, { key: e.target.value })}
                             placeholder="product_overview"
                             className="mt-0.5 w-full rounded border border-gray-100 px-2 py-1.5 text-xs outline-none transition focus:border-blue-400" />
                         </div>
-                        <div className="col-span-3">
+                        <div className="sm:col-span-3">
                           <label className="block text-[10px] text-gray-400">显示名称</label>
                           <input value={dim.label} onChange={(e) => updateDim(di, { label: e.target.value })}
                             placeholder="产品概况"
@@ -259,17 +259,17 @@ export default function ProfileTemplatesPage() {
                     </div>
 
                     {/* 字段列表 */}
-                    <div className="mt-3 ml-6 space-y-2">
+                    <div className="mt-3 space-y-2 sm:ml-6">
                       {dim.fields.map((f, fi) => (
                         <div key={fi} className="flex items-center gap-2 rounded bg-gray-50 p-2">
-                          <div className="flex-1 grid grid-cols-5 gap-2">
-                            <div className="col-span-2">
+                          <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-5">
+                            <div className="sm:col-span-2">
                               <label className="block text-[10px] text-gray-400">字段标识</label>
                               <input value={f.key} onChange={(e) => updateField(di, fi, { key: e.target.value })}
                                 placeholder="name"
                                 className="mt-0.5 w-full rounded border border-gray-200 px-2 py-1 text-[11px] outline-none transition focus:border-blue-400" />
                             </div>
-                            <div className="col-span-2">
+                            <div className="sm:col-span-2">
                               <label className="block text-[10px] text-gray-400">字段名称</label>
                               <input value={f.label} onChange={(e) => updateField(di, fi, { label: e.target.value })}
                                 placeholder="产品名称"

@@ -9,6 +9,19 @@ from app.db.models import CompetitorProfile, ProfileTemplate
 logger = logging.getLogger(__name__)
 
 
+def _comparison_text(value) -> str:
+    """Normalize stored profile values to the comparison API's string contract."""
+    if isinstance(value, dict) and "v" in value:
+        value = value.get("v")
+    if value is None or value == "" or (
+        isinstance(value, (dict, list)) and not value
+    ):
+        return "信息不足"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
 def generate_comparison(template_id: str, profile_ids: list[str]) -> dict:
     """基于多份已冻结画像生成横向对比报告"""
     with SessionLocal() as db:
@@ -55,7 +68,7 @@ def generate_comparison(template_id: str, profile_ids: list[str]) -> dict:
             for p in profiles:
                 data = json.loads(p.profile_data) if isinstance(p.profile_data, str) else p.profile_data
                 dim_data = data.get("dimensions", {}).get(dim["key"], {})
-                row["values"][p.competitor_id] = json.dumps(dim_data, ensure_ascii=False) if dim_data else "信息不足"
+                row["values"][p.competitor_id] = _comparison_text(dim_data)
             matrix.append(row)
         else:
             # 每个子字段一行
@@ -65,7 +78,9 @@ def generate_comparison(template_id: str, profile_ids: list[str]) -> dict:
                 for p in profiles:
                     data = json.loads(p.profile_data) if isinstance(p.profile_data, str) else p.profile_data
                     dim_data = data.get("dimensions", {}).get(dim["key"], {})
-                    row["values"][p.competitor_id] = dim_data.get(fk, "信息不足")
+                    row["values"][p.competitor_id] = _comparison_text(
+                        dim_data.get(fk, "信息不足")
+                    )
                 matrix.append(row)
 
     source_refs = []

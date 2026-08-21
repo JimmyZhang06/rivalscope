@@ -3,7 +3,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ChevronDown,
-  LogOut,
   Search,
   X,
 } from 'lucide-react'
@@ -26,7 +25,6 @@ interface SidebarProps {
   effectivePlan: Plan | null
   onCloseMobile: () => void
   onToggleCollapsed: () => void
-  onLogout: () => void
 }
 
 function NavigationLink({ item, collapsed, onNavigate }: {
@@ -68,7 +66,6 @@ export default function Sidebar({
   effectivePlan,
   onCloseMobile,
   onToggleCollapsed,
-  onLogout,
 }: SidebarProps) {
   const [analysisOpen, setAnalysisOpen] = useState(() => localStorage.getItem('app-analysis-nav-open') !== 'false')
 
@@ -185,7 +182,7 @@ export default function Sidebar({
               </span>
             )}
           </NavLink>
-          <div className={`mt-1 flex ${hideLabels ? 'flex-col' : 'items-center gap-1'}`}>
+          <div className="mt-1 flex">
             <button
               type="button"
               aria-label="折叠侧栏"
@@ -193,16 +190,6 @@ export default function Sidebar({
               className="hidden flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-500 hover:bg-slate-800 hover:text-white lg:flex"
             >
               {hideLabels ? <ChevronsRight className="h-4 w-4" /> : <><ChevronsLeft className="h-4 w-4" /> 折叠侧栏</>}
-            </button>
-            <button
-              type="button"
-              aria-label="退出登录"
-              onClick={onLogout}
-              title={hideLabels ? '退出登录' : undefined}
-              className={`flex items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-500 hover:bg-slate-800 hover:text-white ${hideLabels ? '' : 'flex-1'}`}
-            >
-              <LogOut className="h-4 w-4" />
-              {!hideLabels && '退出'}
             </button>
           </div>
         </div>

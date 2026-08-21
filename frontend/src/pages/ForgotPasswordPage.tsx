@@ -69,9 +69,11 @@ export default function ForgotPasswordPage() {
       {step === 1 ? (
         <form onSubmit={handleSendCode} className="space-y-5">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">注册邮箱</label>
+            <label htmlFor="forgot-email" className="mb-1.5 block text-sm font-medium text-gray-700">注册邮箱</label>
             <input
+              id="forgot-email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
@@ -80,7 +82,7 @@ export default function ForgotPasswordPage() {
               autoFocus
             />
           </div>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           <button
             type="submit"
             disabled={loading}
@@ -97,8 +99,11 @@ export default function ForgotPasswordPage() {
             </div>
           )}
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">验证码</label>
+            <label htmlFor="reset-code" className="mb-1.5 block text-sm font-medium text-gray-700">验证码</label>
             <input
+              id="reset-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="6 位数字验证码"
@@ -109,9 +114,11 @@ export default function ForgotPasswordPage() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">新密码</label>
+            <label htmlFor="reset-password" className="mb-1.5 block text-sm font-medium text-gray-700">新密码</label>
             <input
+              id="reset-password"
               type="password"
+              autoComplete="new-password"
               value={newPwd}
               onChange={(e) => setNewPwd(e.target.value)}
               placeholder="至少 8 位，含字母和数字"
@@ -120,9 +127,11 @@ export default function ForgotPasswordPage() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">确认新密码</label>
+            <label htmlFor="reset-password-confirm" className="mb-1.5 block text-sm font-medium text-gray-700">确认新密码</label>
             <input
+              id="reset-password-confirm"
               type="password"
+              autoComplete="new-password"
               value={confirmPwd}
               onChange={(e) => setConfirmPwd(e.target.value)}
               placeholder="再次输入新密码"
@@ -130,7 +139,7 @@ export default function ForgotPasswordPage() {
               required
             />
           </div>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           <button
             type="submit"
             disabled={loading}

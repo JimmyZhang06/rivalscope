@@ -62,6 +62,7 @@ class CompetitorProfileOut(BaseModel):
     org_id: str
     competitor_id: str
     template_id: str
+    template_version: int = 1
     profile_data: dict
     source_refs: list[dict]
     status: str

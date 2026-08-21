@@ -41,13 +41,17 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
     $SystemPython = "python"
 } elseif (Get-Command py -ErrorAction SilentlyContinue) {
     $SystemPython = "py"
-} else {
-    throw "未找到 Python，请先安装 Python 3.12+（python 或 py 命令需可用）"
 }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     throw "未找到 npm，请先安装 Node.js 20.19+ 并加入 PATH"
 }
-Write-Ok ("python: " + (& $SystemPython --version 2>&1))
+if (Test-Path $VenvPython) {
+    Write-Ok ("python: " + (& $VenvPython --version 2>&1) + "（项目虚拟环境）")
+} elseif ($SystemPython) {
+    Write-Ok ("python: " + (& $SystemPython --version 2>&1))
+} else {
+    Write-Warn "未找到系统 Python；如果项目虚拟环境不可用，将无法自动重建"
+}
 Write-Ok ("node:   " + (node --version 2>&1))
 $nodeParts = (node --version).TrimStart('v').Split('.')
 $nodeMajor = [int]$nodeParts[0]
@@ -77,6 +81,9 @@ if (Test-Path $VenvPython) {
 }
 
 if (-not (Test-Path $VenvPython)) {
+    if (-not $SystemPython) {
+        throw "项目虚拟环境不可用，且未找到系统 Python。请安装 Python 3.12+ 后重试"
+    }
     Write-Warn "未检测到虚拟环境，正在创建 .venv ..."
     & $SystemPython -m venv $VenvDir
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPython)) {
@@ -86,6 +93,12 @@ if (-not (Test-Path $VenvPython)) {
     Write-Ok "虚拟环境创建完成"
 } else {
     Write-Ok "已存在虚拟环境"
+}
+
+$pythonVersion = (& $VenvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1).Trim()
+$pythonVersionParts = $pythonVersion.Split('.')
+if ($pythonVersionParts.Count -lt 2 -or [int]$pythonVersionParts[0] -lt 3 -or ([int]$pythonVersionParts[0] -eq 3 -and [int]$pythonVersionParts[1] -lt 12)) {
+    throw "Python 版本过低（当前 $pythonVersion）；项目需要 Python 3.12+"
 }
 
 if ($venvCreated -or $Reinstall) {
@@ -107,6 +120,7 @@ if (-not (Test-Path $envFile)) {
     Copy-Item $envExample $envFile
     Write-Warn ".env 不存在，已从 .env.example 生成"
     Write-Warn "请编辑 backend\.env 填写 LLM_API_KEY / TAVILY_API_KEY（否则无法真正调研）"
+    Write-Warn "使用找回密码等敏感字段功能前，请按 README 生成并填写 MASTER_KEY"
     Write-Warn "如需真实发送邮件，还需填写 SMTP_* 与 FRONTEND_BASE"
 } else {
     Write-Ok ".env 已存在"

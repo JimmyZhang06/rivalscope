@@ -40,6 +40,7 @@ class GraphProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    user_id: str
     root_name: str
     industry: str
     time_range: str

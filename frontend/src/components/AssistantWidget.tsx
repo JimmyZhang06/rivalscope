@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Bot, MessageSquarePlus, X } from 'lucide-react'
-import AssistantChat from './AssistantChat'
 import { listAssistantSessions } from '../api/client'
+
+const AssistantChat = lazy(() => import('./AssistantChat'))
 
 /** 右下角 AI 助手悬浮球 + 浮动对话面板；在独立助手页时隐藏 */
 export default function AssistantWidget() {
@@ -57,11 +58,13 @@ export default function AssistantWidget() {
               </button>
             </div>
           </div>
-          <AssistantChat
-            key={currentId ?? 'new'}
-            sessionId={currentId}
-            onSessionCreated={setCurrentId}
-          />
+          <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-gray-400">正在加载助手…</div>}>
+            <AssistantChat
+              key={currentId ?? 'new'}
+              sessionId={currentId}
+              onSessionCreated={setCurrentId}
+            />
+          </Suspense>
         </div>
       )}
       <button

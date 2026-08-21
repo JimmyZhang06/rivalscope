@@ -45,6 +45,7 @@ export default function ComparisonPage() {
     if (pre && selectedIds.length === 0) {
       const p = allProfiles.find((x) => x.id === pre)
       if (p && p.status === 'frozen') {
+        setSelectedTemplate(p.template_id)
         setSelectedIds([p.id])
       }
     }
@@ -119,18 +120,20 @@ export default function ComparisonPage() {
 
   // 构建雷达图数据
   const radarData: ReportData | null = useMemo(() => {
-    const entries = selectedIds.map((pid) => insightsMap[pid]).filter(Boolean)
+    const entries = selectedIds
+      .map((pid) => ({ pid, insights: insightsMap[pid] }))
+      .filter((entry): entry is { pid: string; insights: InsightsData } => Boolean(entry.insights))
     if (entries.length < 2) return null
     const allDimensions = Array.from(
-      new Set(entries.flatMap((e) => Object.keys(e.scores || {}))),
+      new Set(entries.flatMap(({ insights }) => Object.keys(insights.scores || {}))),
     )
     if (allDimensions.length === 0) return null
     return {
       dimensions: allDimensions,
-      competitors: entries.map((e, i) => ({
-        name: nameMap[selectedIds[i]] || selectedIds[i].slice(0, 8),
-        scores: e.scores || {},
-        positioning: e.positioning || '',
+      competitors: entries.map(({ pid, insights }) => ({
+        name: nameMap[pid] || pid.slice(0, 8),
+        scores: insights.scores || {},
+        positioning: insights.positioning || '',
       })),
       swot: { strengths: [], weaknesses: [], opportunities: [], threats: [] },
       verdict: '',

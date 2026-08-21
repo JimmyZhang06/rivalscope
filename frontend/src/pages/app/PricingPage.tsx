@@ -166,8 +166,8 @@ export default function PricingPage() {
       {/* 模拟支付弹窗 */}
       {paying && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900">确认支付</h3>
+          <div role="dialog" aria-modal="true" aria-labelledby="payment-dialog-title" className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+            <h3 id="payment-dialog-title" className="text-lg font-bold text-gray-900">确认支付</h3>
             <div className="mt-4 rounded-md bg-gray-50 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-500">套餐</span>

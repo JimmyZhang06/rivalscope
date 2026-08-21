@@ -20,7 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { askResearch, emailReport, getResearch, subscribeEvents } from '../../api/client'
+import { ApiError, askResearch, emailReport, getResearch, subscribeEvents } from '../../api/client'
 import type { Source, SourceTier, Step, TaskBrief, TaskDetail, TaskStatus } from '../../api/types'
 import BackToTop from '../../components/BackToTop'
 import PhaseStepper from '../../components/PhaseStepper'
@@ -103,6 +103,8 @@ export default function TaskDetailPage() {
   const [steps, setSteps] = useState<Step[]>([])
   const [status, setStatus] = useState<TaskStatus>(initial?.status ?? 'pending')
   const [notFound, setNotFound] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [liveError, setLiveError] = useState('')
   const [tab, setTab] = useState<Tab>('report')
   const [tierFilter, setTierFilter] = useState<SourceTier | 'all'>('all')
   const [dimFilter, setDimFilter] = useState<string>('all')
@@ -126,13 +128,19 @@ export default function TaskDetailPage() {
 
   const loadDetail = useCallback(async () => {
     if (!id) return
+    setLoadError('')
     try {
       const detail = await getResearch(id)
       setTask(detail)
       setSteps(detail.steps)
       setStatus(detail.status)
-    } catch {
-      setNotFound(true)
+      setNotFound(false)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setNotFound(true)
+        return
+      }
+      setLoadError(err instanceof Error ? err.message : '任务加载失败')
     }
   }, [id])
 
@@ -150,15 +158,23 @@ export default function TaskDetailPage() {
         setSteps((prev) => (prev.some((s) => s.id === step.id) ? prev : [...prev, step]))
       },
       (s) => {
+        setLiveError('')
         setStatus(s)
         if (s === 'completed' || s === 'failed') loadDetail() // 结束后拉取完整报告与来源
       },
+      setLiveError,
     )
     return () => {
       unsubscribe()
       subscribed.current = false // SSE 断开后重置，允许重连
     }
   }, [id, status, loadDetail]) // 依赖 status 而非整个 task，断连后 status 变化可触发重连
+
+  useEffect(() => {
+    if (!liveError || !RUNNING.has(status)) return
+    const timer = window.setInterval(loadDetail, 5000)
+    return () => clearInterval(timer)
+  }, [liveError, status, loadDetail])
 
   const sources = task?.sources ?? []
   const stats = useSourceStats(sources)
@@ -202,13 +218,13 @@ export default function TaskDetailPage() {
     }
   }, [sources, tierFilter, dimFilter, sourceSort])
 
-  // 引用编号 = 来源列表原始顺序（与后端材料编号一致），filteredSources 携带原始 index
+  // 引用编号 = 来源列表原始顺序（与后端材料编号一致），不受来源 Tab 的筛选影响
   const openCite = useCallback(
     (n: number) => {
-      const item = filteredSources.find((s) => s.index === n)
-      if (item) setDrawer({ source: item.source, index: n })
+      const source = sources[n - 1]
+      if (source) setDrawer({ source, index: n })
     },
-    [filteredSources],
+    [sources],
   )
 
   // 导出下拉：点击外部关闭
@@ -289,6 +305,20 @@ export default function TaskDetailPage() {
   }
 
   if (!task) {
+    if (loadError) {
+      return (
+        <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+          <p className="text-sm text-red-600">{loadError}</p>
+          <button
+            type="button"
+            onClick={loadDetail}
+            className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            重新加载
+          </button>
+        </div>
+      )
+    }
     return <p className="py-16 text-center text-sm text-gray-400">加载中…</p>
   }
 
@@ -302,6 +332,17 @@ export default function TaskDetailPage() {
     <div className="mx-auto max-w-6xl px-6 py-8">
       {tab === 'report' && !!task.report_markdown && !running && <ReadingProgress />}
       <BackToTop />
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" onClick={loadDetail} className="shrink-0 font-medium underline underline-offset-2">
+            重试
+          </button>
+        </div>
+      )}
+      {liveError && (
+        <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{liveError}</p>
+      )}
       {/* 头部 */}
       <div className="no-print mb-6">
         <Link to="/app/tasks" className="text-sm text-blue-700 hover:underline">
@@ -545,7 +586,7 @@ export default function TaskDetailPage() {
                                   {qa.q}
                                 </p>
                                 <div className="mt-2 rounded-md border border-gray-100 bg-white p-4">
-                                  <ReportView markdown={qa.a} onCite={openCite} showSources={false} />
+                                  <ReportView markdown={qa.a} sources={sources} onCite={openCite} showSources={false} />
                                 </div>
                               </div>
                             ))}
@@ -813,14 +854,18 @@ export default function TaskDetailPage() {
           <div
             className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="email-report-title"
           >
             <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+              <h3 id="email-report-title" className="flex items-center gap-2 text-base font-semibold text-gray-900">
                 <Mail className="h-4 w-4 text-blue-700" /> 发送报告到邮箱
               </h3>
               <button
                 onClick={() => !emailSending && setEmailOpen(false)}
                 className="text-gray-400 transition hover:text-gray-600"
+                aria-label="关闭发送报告弹窗"
               >
                 <X className="h-4 w-4" />
               </button>

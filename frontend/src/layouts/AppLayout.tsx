@@ -59,7 +59,6 @@ export default function AppLayout() {
         effectivePlan={effectivePlan}
         onCloseMobile={() => setMobileOpen(false)}
         onToggleCollapsed={() => setCollapsed((value) => !value)}
-        onLogout={handleLogout}
       />
       <div className={`min-h-screen transition-[margin] duration-200 motion-reduce:transition-none ${collapsed ? 'lg:ml-[76px]' : 'lg:ml-64'}`}>
         <Topbar

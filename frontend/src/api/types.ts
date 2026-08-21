@@ -12,6 +12,7 @@ export type TimeRange = '' | 'day' | 'week' | 'month' | 'year'
 
 export interface TaskBrief {
   id: string
+  user_id: string
   product_name: string
   competitors: string
   focus: string
@@ -136,6 +137,8 @@ export interface User {
   avatar: string
   role: Role
   plan: Plan
+  org_id: string
+  org_role: '' | 'owner' | 'admin' | 'member'
   plan_expires_at: string | null
   created_at: string
 }
@@ -443,6 +446,7 @@ export type RelationType =
 
 export interface GraphProject {
   id: string
+  user_id: string
   root_name: string
   industry: string
   time_range: TimeRange

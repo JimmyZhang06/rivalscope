@@ -44,8 +44,10 @@ export default function RegisterPage() {
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">昵称</label>
+          <label htmlFor="register-nickname" className="mb-1.5 block text-sm font-medium text-gray-700">昵称</label>
           <input
+            id="register-nickname"
+            autoComplete="nickname"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             placeholder="如何称呼你？"
@@ -56,9 +58,11 @@ export default function RegisterPage() {
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">邮箱</label>
+          <label htmlFor="register-email" className="mb-1.5 block text-sm font-medium text-gray-700">邮箱</label>
           <input
+            id="register-email"
             type="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
@@ -67,9 +71,11 @@ export default function RegisterPage() {
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">密码</label>
+          <label htmlFor="register-password" className="mb-1.5 block text-sm font-medium text-gray-700">密码</label>
           <input
+            id="register-password"
             type="password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="至少 8 位，含字母和数字"
@@ -77,7 +83,7 @@ export default function RegisterPage() {
             required
           />
         </div>
-        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
         <button
           type="submit"
           disabled={loading}

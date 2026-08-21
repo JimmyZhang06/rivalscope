@@ -8,7 +8,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import ResourceNotFound, check_access, get_current_user
 from app.db.database import get_db
 from app.db.models import Competitor, CompetitorPage, CrawlTask, User
 from app.schemas.crawl import CrawlStartIn, CrawlStartOut, CrawlStatusOut, CompetitorPageOut
@@ -24,6 +24,20 @@ router = APIRouter(prefix="/api/competitors", tags=["crawl"])
 _running_crawls: set[str] = set()
 
 
+def _check_competitor_access(competitor: Competitor | None, user: User) -> Competitor:
+    if not competitor:
+        raise HTTPException(status_code=404, detail="竞品不存在")
+    check_access(
+        competitor.org_id,
+        competitor.user_id,
+        user,
+        system_access="owner_or_admin",
+        cross_org_forbidden_as=ResourceNotFound,
+        resource_name="竞品",
+    )
+    return competitor
+
+
 # ---------- 启动爬取 ----------
 
 @router.post("/{cid}/crawl", response_model=CrawlStartOut, status_code=201)
@@ -34,11 +48,7 @@ async def start_crawl(
     db: Session = Depends(get_db),
 ):
     """触发竞品官网爬取（后台异步执行）"""
-    competitor = db.get(Competitor, cid)
-    if not competitor or (competitor.org_id != user.org_id and competitor.org_id != ""):
-        raise HTTPException(status_code=404, detail="竞品不存在")
-    if competitor.org_id == "" and user.role != "admin":
-        raise HTTPException(status_code=403, detail="系统级竞品仅管理员可爬取")
+    competitor = _check_competitor_access(db.get(Competitor, cid), user)
     if not competitor.website:
         raise HTTPException(status_code=400, detail="竞品未设置官网地址")
     if competitor.crawl_status == "running":
@@ -96,9 +106,7 @@ def get_crawl_status(
     db: Session = Depends(get_db),
 ):
     """获取竞品最近一次爬取任务的状态"""
-    competitor = db.get(Competitor, cid)
-    if not competitor or (competitor.org_id != user.org_id and competitor.org_id != ""):
-        raise HTTPException(status_code=404, detail="竞品不存在")
+    competitor = _check_competitor_access(db.get(Competitor, cid), user)
 
     task = (
         db.query(CrawlTask)
@@ -122,9 +130,7 @@ def list_crawl_pages(
     db: Session = Depends(get_db),
 ):
     """获取竞品已爬取的页面列表"""
-    competitor = db.get(Competitor, cid)
-    if not competitor or (competitor.org_id != user.org_id and competitor.org_id != ""):
-        raise HTTPException(status_code=404, detail="竞品不存在")
+    competitor = _check_competitor_access(db.get(Competitor, cid), user)
 
     pages = (
         db.query(CompetitorPage)

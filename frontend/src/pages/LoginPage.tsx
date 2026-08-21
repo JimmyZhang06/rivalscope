@@ -41,9 +41,11 @@ export default function LoginPage() {
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">邮箱</label>
+          <label htmlFor="login-email" className="mb-1.5 block text-sm font-medium text-gray-700">邮箱</label>
           <input
+            id="login-email"
             type="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
@@ -54,13 +56,15 @@ export default function LoginPage() {
         </div>
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <label className="block text-sm font-medium text-gray-700">密码</label>
+            <label htmlFor="login-password" className="block text-sm font-medium text-gray-700">密码</label>
             <Link to="/forgot-password" className="text-xs text-blue-600 hover:underline">
               忘记密码？
             </Link>
           </div>
           <input
+            id="login-password"
             type="password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="请输入密码"
@@ -68,7 +72,7 @@ export default function LoginPage() {
             required
           />
         </div>
-        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
         <button
           type="submit"
           disabled={loading}

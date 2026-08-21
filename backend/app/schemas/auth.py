@@ -43,6 +43,8 @@ class UserOut(BaseModel):
     avatar: str = ""
     role: str
     plan: str
+    org_id: str = ""
+    org_role: str = ""
     plan_expires_at: datetime | None
     created_at: datetime
 

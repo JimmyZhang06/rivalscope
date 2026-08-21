@@ -7,6 +7,7 @@ import StatusBadge from '../../components/StatusBadge'
 import { fmtDateTime } from '../../utils/time'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useTaskStore } from '../../stores/taskStore'
+import { useAuth } from '../../auth/AuthContext'
 
 const RUNNING = new Set(['pending', 'planning', 'searching', 'analyzing', 'reporting'])
 
@@ -14,10 +15,13 @@ type Filter = 'all' | 'mine' | 'others'
 type StatusFilter = 'all' | 'running' | 'completed' | 'failed'
 
 export default function TasksPage() {
+  const { user } = useAuth()
   const [loaded, setLoaded] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleteId, setDeleteId] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [error, setError] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   // 从 store 读取数据
   const tasks = useTaskStore((s) => s.tasks)
@@ -44,16 +48,16 @@ export default function TasksPage() {
   }, [hasRunning, loaded, reload])
 
   // 他人创建的任务后端会填 creator_nickname，据此区分「我的/成员的」
-  const hasShared = useMemo(() => tasks.some((t) => t.creator_nickname), [tasks])
+  const hasShared = useMemo(() => tasks.some((t) => t.user_id !== user?.id), [tasks, user?.id])
   const visible = useMemo(() => {
     let list = tasks
-    if (filter === 'mine') list = list.filter((t) => !t.creator_nickname)
-    if (filter === 'others') list = list.filter((t) => t.creator_nickname)
+    if (filter === 'mine') list = list.filter((t) => t.user_id === user?.id)
+    if (filter === 'others') list = list.filter((t) => t.user_id !== user?.id)
     if (statusFilter === 'running') return list.filter((t) => RUNNING.has(t.status))
     if (statusFilter === 'completed') return list.filter((t) => t.status === 'completed')
     if (statusFilter === 'failed') return list.filter((t) => t.status === 'failed')
     return list
-  }, [tasks, filter, statusFilter])
+  }, [tasks, filter, statusFilter, user?.id])
 
   const handleDelete = async (id: string) => {
     setDeleteId(id)
@@ -62,11 +66,18 @@ export default function TasksPage() {
 
   const doDelete = async () => {
     if (!deleteId) return
-    await deleteResearch(deleteId).catch(() => {})
-    // 删除后重新拉取列表
-    await reload()
-    setConfirmOpen(false)
-    setDeleteId('')
+    setDeleting(true)
+    setError('')
+    try {
+      await deleteResearch(deleteId)
+      await reload()
+      setConfirmOpen(false)
+      setDeleteId('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除失败，请稍后重试')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const FILTERS: { key: Filter; label: string }[] = [
@@ -104,6 +115,8 @@ export default function TasksPage() {
           ＋ 新建调研
         </Link>
       </div>
+
+      {error && <p role="alert" className="mt-4 rounded-md bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
       {hasShared && (
         <div className="mt-5 flex w-fit gap-1 rounded-lg bg-gray-100 p-1">
@@ -157,7 +170,7 @@ export default function TasksPage() {
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium text-gray-900">{t.product_name}</span>
                     <StatusBadge status={t.status} />
-                    {t.creator_nickname && (
+                    {t.user_id !== user?.id && t.creator_nickname && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-xs text-cyan-800">
                         <User className="h-3 w-3" /> {t.creator_nickname}
                       </span>
@@ -174,14 +187,14 @@ export default function TasksPage() {
                 </Link>
                 {RUNNING.has(t.status) ? (
                   <span className="shrink-0 text-xs text-gray-400">进行中</span>
-                ) : (
+                ) : (t.user_id === user?.id || user?.role === 'admin' || user?.org_role === 'owner' || user?.org_role === 'admin') ? (
                   <button
                     onClick={() => handleDelete(t.id)}
                     className="shrink-0 rounded-md px-2 py-1 text-xs text-gray-400 transition hover:bg-red-50 hover:text-red-600"
                   >
                     删除
                   </button>
-                )}
+                ) : null}
               </li>
             ))}
           </ul>
@@ -193,6 +206,7 @@ export default function TasksPage() {
         title="确认删除"
         message="删除该调研任务后将无法恢复，确定继续？"
         danger
+        loading={deleting}
         onConfirm={doDelete}
         onCancel={() => { setConfirmOpen(false); setDeleteId('') }}
       />

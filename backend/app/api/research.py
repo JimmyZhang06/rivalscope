@@ -110,6 +110,14 @@ def _get_owned_task(task_id: str, user: User, db: Session) -> ResearchTask:
     return task
 
 
+def _require_manage_task(task: ResearchTask, user: User) -> None:
+    if task.user_id == user.id or user.role == "admin":
+        return
+    if user.org_id and task.org_id == user.org_id and user.org_role in {"owner", "admin"}:
+        return
+    raise HTTPException(status_code=403, detail="仅创建人或企业管理员可管理该任务")
+
+
 @router.get("/{task_id}", response_model=TaskDetail)
 def get_research(task_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return _get_owned_task(task_id, user, db)
@@ -133,6 +141,7 @@ def get_source_detail(
 @router.delete("/{task_id}", status_code=204)
 def delete_research(task_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = _get_owned_task(task_id, user, db)
+    _require_manage_task(task, user)
     db.delete(task)
     db.commit()
     try:
@@ -310,10 +319,11 @@ async def research_events(task_id: str, ticket: str = Query(...)):
                     .all()
                 )
                 for step in steps:
-                    sent += 1
+                    # seq is the cursor.  Using a count here would replay a step
+                    # forever if historical data contains a gap in the sequence.
+                    sent = step.seq
                     yield {"event": "step", "data": json.dumps(StepOut.model_validate(step).model_dump(mode="json"), ensure_ascii=False)}
-                task = db.get(ResearchTask, task_id)
-                status = task.status if task else "failed"
+                status = _stream_task_status(db, task_id)
                 yield {"event": "status", "data": json.dumps({"status": status}, ensure_ascii=False)}
                 if status in FINAL_STATUSES:
                     break
@@ -325,3 +335,16 @@ async def research_events(task_id: str, ticket: str = Query(...)):
         event_stream(),
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
     )
+
+
+def _stream_task_status(db: Session, task_id: str) -> str:
+    """Read status from the database even when the stream session cached the task.
+
+    SSE intentionally keeps one session open to avoid reconnecting to SQLite on
+    every tick.  A normal ``Session.get`` may return the identity-map instance
+    loaded on the previous tick and therefore never observe background-worker
+    status changes.  ``populate_existing`` preserves the long-lived session but
+    forces a fresh SELECT and refreshes the cached instance.
+    """
+    task = db.get(ResearchTask, task_id, populate_existing=True)
+    return task.status if task else "failed"

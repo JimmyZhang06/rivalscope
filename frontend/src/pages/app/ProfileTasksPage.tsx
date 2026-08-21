@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, Globe, AlertCircle, CheckCircle2, Clock, ChevronRight, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { listProfileExtractTasks } from '../../api/client'
 import { fmtDateTime } from '../../utils/time'
 import { useProfileStore } from '../../stores/profileStore'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 type TaskStatus = 'pending' | 'running' | 'done' | 'error'
 
@@ -27,6 +28,7 @@ const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string
 }
 
 export default function ProfileTasksPage() {
+  usePageTitle('画像任务')
   const navigate = useNavigate()
 
   // 从 store 读取竞品和模板列表（持久化，切换页面不丢失）
@@ -36,8 +38,9 @@ export default function ProfileTasksPage() {
   // 任务列表：实时轮询，不需要持久化
   const [tasks, setTasks] = useState<TaskCard[]>([])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setError('')
     try {
       const t = await listProfileExtractTasks()
@@ -46,15 +49,24 @@ export default function ProfileTasksPage() {
       setTasks(mapped as TaskCard[])
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载失败')
+    } finally {
+      setLoading(false)
     }
-  }
+  }, [])
 
-  // 首次挂载 + 持续轮询
+  // 首次挂载加载；仅有活跃任务且页面可见时持续轮询。
   useEffect(() => {
     loadData()
-    const interval = setInterval(loadData, 3000)
+  }, [loadData])
+
+  const hasActiveTasks = tasks.some((task) => task.status === 'pending' || task.status === 'running')
+  useEffect(() => {
+    if (!hasActiveTasks) return
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadData()
+    }, 3000)
     return () => clearInterval(interval)
-  }, [])
+  }, [hasActiveTasks, loadData])
 
   const getCompetitorName = (cid: string) => {
     const c = competitors.find((x) => x.id === cid)
@@ -77,7 +89,7 @@ export default function ProfileTasksPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">画像提取任务</h1>
-          <p className="mt-1 text-sm text-gray-500">基于爬取页面自动生成竞品画像的任务状态</p>
+          <p className="mt-1 text-sm text-gray-500">查看竞品画像生成任务的实时状态</p>
         </div>
         <button
           onClick={loadData}
@@ -90,11 +102,16 @@ export default function ProfileTasksPage() {
 
       {error && <p className="mt-4 rounded-md bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
-      {tasks.length === 0 ? (
+      {loading ? (
+        <div className="mt-12 flex items-center justify-center gap-2 text-sm text-gray-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          正在加载画像任务…
+        </div>
+      ) : tasks.length === 0 ? (
         <div className="mt-12 rounded-lg border border-dashed border-gray-300 py-12 text-center">
           <Globe className="mx-auto h-10 w-10 text-gray-300" />
           <p className="mt-3 text-sm text-gray-400">暂无画像提取任务</p>
-          <p className="mt-1 text-xs text-gray-400">在竞品页面选择「基于爬取页面」生成画像后，任务会显示在这里</p>
+          <p className="mt-1 text-xs text-gray-400">发起画像生成后，任务会显示在这里</p>
         </div>
       ) : (
         <div className="mt-6 space-y-3">
@@ -104,10 +121,12 @@ export default function ProfileTasksPage() {
             const isRunning = task.status === 'running'
 
             return (
-              <div
+              <button
+                type="button"
                 key={task.task_id}
                 onClick={() => handleCardClick(task)}
-                className={`rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition ${
+                disabled={task.status !== 'done' || !task.result?.id}
+                className={`w-full rounded-lg border border-gray-200 bg-white p-5 text-left shadow-sm transition ${
                   task.status === 'done' ? 'cursor-pointer hover:border-blue-300 hover:shadow-md' : ''
                 }`}
               >
@@ -144,19 +163,15 @@ export default function ProfileTasksPage() {
 
                   {/* 操作 */}
                   {task.status === 'done' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        navigate(`/app/profiles/${task.result?.id}`)
-                      }}
+                    <span
                       className="ml-4 inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
                     >
                       查看画像
                       <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
+                    </span>
                   )}
                 </div>
-              </div>
+              </button>
             )
           })}
         </div>

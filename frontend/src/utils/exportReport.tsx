@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import html2pdf from 'html2pdf.js'
 import type { Source, TaskDetail } from '../api/types'
 import { TIER_LABELS } from '../components/TierBadge'
 import { fmtDateTime } from './time'
@@ -147,7 +146,8 @@ ${EXPORT_CSS}</style></head>
   downloadBlob(new Blob(['﻿', html], { type: 'application/msword;charset=utf-8' }), `竞品画像报告-${input.product_name}.doc`)
 }
 
-function buildPdfWorker(input: ReportExportInput, sources: Source[]) {
+async function buildPdfWorker(input: ReportExportInput, sources: Source[]) {
+  const { default: html2pdf } = await import('html2pdf.js')
   const wrapper = document.createElement('div')
   wrapper.style.cssText = 'position:fixed;left:-10000px;top:0;'
   const content = document.createElement('div')
@@ -174,7 +174,7 @@ function buildPdfWorker(input: ReportExportInput, sources: Source[]) {
 
 /** 下载 PDF */
 export async function exportPdf(input: ReportExportInput, sources: Source[]) {
-  const { worker, cleanup } = buildPdfWorker(input, sources)
+  const { worker, cleanup } = await buildPdfWorker(input, sources)
   try {
     await worker.save()
   } finally {
@@ -184,7 +184,7 @@ export async function exportPdf(input: ReportExportInput, sources: Source[]) {
 
 /** 生成 PDF 的 Blob */
 export async function buildReportPdfBlob(input: ReportExportInput, sources: Source[]): Promise<Blob> {
-  const { worker, cleanup } = buildPdfWorker(input, sources)
+  const { worker, cleanup } = await buildPdfWorker(input, sources)
   try {
     return await (worker as unknown as { outputPdf: (t: string) => Promise<Blob> }).outputPdf('blob')
   } finally {

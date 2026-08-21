@@ -60,7 +60,14 @@ const REFRESH_THRESHOLD_MS = 1 * 60 * 60 * 1000  // refresh 1 hour before expiry
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
   set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  clear: () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY); localStorage.removeItem(CR_TOKEN_IAT) },
+  clear: () => {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(REFRESH_KEY)
+    sessionStorage.removeItem(CR_TOKEN_IAT)
+    ;['task-store', 'competitor-store', 'profile-store', 'graph-store', 'tracker-store']
+      .forEach((key) => localStorage.removeItem(key))
+    window.dispatchEvent(new Event('auth-session-cleared'))
+  },
 }
 
 export function getRefreshToken(): string | null {
@@ -230,6 +237,29 @@ export async function request<T>(url: string, init: RequestInit = {}): Promise<T
   return resp.json()
 }
 
+async function collectAllPages<T>(fetchPage: (page: number, pageSize: number) => Promise<T[]>): Promise<T[]> {
+  const pageSize = 100
+  const items: T[] = []
+  for (let page = 1; page <= 100; page += 1) {
+    const chunk = await fetchPage(page, pageSize)
+    items.push(...chunk)
+    if (chunk.length < pageSize) break
+  }
+  return items
+}
+
+async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const send = () => {
+    const headers = new Headers(init.headers)
+    const token = tokenStore.get()
+    if (token) headers.set('Authorization', `Bearer ${token}`)
+    return fetch(url, { ...init, headers })
+  }
+  let response = await send()
+  if (response.status === 401 && await tryRefreshToken()) response = await send()
+  return response
+}
+
 // ---------- 认证 ----------
 
 export function login(email: string, password: string): Promise<TokenResponse> {
@@ -297,9 +327,12 @@ export function createResearch(payload: ResearchCreate): Promise<TaskBrief> {
   return request('/api/research', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export function listResearch(page = 1, pageSize = 20): Promise<TaskBrief[]> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return request('/api/research?' + params)
+export function listResearch(page?: number, pageSize = 20): Promise<TaskBrief[]> {
+  const fetchPage = (currentPage: number, currentSize: number) => {
+    const params = new URLSearchParams({ page: String(currentPage), page_size: String(currentSize) })
+    return request<TaskBrief[]>('/api/research?' + params)
+  }
+  return page === undefined ? collectAllPages(fetchPage) : fetchPage(page, pageSize)
 }
 
 export function getResearch(id: string): Promise<TaskDetail> {
@@ -352,11 +385,9 @@ export async function emailReport(
   const form = new FormData()
   form.append('to', to)
   form.append('file', file, filename)
-  const token = tokenStore.get()
   // FormData 需由浏览器自动设置 multipart 边界，不能复用统一 request（其会强制 JSON 头）
-  const resp = await fetch(`/api/research/${taskId}/email`, {
+  const resp = await authorizedFetch(`/api/research/${taskId}/email`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   })
   if (!resp.ok) {
@@ -373,12 +404,28 @@ export function subscribeEvents(
   id: string,
   onStep: (step: Step) => void,
   onStatus: (status: TaskStatus) => void,
+  onError?: (message: string) => void,
 ): () => void {
   let es: EventSource | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectAttempts = 0
   let cancelled = false
   const MAX_RECONNECT = 5
+
+  function scheduleReconnect() {
+    es?.close()
+    if (cancelled || reconnectTimer) return
+    if (reconnectAttempts >= MAX_RECONNECT) {
+      onError?.('实时进度连接已中断，已切换为定时刷新')
+      return
+    }
+    reconnectAttempts += 1
+    const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000)
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      connect().catch(scheduleReconnect)
+    }, delay)
+  }
 
   async function connect() {
     const { ticket } = await request<{ ticket: string; expires_in: number }>(
@@ -402,20 +449,11 @@ export function subscribeEvents(
     })
 
     es.onerror = () => {
-      if (es?.readyState === EventSource.CLOSED) {
-        es.close()
-        if (reconnectAttempts < MAX_RECONNECT) {
-          reconnectAttempts++
-          const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000) // exponential backoff
-          reconnectTimer = setTimeout(() => {
-            connect().catch(() => {})
-          }, delay)
-        }
-      }
+      scheduleReconnect()
     }
   }
 
-  connect().catch(() => {})
+  connect().catch(scheduleReconnect)
 
   return () => {
     cancelled = true
@@ -509,16 +547,22 @@ export function createTracker(payload: TrackerCreate): Promise<Tracker> {
   return request('/api/trackers', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export function listTrackers(page = 1, pageSize = 20): Promise<Tracker[]> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return request('/api/trackers?' + params)
+export function listTrackers(page?: number, pageSize = 20): Promise<Tracker[]> {
+  const fetchPage = (currentPage: number, currentSize: number) => {
+    const params = new URLSearchParams({ page: String(currentPage), page_size: String(currentSize) })
+    return request<Tracker[]>('/api/trackers?' + params)
+  }
+  return page === undefined ? collectAllPages(fetchPage) : fetchPage(page, pageSize)
 }
 
 // ---------- 竞品管理 ----------
 
-export function listCompetitors(page = 1, pageSize = 50): Promise<Competitor[]> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return request('/api/competitors?' + params)
+export function listCompetitors(page?: number, pageSize = 50): Promise<Competitor[]> {
+  const fetchPage = (currentPage: number, currentSize: number) => {
+    const params = new URLSearchParams({ page: String(currentPage), page_size: String(currentSize) })
+    return request<Competitor[]>('/api/competitors?' + params)
+  }
+  return page === undefined ? collectAllPages(fetchPage) : fetchPage(page, pageSize)
 }
 
 export function createCompetitor(payload: Omit<Competitor, 'id' | 'created_at' | 'updated_at'>): Promise<Competitor> {
@@ -535,8 +579,12 @@ export function deleteCompetitor(id: string): Promise<void> {
 
 // ---------- 画像模板 ----------
 
-export function listProfileTemplates(): Promise<ProfileTemplate[]> {
-  return request('/api/profiles/templates')
+export function listProfileTemplates(page?: number, pageSize = 50): Promise<ProfileTemplate[]> {
+  const fetchPage = (currentPage: number, currentSize: number) => {
+    const params = new URLSearchParams({ page: String(currentPage), page_size: String(currentSize) })
+    return request<ProfileTemplate[]>('/api/profiles/templates?' + params)
+  }
+  return page === undefined ? collectAllPages(fetchPage) : fetchPage(page, pageSize)
 }
 
 export function createProfileTemplate(payload: { name: string; dimensions: any[]; org_id: string }): Promise<ProfileTemplate> {
@@ -573,9 +621,12 @@ export function getProfile(id: string): Promise<CompetitorProfile> {
   return request(`/api/profiles/${id}`)
 }
 
-export function listProfiles(page = 1, pageSize = 20): Promise<CompetitorProfile[]> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return request('/api/profiles?' + params)
+export function listProfiles(page?: number, pageSize = 20): Promise<CompetitorProfile[]> {
+  const fetchPage = (currentPage: number, currentSize: number) => {
+    const params = new URLSearchParams({ page: String(currentPage), page_size: String(currentSize) })
+    return request<CompetitorProfile[]>('/api/profiles?' + params)
+  }
+  return page === undefined ? collectAllPages(fetchPage) : fetchPage(page, pageSize)
 }
 
 export function listProfileExtractTasks(): Promise<Array<{
@@ -649,7 +700,7 @@ export function listAuditLogs(params?: {
   return request(`/api/admin/audit-logs?${qs}`)
 }
 
-export function exportAuditLogs(params?: {
+export async function exportAuditLogs(params?: {
   action?: string
   resource_type?: string
   user_id?: string
@@ -663,20 +714,9 @@ export function exportAuditLogs(params?: {
   if (params?.start) p.set('start', params.start)
   if (params?.end) p.set('end', params.end)
   const qs = p.toString()
-  const token = tokenStore.get()
-  return fetch(`/api/admin/audit-logs/export?${qs}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  }).then((r) => {
-    if (!r.ok) throw new Error('导出失败')
-    return r.blob()
-  })
-}
-
-// ---------- 执行快照 ----------
-
-export function listExecutionSnapshots(taskId?: string): Promise<any[]> {
-  const url = taskId ? `/api/admin/execution-snapshots?task_id=${taskId}` : '/api/admin/execution-snapshots'
-  return request(url)
+  const response = await authorizedFetch(`/api/admin/audit-logs/export?${qs}`)
+  if (!response.ok) throw new ApiError(response.status, '导出失败')
+  return response.blob()
 }
 
 export function getTracker(id: string): Promise<Tracker> {
@@ -705,9 +745,12 @@ export function createGraph(payload: GraphCreate): Promise<GraphProject> {
   return request('/api/graph', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export function listGraphs(page = 1, pageSize = 20): Promise<GraphProject[]> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return request('/api/graph?' + params)
+export function listGraphs(page?: number, pageSize = 20): Promise<GraphProject[]> {
+  const fetchPage = (currentPage: number, currentSize: number) => {
+    const params = new URLSearchParams({ page: String(currentPage), page_size: String(currentSize) })
+    return request<GraphProject[]>('/api/graph?' + params)
+  }
+  return page === undefined ? collectAllPages(fetchPage) : fetchPage(page, pageSize)
 }
 
 export function getGraph(id: string): Promise<GraphDetail> {

@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { AuthProvider, RequireAdmin, RequireAuth } from './auth/AuthContext'
 import AppLayout from './layouts/AppLayout'
@@ -29,6 +29,11 @@ const TaskDetailPage = lazy(() => import('./pages/app/TaskDetailPage'))
 const TasksPage = lazy(() => import('./pages/app/TasksPage'))
 const TrackerDetailPage = lazy(() => import('./pages/app/TrackerDetailPage'))
 const TrackersPage = lazy(() => import('./pages/app/TrackersPage'))
+
+function LegacyTaskRedirect() {
+  const { id } = useParams<{ id: string }>()
+  return <Navigate to={id ? `/app/tasks/${encodeURIComponent(id)}` : '/app/tasks'} replace />
+}
 
 export default function App() {
   return (
@@ -90,7 +95,7 @@ export default function App() {
         </Route>
 
         {/* 兼容旧链接与未知路径 */}
-        <Route path="/tasks/:id" element={<Navigate to="/app/tasks" replace />} />
+        <Route path="/tasks/:id" element={<LegacyTaskRedirect />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
