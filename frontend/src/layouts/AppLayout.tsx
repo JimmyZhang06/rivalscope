@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext'
 import AssistantWidget from '../components/AssistantWidget'
 import Sidebar from '../components/layout/Sidebar'
 import Topbar from '../components/layout/Topbar'
+import { isDemoMode } from '../api/demo'
 
 export default function AppLayout() {
   const { user, logout } = useAuth()
@@ -15,6 +16,7 @@ export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [unreadError, setUnreadError] = useState('')
+  const demoMode = isDemoMode()
 
   const refreshEffectivePlan = useCallback(() => {
     getQuota().then((quota) => setEffectivePlan(quota.plan)).catch(() => {})
@@ -68,6 +70,11 @@ export default function AppLayout() {
           onLogout={handleLogout}
           onRefreshUnread={refreshUnreadCount}
         />
+        {demoMode && (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm font-medium text-amber-900 sm:px-6">
+            演示模式 · 当前显示示例数据，操作不会保存
+          </div>
+        )}
         <main>
           <Suspense fallback={<div className="p-8 text-center text-sm text-gray-400">加载中…</div>}>
             <Outlet context={{ unreadCount, unreadError, refreshUnreadCount }} />

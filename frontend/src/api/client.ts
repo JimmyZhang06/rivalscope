@@ -48,6 +48,7 @@ import type {
   UsageStats,
   User,
 } from './types'
+import { demoRequest, isDemoMode } from './demo'
 
 const TOKEN_KEY = 'cr_token'
 const REFRESH_KEY = 'cr_refresh'
@@ -170,6 +171,8 @@ export class ApiError extends Error {
 }
 
 export async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  if (isDemoMode()) return demoRequest<T>(url, init)
+
   // Proactive token refresh check before each request
   maybeProactiveRefresh()
 

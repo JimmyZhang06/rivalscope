@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { ApiError, fetchMe, login as apiLogin, register as apiRegister, request, saveTokens, tokenStore, tryProactiveRefresh } from '../api/client'
 import type { User } from '../api/types'
+import { DEMO_USER, endDemoSession, isDemoMode, startDemoSession } from '../api/demo'
 import { useCompetitorStore } from '../stores/competitorStore'
 import { useGraphStore } from '../stores/graphStore'
 import { useProfileStore } from '../stores/profileStore'
@@ -14,6 +15,7 @@ interface AuthState {
   /** 启动时恢复会话是否完成 */
   ready: boolean
   login: (email: string, password: string) => Promise<User>
+  enterDemo: (accessKey: string) => Promise<User>
   register: (email: string, password: string, nickname: string) => Promise<User>
   logout: () => void
   /** 重新拉取当前用户信息（升级套餐后刷新徽标） */
@@ -43,6 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 启动时如有 token 则尝试恢复会话
   useEffect(() => {
+    if (isDemoMode()) {
+      setUser(DEMO_USER)
+      setReady(true)
+      return
+    }
+
     const token = tokenStore.get()
     if (!token) {
       setReady(true)
@@ -85,7 +93,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return resp.user
   }, [])
 
+  const enterDemo = useCallback(async (accessKey: string) => {
+    clearBusinessState()
+    const demoUser = startDemoSession(accessKey)
+    setUser(demoUser)
+    return demoUser
+  }, [])
+
   const logout = useCallback(() => {
+    endDemoSession()
     tokenStore.clear()
     setUser(null)
   }, [])
@@ -102,8 +118,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUser = useCallback((u: User) => setUser(u), [])
 
   const value = useMemo(
-    () => ({ user, ready, login, register, logout, refreshUser, updateUser }),
-    [user, ready, login, register, logout, refreshUser, updateUser],
+    () => ({ user, ready, login, enterDemo, register, logout, refreshUser, updateUser }),
+    [user, ready, login, enterDemo, register, logout, refreshUser, updateUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
