@@ -1,240 +1,338 @@
 import { Link } from 'react-router-dom'
-import { BarChart3, BrainCircuit, Check, Globe, Search, Zap } from 'lucide-react'
+import {
+  ArrowRight,
+  BarChart3,
+  BrainCircuit,
+  Building2,
+  Check,
+  CheckCircle2,
+  Database,
+  FileSearch,
+  Globe2,
+  Layers3,
+  Network,
+  Radar,
+  Search,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 
-const FEATURES = [
+const CAPABILITIES = [
+  {
+    icon: Globe2,
+    eyebrow: 'DISCOVER',
+    title: '持续捕捉市场信号',
+    desc: '聚合官网、媒体与公开资料，自动记录发布时间、访问状态和来源层级。',
+    accent: 'bg-cyan-400',
+  },
   {
     icon: BrainCircuit,
-    title: '智能规划',
-    desc: 'AI 自动识别竞品对象，规划多组检索关键词与调研维度，无需人工拆解调研思路。',
+    eyebrow: 'ANALYZE',
+    title: '从证据生成判断',
+    desc: '围绕产品、定价、定位和生态关系组织分析，每个关键结论都能回到原始来源。',
+    accent: 'bg-orange-400',
   },
   {
-    icon: Globe,
-    title: '联网检索',
-    desc: '并发调用实时搜索引擎，聚合官网、媒体与社区信息，来源自动分级并保留原文摘录，可信可溯源。',
-  },
-  {
-    icon: BarChart3,
-    title: '深度分析报告',
-    desc: '按功能、定价、口碑等维度对比分析，报告全程引用溯源，并生成雷达图、SWOT 等可视化洞察。',
+    icon: Database,
+    eyebrow: 'REMEMBER',
+    title: '沉淀团队情报资产',
+    desc: '将调研、企业画像、图谱和监测事件统一归档，让一次研究成为可复用知识。',
+    accent: 'bg-violet-400',
   },
 ]
 
 const WORKFLOW = [
-  { step: '01', title: '输入调研对象', desc: '产品名称 + 可选竞品与调研重点' },
-  { step: '02', title: 'Agent 规划检索', desc: '自动生成竞品清单与检索策略' },
-  { step: '03', title: '联网收集情报', desc: '并发检索、聚合与去重全网信息' },
-  { step: '04', title: '生成调研报告', desc: '多维度对比分析，实时推送进度' },
+  { step: '01', title: '定义问题', desc: '输入研究对象、已知竞品与团队真正关心的决策问题。' },
+  { step: '02', title: '规划证据', desc: 'Agent 拆解分析维度，生成检索策略和来源优先级。' },
+  { step: '03', title: '采集与核验', desc: '并行收集公开信息，去重、分级并保留可追溯引用。' },
+  { step: '04', title: '形成情报', desc: '输出对比报告、画像和关系图谱，并进入持续监测。' },
 ]
 
 const PRICING = [
   {
     plan: '免费版',
     price: '¥0',
-    unit: '/月',
-    desc: '个人体验',
-    features: ['每月 3 次调研', '4 组检索关键词', '完整调研报告', 'SSE 实时进度'],
+    desc: '适合体验完整调研流程',
+    features: ['每月 3 次调研', '完整引用报告', '基础可视化', '实时任务进度'],
     highlight: false,
   },
   {
     plan: '专业版',
     price: '¥99',
-    unit: '/月',
-    desc: '个人专业用户与小团队',
-    features: ['每月 30 次调研', '8 组检索关键词', '更深入的情报覆盖', '优先执行队列'],
+    desc: '适合个人分析师与产品团队',
+    features: ['每月 30 次调研', '更深检索覆盖', '企业画像与对比', '优先执行队列'],
     highlight: true,
   },
   {
     plan: '企业版',
     price: '¥399',
-    unit: '/月',
-    desc: '企业级调研需求',
-    features: ['不限调研次数', '12 组检索关键词', '最大情报覆盖', '优先执行队列'],
+    desc: '适合持续研究与多人协作',
+    features: ['不限调研次数', '团队知识资产', '关系图谱与监测', '成员权限与审计'],
     highlight: false,
   },
+]
+
+const SIGNALS = [
+  { title: '产品能力页更新', meta: '官网 · 12 分钟前', color: 'bg-cyan-400' },
+  { title: '新合作伙伴公告', meta: '新闻稿 · 1 小时前', color: 'bg-orange-400' },
+  { title: '企业版定价变动', meta: '定价页 · 昨天', color: 'bg-violet-400' },
 ]
 
 export default function LandingPage() {
   const { user } = useAuth()
 
   return (
-    <div className="min-h-screen bg-white text-gray-900">
-      {/* 顶部导航 */}
-      <header className="sticky top-0 z-20 border-b border-gray-100 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-white">
+    <div className="min-h-screen bg-[#f4f6f8] text-slate-950">
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#07111f]/95 text-white backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <Link to="/" className="flex items-center gap-3" aria-label="RivalScope 首页">
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-950">
               <Search className="h-4 w-4" />
+              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#07111f] bg-orange-400" />
             </span>
-            <span className="text-lg font-bold tracking-tight">竞品调研 Agent</span>
-          </div>
-          <nav className="hidden items-center gap-8 text-sm text-gray-600 md:flex">
-            <a href="#features" className="hover:text-gray-900">产品能力</a>
-            <a href="#workflow" className="hover:text-gray-900">工作流程</a>
-            <a href="#pricing" className="hover:text-gray-900">定价</a>
+            <span className="text-lg font-bold tracking-[-0.03em]">RivalScope</span>
+          </Link>
+          <nav className="hidden items-center gap-7 text-sm text-slate-300 md:flex" aria-label="主导航">
+            <a href="#capabilities" className="transition hover:text-white">产品能力</a>
+            <a href="#workflow" className="transition hover:text-white">工作流程</a>
+            <a href="#pricing" className="transition hover:text-white">定价</a>
+            <Link to="/login" className="text-orange-300 transition hover:text-orange-200">演示模式</Link>
           </nav>
-          <div className="flex items-center gap-3">
-            {user ? (
-              <Link
-                to="/app"
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
-              >
-                进入工作台
-              </Link>
-            ) : (
-              <>
-                <Link to="/login" className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900">
-                  登录
-                </Link>
-                <Link
-                  to="/register"
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
-                >
-                  免费注册
-                </Link>
-              </>
-            )}
+          <div className="flex items-center gap-2">
+            {!user && <Link to="/login" className="hidden px-3 py-2 text-sm font-medium text-slate-300 hover:text-white sm:block">登录</Link>}
+            <Link
+              to={user ? '/app' : '/login'}
+              className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-100"
+            >
+              {user ? '进入工作台' : '查看演示'} <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="border-b border-gray-100 bg-white">
-        <div className="mx-auto max-w-6xl px-4 pb-24 pt-20 text-center">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-            <Zap className="h-3 w-3" /> AI Agent · 联网检索 · 实时进度
-          </span>
-          <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-5xl">
-            一句话发起竞品调研，
-            <span className="text-blue-700">AI 替你完成情报收集与分析</span>
-          </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-base text-gray-500 md:text-lg">
-            输入产品名称，Agent 自动规划调研方案、联网检索全网信息、多维度对比分析，
-            几分钟内产出可交付的竞品调研报告。
-          </p>
-          <div className="mt-8 flex items-center justify-center gap-4">
-            <Link
-              to={user ? '/app/new' : '/register'}
-              className="rounded-md bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
-            >
-              立即免费开始 →
-            </Link>
-            <a
-              href="#workflow"
-              className="rounded-md border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-50"
-            >
-              了解工作流程
-            </a>
-          </div>
-          <p className="mt-4 text-xs text-gray-400">免费版每月 3 次调研，无需绑定支付方式</p>
-        </div>
-      </section>
-
-      {/* 功能特性 */}
-      <section id="features" className="mx-auto max-w-6xl px-4 py-20">
-        <h2 className="text-center text-3xl font-bold tracking-tight">从检索到报告，全流程自动化</h2>
-        <p className="mt-3 text-center text-gray-500">像资深分析师一样思考，像机器一样高效执行</p>
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
-          {FEATURES.map((f) => (
-            <div
-              key={f.title}
-              className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm transition hover:border-gray-300"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-md bg-blue-50 text-blue-700">
-                <f.icon className="h-5 w-5" />
-              </span>
-              <h3 className="mt-4 text-lg font-semibold">{f.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-gray-500">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* 工作流程 */}
-      <section id="workflow" className="bg-gray-50 py-20">
-        <div className="mx-auto max-w-6xl px-4">
-          <h2 className="text-center text-3xl font-bold tracking-tight">四步完成一次专业调研</h2>
-          <p className="mt-3 text-center text-gray-500">先思考后决策，先规划后执行</p>
-          <div className="mt-12 grid gap-6 md:grid-cols-4">
-            {WORKFLOW.map((w) => (
-              <div key={w.step} className="relative rounded-lg border border-gray-200 bg-white p-6">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-blue-700 text-sm font-bold text-blue-700">
-                  {w.step}
-                </span>
-                <h3 className="mt-3 font-semibold">{w.title}</h3>
-                <p className="mt-1 text-sm text-gray-500">{w.desc}</p>
+      <main>
+        <section className="landing-grid relative overflow-hidden bg-[#07111f] text-white">
+          <div className="landing-glow pointer-events-none absolute inset-0" />
+          <div className="relative mx-auto grid max-w-7xl gap-14 px-4 pb-20 pt-16 sm:px-6 sm:pt-20 lg:grid-cols-[0.92fr_1.08fr] lg:items-center lg:px-8 lg:pb-28 lg:pt-24">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-200">
+                <Radar className="h-3.5 w-3.5" /> 从开放网络到可追溯情报
               </div>
+              <h1 className="mt-6 max-w-2xl text-4xl font-bold leading-[1.08] tracking-[-0.045em] sm:text-5xl lg:text-6xl">
+                把公开信息，变成
+                <span className="mt-1 block text-orange-300">可复核的竞争判断。</span>
+              </h1>
+              <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
+                RivalScope 将检索、证据治理、企业画像、横向对比与持续监测放进同一条研究链路，让团队看见变化，也看清变化意味着什么。
+              </p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <Link
+                  to={user ? '/app/new' : '/login'}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-300 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-orange-200"
+                >
+                  {user ? '发起新调研' : '使用演示密钥'} <ArrowRight className="h-4 w-4" />
+                </Link>
+                <a href="#workflow" className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10">
+                  查看研究流程
+                </a>
+              </div>
+              <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-xs text-slate-400">
+                <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-cyan-300" />结论关联来源</span>
+                <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-cyan-300" />研究过程可追踪</span>
+                <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-cyan-300" />团队资产可复用</span>
+              </div>
+            </div>
+
+            <div className="relative lg:pl-5">
+              <div className="absolute -inset-4 rounded-[2rem] bg-cyan-400/10 blur-3xl" />
+              <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-[#0d1a2b] shadow-2xl shadow-black/40">
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                  <div className="flex gap-1.5" aria-hidden="true"><span className="h-2.5 w-2.5 rounded-full bg-red-400/80" /><span className="h-2.5 w-2.5 rounded-full bg-amber-300/80" /><span className="h-2.5 w-2.5 rounded-full bg-emerald-400/80" /></div>
+                  <span className="rounded-md bg-white/5 px-2.5 py-1 text-[11px] text-slate-400">INTELLIGENCE / OVERVIEW</span>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">本周情报脉冲</p>
+                      <p className="mt-2 text-xl font-semibold">市场变化正在加速</p>
+                      <p className="mt-1 text-xs text-slate-400">过去 7 天捕捉到 18 个有效信号</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="rounded-lg bg-orange-300 px-3 py-2 text-xs font-bold text-slate-950">3 项需关注</span>
+                      <span className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">查看报告</span>
+                    </div>
+                  </div>
+                  <div className="mt-6 grid grid-cols-3 gap-2">
+                    {[
+                      ['18', '新增信号'],
+                      ['6', '更新对象'],
+                      ['92%', '来源可用'],
+                    ].map(([value, label]) => (
+                      <div key={label} className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+                        <p className="text-xl font-bold tracking-tight sm:text-2xl">{value}</p>
+                        <p className="mt-1 text-[11px] text-slate-500">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-5 grid gap-3 md:grid-cols-[1.05fr_0.95fr]">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-slate-200">信号强度</p>
+                        <p className="text-[10px] text-slate-500">最近 6 周</p>
+                      </div>
+                      <div className="mt-5 flex h-24 items-end gap-2" aria-label="信号强度趋势示意图">
+                        {[34, 48, 42, 64, 57, 86, 72, 92].map((height, index) => (
+                          <span key={index} className={`flex-1 rounded-t-sm ${index > 5 ? 'bg-orange-300' : 'bg-cyan-300/60'}`} style={{ height: `${height}%` }} />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+                      <p className="text-xs font-semibold text-slate-200">最新变化</p>
+                      <div className="mt-3 space-y-3">
+                        {SIGNALS.map((signal) => (
+                          <div key={signal.title} className="flex gap-2.5">
+                            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${signal.color}`} />
+                            <div className="min-w-0"><p className="truncate text-xs font-medium text-slate-200">{signal.title}</p><p className="mt-0.5 text-[10px] text-slate-500">{signal.meta}</p></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-b border-slate-200 bg-white">
+          <div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:grid-cols-3 sm:px-6 lg:px-8">
+            {[
+              [ShieldCheck, '证据优先', '保留来源、时间和引用关系'],
+              [Layers3, '统一资产', '报告、画像、图谱集中管理'],
+              [Zap, '持续感知', '从一次调研延伸到长期监测'],
+            ].map(([Icon, title, desc]) => {
+              const ItemIcon = Icon as typeof ShieldCheck
+              return <div key={title as string} className="flex items-center gap-4"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700"><ItemIcon className="h-5 w-5" /></span><div><p className="text-sm font-bold text-slate-900">{title as string}</p><p className="mt-0.5 text-xs text-slate-500">{desc as string}</p></div></div>
+            })}
+          </div>
+        </section>
+
+        <section id="capabilities" className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+          <div className="max-w-2xl">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-orange-600">Research system</p>
+            <h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] text-slate-950 sm:text-4xl">不是信息堆积，而是一套持续运转的研究系统。</h2>
+            <p className="mt-4 text-base leading-7 text-slate-600">从发现变化到形成判断，每一步都保留上下文，让团队不再反复从零开始。</p>
+          </div>
+          <div className="mt-12 grid gap-5 lg:grid-cols-3">
+            {CAPABILITIES.map((item, index) => (
+              <article key={item.title} className={`group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl motion-reduce:transform-none ${index === 1 ? 'lg:mt-8' : ''}`}>
+                <span className={`absolute inset-x-0 top-0 h-1 ${item.accent}`} />
+                <div className="flex items-center justify-between">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 text-white"><item.icon className="h-5 w-5" /></span>
+                  <span className="text-[10px] font-bold tracking-[0.2em] text-slate-400">{item.eyebrow}</span>
+                </div>
+                <h3 className="mt-8 text-xl font-bold tracking-tight">{item.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{item.desc}</p>
+                <div className="mt-8 border-t border-slate-100 pt-5 text-xs font-semibold text-slate-500">{String(index + 1).padStart(2, '0')} / 核心能力</div>
+              </article>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* 定价 */}
-      <section id="pricing" className="mx-auto max-w-6xl px-4 py-20">
-        <h2 className="text-center text-3xl font-bold tracking-tight">简单透明的定价</h2>
-        <p className="mt-3 text-center text-gray-500">按需选择，随时升级</p>
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
-          {PRICING.map((p) => (
-            <div
-              key={p.plan}
-              className={`relative flex flex-col overflow-hidden rounded-lg border bg-white p-8 ${
-                p.highlight ? 'border-blue-600 shadow-md ring-1 ring-blue-600' : 'border-gray-200'
-              }`}
-            >
-              {p.highlight && <span className="absolute inset-x-0 top-0 h-1 bg-blue-600" />}
-              {p.highlight && (
-                <span className="absolute right-4 top-4 rounded-full bg-blue-50 px-3 py-0.5 text-xs font-bold text-blue-700">
-                  最受欢迎
-                </span>
-              )}
-              <h3 className="text-lg font-semibold">{p.plan}</h3>
-              <p className="mt-1 text-sm text-gray-500">{p.desc}</p>
-              <div className="mt-4 flex items-baseline gap-1">
-                <span className="text-4xl font-extrabold tabular-nums tracking-tight">{p.price}</span>
-                <span className="text-gray-400">{p.unit}</span>
+        <section id="workflow" className="bg-white py-20 lg:py-28">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid gap-12 lg:grid-cols-[0.72fr_1.28fr] lg:items-start">
+              <div className="lg:sticky lg:top-28">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-700">Evidence workflow</p>
+                <h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] sm:text-4xl">把研究过程，变成人人看得懂的证据链。</h2>
+                <p className="mt-4 max-w-md text-base leading-7 text-slate-600">调研不再是一份无法追问的结果，而是从问题、策略、来源到结论的完整记录。</p>
+                <div className="mt-8 inline-flex items-center gap-2 rounded-xl bg-cyan-50 px-4 py-3 text-sm font-semibold text-cyan-900"><FileSearch className="h-4 w-4" />支持实时查看任务阶段</div>
               </div>
-              <ul className="mt-6 flex-1 space-y-3 text-sm">
-                {p.features.map((feat) => (
-                  <li key={feat} className="flex items-start gap-2">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
-                    <span className="text-gray-600">{feat}</span>
+              <ol className="border-l border-slate-200 pl-5 sm:pl-8">
+                {WORKFLOW.map((item, index) => (
+                  <li key={item.step} className="relative pb-10 last:pb-0">
+                    <span className={`absolute -left-[2.05rem] top-0 flex h-7 w-7 items-center justify-center rounded-full border-4 border-white text-[10px] font-bold text-white sm:-left-[2.95rem] ${index === 3 ? 'bg-orange-500' : 'bg-slate-950'}`}>{item.step}</span>
+                    <div className="rounded-2xl border border-slate-200 bg-[#f8fafc] p-5 sm:p-6">
+                      <div className="flex items-start gap-4"><span className="text-3xl font-black tracking-[-0.06em] text-slate-200">{item.step}</span><div><h3 className="text-lg font-bold">{item.title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{item.desc}</p></div></div>
+                    </div>
                   </li>
                 ))}
-              </ul>
-              <Link
-                to={user ? '/app/pricing' : '/register'}
-                className={`mt-8 rounded-md px-4 py-2.5 text-center text-sm font-semibold transition ${
-                  p.highlight
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'border border-blue-600 text-blue-700 hover:bg-blue-50'
-                }`}
-              >
-                {p.price === '¥0' ? '免费开始' : '选择该套餐'}
-              </Link>
+              </ol>
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
+        </section>
 
-      {/* CTA */}
-      <section className="bg-slate-900 py-16">
-        <div className="mx-auto max-w-4xl px-4 text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-white">现在开始你的第一次 AI 竞品调研</h2>
-          <p className="mt-3 text-slate-400">注册即享每月 3 次免费调研额度</p>
-          <Link
-            to={user ? '/app/new' : '/register'}
-            className="mt-8 inline-block rounded-md bg-blue-600 px-8 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
-          >
-            免费注册使用 →
-          </Link>
-        </div>
-      </section>
+        <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+          <div className="overflow-hidden rounded-3xl bg-[#0a1726] text-white shadow-2xl shadow-slate-300/50">
+            <div className="grid lg:grid-cols-[1fr_0.92fr]">
+              <div className="p-7 sm:p-10 lg:p-14">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-violet-300">Decision-ready output</p>
+                <h2 className="mt-4 max-w-xl text-3xl font-bold tracking-[-0.035em] sm:text-4xl">让每一份报告，都能回答“依据是什么”。</h2>
+                <p className="mt-5 max-w-xl text-base leading-7 text-slate-300">结论与来源保持引用关系，关键事件进入时间线，差异进入对比结构，方便复核、分享与继续追问。</p>
+                <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                  {[
+                    [BarChart3, '多维度对比与评分'],
+                    [Network, '企业与产业关系图谱'],
+                    [Building2, '标准化企业画像'],
+                    [ShieldCheck, '来源分级与审计记录'],
+                  ].map(([Icon, label]) => {
+                    const FeatureIcon = Icon as typeof BarChart3
+                    return <div key={label as string} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200"><FeatureIcon className="h-4 w-4 text-violet-300" />{label as string}</div>
+                  })}
+                </div>
+              </div>
+              <div className="border-t border-white/10 bg-white/[0.035] p-7 sm:p-10 lg:border-l lg:border-t-0">
+                <div className="rounded-2xl border border-white/10 bg-[#07111f] p-5">
+                  <div className="flex items-center justify-between"><p className="text-sm font-bold">竞争态势摘要</p><span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-300">已核验</span></div>
+                  <div className="mt-6 space-y-5">
+                    {[
+                      ['产品完整度', 86, 'bg-cyan-300'],
+                      ['市场势能', 72, 'bg-orange-300'],
+                      ['生态协同', 64, 'bg-violet-300'],
+                      ['企业适配', 91, 'bg-emerald-300'],
+                    ].map(([label, value, color]) => (
+                      <div key={label as string}><div className="mb-2 flex justify-between text-xs"><span className="text-slate-400">{label as string}</span><span className="font-bold text-white">{value as number}</span></div><div className="h-1.5 rounded-full bg-white/10"><div className={`h-full rounded-full ${color as string}`} style={{ width: `${value}%` }} /></div></div>
+                    ))}
+                  </div>
+                  <div className="mt-6 rounded-xl border border-orange-300/15 bg-orange-300/5 p-4"><p className="text-xs font-bold text-orange-200">关键判断</p><p className="mt-2 text-xs leading-5 text-slate-400">竞争重心正从单点能力转向工作流整合，生态协同将成为下一阶段差异化来源。</p><p className="mt-3 text-[10px] text-slate-600">关联 8 条来源 · 更新于今天</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      {/* 页脚 */}
-      <footer className="border-t border-gray-100 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 text-sm text-gray-400 md:flex-row">
-          <span className="font-medium text-gray-500">竞品调研 Agent</span>
-          <span>AI 驱动的竞品情报平台 · 仅供演示</span>
+        <section id="pricing" className="border-y border-slate-200 bg-white py-20 lg:py-28">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="text-center"><p className="text-xs font-bold uppercase tracking-[0.2em] text-orange-600">Plans</p><h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] sm:text-4xl">从一次研究开始，按团队节奏扩展。</h2></div>
+            <div className="mt-12 grid gap-5 lg:grid-cols-3">
+              {PRICING.map((item) => (
+                <article key={item.plan} className={`relative flex flex-col rounded-2xl border p-6 sm:p-7 ${item.highlight ? 'border-slate-950 bg-slate-950 text-white shadow-xl' : 'border-slate-200 bg-white'}`}>
+                  {item.highlight && <span className="absolute right-5 top-5 rounded-full bg-orange-300 px-2.5 py-1 text-[10px] font-bold text-slate-950">推荐</span>}
+                  <h3 className="text-lg font-bold">{item.plan}</h3><p className={`mt-2 text-sm ${item.highlight ? 'text-slate-400' : 'text-slate-500'}`}>{item.desc}</p>
+                  <p className="mt-7 text-4xl font-black tracking-[-0.05em]">{item.price}<span className={`ml-1 text-sm font-medium ${item.highlight ? 'text-slate-500' : 'text-slate-400'}`}>/ 月</span></p>
+                  <ul className="mt-7 flex-1 space-y-3">
+                    {item.features.map((feature) => <li key={feature} className={`flex items-center gap-2.5 text-sm ${item.highlight ? 'text-slate-300' : 'text-slate-600'}`}><Check className={`h-4 w-4 ${item.highlight ? 'text-orange-300' : 'text-cyan-700'}`} />{feature}</li>)}
+                  </ul>
+                  <Link to={user ? '/app/pricing' : '/login'} className={`mt-8 rounded-xl px-4 py-3 text-center text-sm font-bold transition ${item.highlight ? 'bg-orange-300 text-slate-950 hover:bg-orange-200' : 'border border-slate-300 text-slate-800 hover:border-slate-500'}`}>{item.plan === '免费版' ? '免费开始' : '选择方案'}</Link>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="bg-orange-300">
+          <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 px-4 py-14 sm:px-6 lg:flex-row lg:items-center lg:px-8">
+            <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-orange-900/70">Demo access</p><h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950">先进入工作台，再决定是否接入真实数据。</h2><p className="mt-3 text-sm text-slate-700">登录页输入演示密钥，即可浏览带示例数据的完整情报总览。</p></div>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center"><code className="rounded-xl border border-orange-500/30 bg-white/60 px-4 py-3 text-sm font-bold text-slate-900">RIVALSCOPE-DEMO-2026</code><Link to="/login" className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800">进入演示 <ArrowRight className="h-4 w-4" /></Link></div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="bg-[#07111f] text-slate-400">
+        <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-10 sm:px-6 md:flex-row md:items-end md:justify-between lg:px-8">
+          <div><div className="flex items-center gap-2.5 text-white"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-slate-950"><Search className="h-4 w-4" /></span><span className="font-bold">RivalScope</span></div><p className="mt-3 max-w-md text-xs leading-5">面向产品、市场、战略与研究团队的可追溯竞争情报平台。</p></div>
+          <div className="flex flex-wrap gap-5 text-xs"><a href="#capabilities" className="hover:text-white">产品能力</a><a href="#workflow" className="hover:text-white">工作流程</a><Link to="/login" className="hover:text-white">演示登录</Link><span>© 2026 RivalScope</span></div>
         </div>
       </footer>
     </div>
