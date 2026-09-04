@@ -105,7 +105,7 @@ export default function Sidebar({
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(17,26,40,1)_0%,rgba(17,26,40,0.95)_50%,rgba(17,26,40,0.8)_100%)]" />
         <div className={`relative z-10 flex h-16 shrink-0 items-center border-b border-white/10 ${hideLabels ? 'justify-center px-2' : 'justify-between px-4'}`}>
           <NavLink to="/app" end onClick={onCloseMobile} className="flex min-w-0 items-center gap-2.5 text-white">
-            <BrandMark className="h-9 w-9" />
+            <BrandMark className="h-9 w-[42px]" />
             {!hideLabels && (
               <span className="min-w-0">
                 <span className="block truncate text-[15px] font-semibold tracking-[-0.01em]">RivalScope</span>
