@@ -9,6 +9,7 @@ import { fmtDateTime } from '../../utils/time'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useGraphStore } from '../../stores/graphStore'
 import { useAuth } from '../../auth/AuthContext'
+import AppSelect from '../../components/AppSelect'
 
 const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: '', label: '不限' },
@@ -241,17 +242,13 @@ export default function GraphPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">信息时效</label>
-                <select
+                <AppSelect
                   value={timeRange}
-                  onChange={(e) => setTimeRange(e.target.value as TimeRange)}
-                  className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                >
-                  {TIME_RANGE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={(nextValue) => setTimeRange(nextValue as TimeRange)}
+                  ariaLabel="选择信息时效"
+                  options={TIME_RANGE_OPTIONS}
+                  className="mt-1 w-full"
+                />
                 <p className="mt-1 text-xs text-gray-400">限定检索信息的发布时间范围，构建约需 1~2 分钟</p>
               </div>
               <div className="flex items-center justify-end gap-2 pt-2">

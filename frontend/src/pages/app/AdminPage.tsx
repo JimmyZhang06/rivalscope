@@ -7,6 +7,7 @@ import type { AdminOrg, AdminStats, Plan, Role, User } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import { fmtDate } from '../../utils/time'
 import PlanBadge from '../../components/PlanBadge'
+import AppSelect from '../../components/AppSelect'
 
 const PLAN_NAMES: Record<Plan, string> = { free: '免费版', pro: '专业版', enterprise: '企业版' }
 
@@ -213,27 +214,31 @@ export default function AdminPage() {
                     {fmtDate(u.created_at)}
                   </td>
                   <td className="px-3 py-3">
-                    <select
+                    <AppSelect
                       value={u.plan}
-                      onChange={(e) => handlePlanChange(u, e.target.value as Plan)}
-                      className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
-                    >
-                      <option value="free">免费版</option>
-                      <option value="pro">专业版</option>
-                      <option value="enterprise">企业版</option>
-                    </select>
+                      onValueChange={(nextValue) => handlePlanChange(u, nextValue as Plan)}
+                      ariaLabel={`调整 ${u.nickname || u.email} 的套餐`}
+                      options={[
+                        { value: 'free', label: '免费版' },
+                        { value: 'pro', label: '专业版' },
+                        { value: 'enterprise', label: '企业版' },
+                      ]}
+                      size="sm"
+                    />
                   </td>
                   <td className="px-3 py-3">
-                    <select
+                    <AppSelect
                       value={u.role}
-                      onChange={(e) => handleRoleChange(u, e.target.value as Role)}
+                      onValueChange={(nextValue) => handleRoleChange(u, nextValue as Role)}
+                      ariaLabel={`调整 ${u.nickname || u.email} 的角色`}
                       disabled={u.id === me?.id}
                       title={u.id === me?.id ? '不能调整自己的管理员权限' : undefined}
-                      className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
-                    >
-                      <option value="user">普通用户</option>
-                      <option value="admin">管理员</option>
-                    </select>
+                      options={[
+                        { value: 'user', label: '普通用户' },
+                        { value: 'admin', label: '管理员' },
+                      ]}
+                      size="sm"
+                    />
                   </td>
                 </tr>
               ))}
@@ -308,15 +313,17 @@ export default function AdminPage() {
                     {fmtDate(o.created_at)}
                   </td>
                   <td className="px-3 py-3">
-                    <select
+                    <AppSelect
                       value={o.plan}
-                      onChange={(e) => handleOrgPlanChange(o, e.target.value as Plan)}
-                      className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
-                    >
-                      <option value="free">免费版</option>
-                      <option value="pro">专业版</option>
-                      <option value="enterprise">企业版</option>
-                    </select>
+                      onValueChange={(nextValue) => handleOrgPlanChange(o, nextValue as Plan)}
+                      ariaLabel={`调整 ${o.name} 的套餐`}
+                      options={[
+                        { value: 'free', label: '免费版' },
+                        { value: 'pro', label: '专业版' },
+                        { value: 'enterprise', label: '企业版' },
+                      ]}
+                      size="sm"
+                    />
                   </td>
                 </tr>
               ))}

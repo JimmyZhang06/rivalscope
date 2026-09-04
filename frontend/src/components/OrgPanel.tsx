@@ -16,6 +16,7 @@ import { useAuth } from '../auth/AuthContext'
 import { fmtDate } from '../utils/time'
 import PlanBadge from './PlanBadge'
 import ConfirmDialog from './ConfirmDialog'
+import AppSelect from './AppSelect'
 
 const ROLE_LABELS: Record<string, string> = { owner: '所有者', admin: '管理员', member: '成员' }
 const ROLE_BADGE: Record<string, string> = {
@@ -344,18 +345,19 @@ export default function OrgPanel() {
                             设额度
                           </button>
                         )}
-                        <select
-                          aria-label={`设置 ${m.nickname || m.email} 的角色`}
+                        <AppSelect
+                          ariaLabel={`设置 ${m.nickname || m.email} 的角色`}
                           value={m.org_role}
-                          onChange={(e) =>
-                            run(() => updateOrgMember(m.id, { org_role: e.target.value as 'admin' | 'member' }), '角色已更新')
+                          onValueChange={(nextValue) =>
+                            run(() => updateOrgMember(m.id, { org_role: nextValue as 'admin' | 'member' }), '角色已更新')
                           }
                           disabled={submitting}
-                          className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 outline-none focus:border-blue-500"
-                        >
-                          <option value="admin">管理员</option>
-                          <option value="member">成员</option>
-                        </select>
+                          options={[
+                            { value: 'admin', label: '管理员' },
+                            { value: 'member', label: '成员' },
+                          ]}
+                          size="sm"
+                        />
                         <button
                           onClick={() => setConfirmAction({ kind: 'remove', member: m })}
                           disabled={submitting}

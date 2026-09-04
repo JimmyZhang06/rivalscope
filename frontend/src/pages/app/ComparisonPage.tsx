@@ -5,6 +5,7 @@ import type { ComparisonResponse, InsightsData, ReportData } from '../../api/typ
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useProfileStore } from '../../stores/profileStore'
 import ScoreRadar from '../../components/ScoreRadar'
+import AppSelect from '../../components/AppSelect'
 
 export default function ComparisonPage() {
   usePageTitle('竞品对比')
@@ -152,12 +153,16 @@ export default function ComparisonPage() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[180px]">
             <label className="block text-xs font-medium text-gray-500">模板</label>
-            <select value={selectedTemplate} onChange={(e) => handleTemplateChange(e.target.value)} className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm">
-              <option value="">选择已冻结的模板</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>{t.name} (v{t.version})</option>
-              ))}
-            </select>
+            <AppSelect
+              value={selectedTemplate}
+              onValueChange={handleTemplateChange}
+              ariaLabel="选择对比模板"
+              options={[
+                { value: '', label: '选择已冻结的模板' },
+                ...templates.map((t) => ({ value: t.id, label: `${t.name} (v${t.version})` })),
+              ]}
+              className="mt-1 w-full"
+            />
           </div>
           <button
             onClick={handleCompare}

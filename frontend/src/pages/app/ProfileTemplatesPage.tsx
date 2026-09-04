@@ -9,6 +9,7 @@ import {
 } from '../../api/client'
 import type { ProfileTemplate } from '../../api/types'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import AppSelect from '../../components/AppSelect'
 import { usePageTitle } from '../../hooks/usePageTitle'
 
 type DimField = { key: string; label: string; type: string }
@@ -277,10 +278,14 @@ export default function ProfileTemplatesPage() {
                             </div>
                             <div>
                               <label className="block text-[10px] text-gray-400">类型</label>
-                              <select value={f.type} onChange={(e) => updateField(di, fi, { type: e.target.value })}
-                                className="mt-0.5 w-full rounded border border-gray-200 px-1.5 py-1 text-[11px] outline-none">
-                                {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                              </select>
+                              <AppSelect
+                                value={f.type}
+                                onValueChange={(nextValue) => updateField(di, fi, { type: nextValue })}
+                                ariaLabel="选择字段类型"
+                                options={FIELD_TYPES.map((type) => ({ value: type, label: type }))}
+                                size="sm"
+                                className="mt-0.5 w-full"
+                              />
                             </div>
                           </div>
                           <button type="button" onClick={() => removeField(di, fi)}

@@ -10,6 +10,7 @@ import type {
 } from '../../api/types'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { fmtDateTime } from '../../utils/time'
+import AppSelect from '../../components/AppSelect'
 
 type TypeFilter = 'all' | IntelligenceEventType
 type StatusFilter = 'all' | IntelligenceEventStatus
@@ -142,13 +143,13 @@ export default function IntelligenceEventsPage() {
             </button>
           ))}
         </div>
-        <select
+        <AppSelect
           value={status}
-          onChange={(event) => changeStatus(event.target.value as StatusFilter)}
-          className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600"
-        >
-          {STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
+          onValueChange={(nextValue) => changeStatus(nextValue as StatusFilter)}
+          ariaLabel="筛选事件状态"
+          options={STATUS_FILTERS}
+          size="sm"
+        />
         <span className="ml-auto self-center text-xs text-gray-400">当前筛选 {total} 条</span>
       </div>
 

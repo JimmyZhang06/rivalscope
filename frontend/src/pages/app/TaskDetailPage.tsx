@@ -23,6 +23,7 @@ import type { LucideIcon } from 'lucide-react'
 import { ApiError, askResearch, emailReport, getResearch, subscribeEvents } from '../../api/client'
 import type { Source, SourceTier, Step, TaskBrief, TaskDetail, TaskStatus } from '../../api/types'
 import BackToTop from '../../components/BackToTop'
+import AppSelect from '../../components/AppSelect'
 import PhaseStepper from '../../components/PhaseStepper'
 import ReadingProgress from '../../components/ReadingProgress'
 import ReportToc from '../../components/ReportToc'
@@ -789,28 +790,28 @@ export default function TaskDetailPage() {
                     })}
                     <div className="ml-auto flex items-center gap-2">
                       {stats.dimensions.length > 1 && (
-                        <select
+                        <AppSelect
                           value={dimFilter}
-                          onChange={(e) => setDimFilter(e.target.value)}
-                          className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
-                        >
-                          <option value="all">全部维度</option>
-                          {stats.dimensions.map((d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
-                          ))}
-                        </select>
+                          onValueChange={setDimFilter}
+                          ariaLabel="筛选来源维度"
+                          options={[
+                            { value: 'all', label: '全部维度' },
+                            ...stats.dimensions.map((dimension) => ({ value: dimension, label: dimension })),
+                          ]}
+                          size="sm"
+                        />
                       )}
-                      <select
+                      <AppSelect
                         value={sourceSort}
-                        onChange={(e) => setSourceSort(e.target.value as SourceSort)}
-                        className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
-                      >
-                        <option value="score">按相关度</option>
-                        <option value="index">按引用编号</option>
-                        <option value="date">按发布时间</option>
-                      </select>
+                        onValueChange={(nextValue) => setSourceSort(nextValue as SourceSort)}
+                        ariaLabel="来源排序方式"
+                        options={[
+                          { value: 'score', label: '按相关度' },
+                          { value: 'index', label: '按引用编号' },
+                          { value: 'date', label: '按发布时间' },
+                        ]}
+                        size="sm"
+                      />
                     </div>
                   </div>
 

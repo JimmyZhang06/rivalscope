@@ -5,6 +5,7 @@ import { generateProfileApi, getGenerateStatus } from '../../api/client'
 import { fmtDateTime } from '../../utils/time'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useProfileStore } from '../../stores/profileStore'
+import AppSelect from '../../components/AppSelect'
 
 export default function ProfilesPage() {
   usePageTitle('竞品画像')
@@ -164,23 +165,26 @@ export default function ProfilesPage() {
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">竞品</label>
-            <select value={selectedCompetitor} onChange={(e) => setSelectedCompetitor(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-              <option value="">选择竞品</option>
-              {competitors.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <AppSelect
+              value={selectedCompetitor}
+              onValueChange={setSelectedCompetitor}
+              ariaLabel="选择竞品"
+              options={[{ value: '', label: '选择竞品' }, ...competitors.map((c) => ({ value: c.id, label: c.name }))]}
+              className="w-full"
+            />
           </div>
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">模板</label>
-            <select value={selectedTemplate} onChange={(e) => setSelectedTemplate(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-              <option value="">选择模板</option>
-              {templates.filter((t) => t.frozen_at).map((t) => (
-                <option key={t.id} value={t.id}>{t.name} (v{t.version})</option>
-              ))}
-            </select>
+            <AppSelect
+              value={selectedTemplate}
+              onValueChange={setSelectedTemplate}
+              ariaLabel="选择画像模板"
+              options={[
+                { value: '', label: '选择模板' },
+                ...templates.filter((t) => t.frozen_at).map((t) => ({ value: t.id, label: `${t.name} (v${t.version})` })),
+              ]}
+              className="w-full"
+            />
           </div>
           <div className="flex gap-2">
             <button onClick={handleGenerate} disabled={generating || !selectedTemplate || !selectedCompetitor}

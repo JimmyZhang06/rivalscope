@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Bot, Mail } from 'lucide-react'
 import type { Frequency, TimeRange, Tracker, TrackerCreate, WebhookType } from '../api/types'
+import AppSelect from './AppSelect'
 
 const inputCls =
   'w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
@@ -103,34 +104,37 @@ export default function TrackerForm({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">运行频率</label>
-          <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} className={inputCls}>
-            {FREQ_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <AppSelect
+            value={frequency}
+            onValueChange={(nextValue) => setFrequency(nextValue as Frequency)}
+            ariaLabel="选择运行频率"
+            options={FREQ_OPTIONS}
+            className="w-full"
+          />
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">运行时点</label>
-          <select value={runHour} onChange={(e) => setRunHour(Number(e.target.value))} className={inputCls}>
-            {Array.from({ length: 24 }, (_, h) => (
-              <option key={h} value={h}>
-                {String(h).padStart(2, '0')}:00
-              </option>
-            ))}
-          </select>
+          <AppSelect
+            value={String(runHour)}
+            onValueChange={(nextValue) => setRunHour(Number(nextValue))}
+            ariaLabel="选择运行时点"
+            options={Array.from({ length: 24 }, (_, hour) => ({
+              value: String(hour),
+              label: `${String(hour).padStart(2, '0')}:00`,
+            }))}
+            className="w-full"
+          />
         </div>
       </div>
       <div>
         <label className="mb-1.5 block text-sm font-medium text-gray-700">信息时效</label>
-        <select value={timeRange} onChange={(e) => setTimeRange(e.target.value as TimeRange)} className={inputCls}>
-          {TIME_RANGE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <AppSelect
+          value={timeRange}
+          onValueChange={(nextValue) => setTimeRange(nextValue as TimeRange)}
+          ariaLabel="选择信息时效"
+          options={TIME_RANGE_OPTIONS}
+          className="w-full"
+        />
         <p className="mt-1 text-xs text-gray-400">限定每期检索信息的发布时间范围，越新的信息权重越高</p>
       </div>
 
@@ -162,17 +166,13 @@ export default function TrackerForm({
         </label>
         {pushWebhook && (
           <div className="mt-3 space-y-3">
-            <select
+            <AppSelect
               value={webhookType}
-              onChange={(e) => setWebhookType(e.target.value as WebhookType)}
-              className={inputCls}
-            >
-              {WEBHOOK_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(nextValue) => setWebhookType(nextValue as WebhookType)}
+              ariaLabel="选择 Webhook 类型"
+              options={WEBHOOK_OPTIONS}
+              className="w-full"
+            />
             <input
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
