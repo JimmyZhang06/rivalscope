@@ -7,12 +7,12 @@ export default function AuthShell({ title, subtitle, children }: { title: string
   return (
     <div className="flex min-h-screen bg-white">
       {/* 左侧品牌区 */}
-      <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-slate-900 p-12 text-white lg:flex">
+      <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-slate-950 p-12 text-white lg:flex">
         <Link to="/" className="flex items-center gap-2.5 text-lg font-bold tracking-tight">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-white">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
             <Search className="h-4 w-4" />
           </span>
-          竞品调研 Agent
+          RivalScope
         </Link>
         <div>
           <h2 className="text-3xl font-bold leading-snug tracking-tight">
@@ -48,10 +48,10 @@ export default function AuthShell({ title, subtitle, children }: { title: string
       <div className="flex w-full items-center justify-center px-6 lg:w-1/2">
         <div className="w-full max-w-md">
           <Link to="/" className="mb-8 flex items-center gap-2.5 text-lg font-bold tracking-tight text-gray-900 lg:hidden">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-white">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
               <Search className="h-4 w-4" />
             </span>
-            竞品调研 Agent
+            RivalScope
           </Link>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">{title}</h1>
           <p className="mt-2 text-sm text-gray-500">{subtitle}</p>

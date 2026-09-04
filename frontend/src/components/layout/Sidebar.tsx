@@ -108,8 +108,8 @@ export default function Sidebar({
             </span>
             {!hideLabels && (
               <span className="min-w-0">
-                <span className="block truncate text-sm font-bold tracking-wide">竞争情报平台</span>
-                <span className="block truncate text-[10px] text-slate-500">Intelligence Hub</span>
+                <span className="block truncate text-sm font-bold tracking-wide">RivalScope</span>
+                <span className="block truncate text-[10px] text-slate-500">竞争情报平台</span>
               </span>
             )}
           </NavLink>

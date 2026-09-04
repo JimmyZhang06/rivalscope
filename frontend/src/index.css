@@ -13,9 +13,7 @@ body {
 }
 
 .landing-glow {
-  background:
-    radial-gradient(circle at 12% 22%, rgba(34, 211, 238, 0.14), transparent 28rem),
-    radial-gradient(circle at 88% 38%, rgba(251, 146, 60, 0.12), transparent 30rem);
+  background: radial-gradient(circle at 78% 32%, rgba(59, 130, 246, 0.16), transparent 32rem);
 }
 
 /* 全局细节 */
