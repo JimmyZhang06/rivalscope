@@ -3,23 +3,13 @@
 body {
   font-family: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   margin: 0;
-}
-
-.landing-grid {
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
-  background-size: 42px 42px;
-}
-
-.landing-glow {
-  background: radial-gradient(circle at 78% 32%, rgba(59, 130, 246, 0.16), transparent 32rem);
+  background: #f3f0e8;
 }
 
 /* 全局细节 */
 ::selection {
-  background: #bfdbfe;
-  color: #1e3a8a;
+  background: #c8dae7;
+  color: #173b58;
 }
 * {
   scrollbar-width: thin;
@@ -40,7 +30,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid #245f8f;
   outline-offset: 2px;
 }
 
