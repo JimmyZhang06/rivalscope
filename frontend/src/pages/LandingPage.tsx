@@ -183,10 +183,12 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="bg-[#245f8f] text-white">
-          <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 px-4 py-14 sm:px-6 lg:flex-row lg:items-center lg:px-8">
-            <div><p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-blue-200">Demo access</p><h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">先进入工作台，再决定是否接入真实数据。</h2><p className="mt-3 text-sm text-blue-100">登录页输入演示密钥，即可浏览完整的情报总览。</p></div>
-            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center"><code className="rounded-full border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white">RIVALSCOPE-DEMO-2026</code><Link to="/login" className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-[#17446a] hover:bg-[#f8f6f0]">进入演示 <ArrowRight className="h-4 w-4" /></Link></div>
+        <section className="relative overflow-hidden border-t border-black/10 bg-[#e9e6dd]">
+          <img src="/rivalscope-ink-hero.png" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-[70%_48%] opacity-25" />
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(248,246,240,0.98)_0%,rgba(248,246,240,0.9)_52%,rgba(248,246,240,0.38)_100%)]" />
+          <div className="relative mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 px-4 py-16 sm:px-6 lg:flex-row lg:items-center lg:px-8 lg:py-20">
+            <div><p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-[#245f8f]">Demo access</p><h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-[-0.04em] text-[#171b1f]">先进入工作台，再决定是否接入真实数据。</h2><p className="mt-3 text-sm leading-6 text-slate-600">登录页输入演示密钥，即可浏览完整的情报总览。</p></div>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center"><code className="rounded-full border border-black/15 bg-[#fffefa]/80 px-5 py-3 text-sm font-semibold text-[#245f8f] shadow-sm">RIVALSCOPE-DEMO-2026</code><Link to="/login" className="inline-flex items-center justify-center gap-2 rounded-full bg-[#171b1f] px-5 py-3 text-sm font-semibold text-white transition hover:bg-black">进入演示 <ArrowRight className="h-4 w-4" /></Link></div>
           </div>
         </section>
       </main>
