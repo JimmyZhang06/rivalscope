@@ -26,6 +26,22 @@ body {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+.app-sidebar-nav {
+  scrollbar-color: transparent transparent;
+}
+.app-sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+.app-sidebar-nav::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+.app-sidebar-nav:hover {
+  scrollbar-color: rgba(145, 163, 184, 0.28) transparent;
+}
+.app-sidebar-nav:hover::-webkit-scrollbar-thumb {
+  background: rgba(145, 163, 184, 0.28);
+}
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,

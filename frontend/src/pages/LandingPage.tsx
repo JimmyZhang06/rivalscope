@@ -11,11 +11,11 @@ import {
   Globe2,
   Layers3,
   Network,
-  Search,
   ShieldCheck,
   Zap,
 } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
+import BrandMark from '../components/BrandMark'
 
 const CAPABILITIES = [
   { icon: Globe2, eyebrow: 'DISCOVER', title: '捕捉变化', desc: '聚合官网、媒体与公开资料，自动记录发布时间、访问状态和来源层级。' },
@@ -44,7 +44,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-40 border-b border-black/10 bg-[#f8f6f0]/90 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/" className="flex items-center gap-3" aria-label="RivalScope 首页">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#171b1f] text-white"><Search className="h-3.5 w-3.5" /></span>
+            <BrandMark className="h-8 w-8" />
             <span className="text-base font-semibold tracking-[-0.02em]">RivalScope</span>
           </Link>
           <nav className="hidden items-center gap-8 text-[13px] font-medium text-slate-600 md:flex" aria-label="主导航">
@@ -190,7 +190,7 @@ export default function LandingPage() {
 
       <footer className="bg-[#171b1f] text-slate-400">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-10 sm:px-6 md:flex-row md:items-end md:justify-between lg:px-8">
-          <div><div className="flex items-center gap-2.5 text-white"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#171b1f]"><Search className="h-3.5 w-3.5" /></span><span className="font-semibold">RivalScope</span></div><p className="mt-3 max-w-md text-xs leading-5">面向产品、市场、战略与研究团队的可追溯竞争情报平台。</p></div>
+          <div><div className="flex items-center gap-2.5 text-white"><BrandMark className="h-8 w-8" /><span className="font-semibold">RivalScope</span></div><p className="mt-3 max-w-md text-xs leading-5">面向产品、市场、战略与研究团队的可追溯竞争情报平台。</p></div>
           <div className="flex flex-wrap gap-5 text-xs"><a href="#capabilities" className="hover:text-white">产品能力</a><a href="#workflow" className="hover:text-white">研究流程</a><Link to="/login" className="hover:text-white">演示登录</Link><span>© 2026 RivalScope</span></div>
         </div>
       </footer>

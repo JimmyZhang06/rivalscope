@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { BarChart3, BrainCircuit, Globe, Search } from 'lucide-react'
+import { BarChart3, BrainCircuit, Globe } from 'lucide-react'
+import BrandMark from './BrandMark'
 
 /** 登录/注册页的分屏外壳：左侧品牌区 + 右侧表单区 */
 export default function AuthShell({ title, subtitle, children }: { title: string; subtitle: ReactNode; children: ReactNode }) {
@@ -11,9 +12,7 @@ export default function AuthShell({ title, subtitle, children }: { title: string
         <img src="/rivalscope-ink-hero.png" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-[70%_center] opacity-70" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(246,243,235,0.98),rgba(246,243,235,0.72)_55%,rgba(246,243,235,0.18))]" />
         <Link to="/" className="relative flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#171b1f] text-white">
-            <Search className="h-4 w-4" />
-          </span>
+          <BrandMark className="h-8 w-8" />
           RivalScope
         </Link>
         <div className="relative max-w-lg">
@@ -51,9 +50,7 @@ export default function AuthShell({ title, subtitle, children }: { title: string
       <div className="flex w-full items-center justify-center bg-[#f8f6f0] px-6 lg:w-1/2">
         <div className="w-full max-w-md">
           <Link to="/" className="mb-8 flex items-center gap-2.5 text-lg font-bold tracking-tight text-gray-900 lg:hidden">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#171b1f] text-white">
-              <Search className="h-4 w-4" />
-            </span>
+            <BrandMark className="h-8 w-8" />
             RivalScope
           </Link>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">{title}</h1>
