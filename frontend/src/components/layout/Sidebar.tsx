@@ -43,8 +43,8 @@ function NavigationLink({ item, collapsed, onNavigate }: {
           collapsed ? 'justify-center px-2' : 'gap-3 px-3'
         } ${
           isActive
-            ? 'bg-slate-800 text-white before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-blue-400'
-            : 'text-slate-400 hover:bg-slate-800/70 hover:text-white'
+            ? 'bg-white/10 text-white before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-[#7cb1d8]'
+            : 'text-slate-400 hover:bg-white/[0.07] hover:text-white'
         }`
       }
     >
@@ -55,8 +55,8 @@ function NavigationLink({ item, collapsed, onNavigate }: {
 }
 
 function SectionLabel({ children, collapsed }: { children: string; collapsed: boolean }) {
-  if (collapsed) return <div className="mx-3 my-2 border-t border-slate-800" />
-  return <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">{children}</p>
+  if (collapsed) return <div className="mx-3 my-2 border-t border-white/10" />
+  return <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">{children}</p>
 }
 
 export default function Sidebar({
@@ -97,19 +97,19 @@ export default function Sidebar({
       )}
       <aside
         aria-label="主导航"
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-slate-950 shadow-xl transition-transform duration-200 motion-reduce:transition-none lg:z-30 lg:translate-x-0 lg:shadow-none ${navWidth} ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-[#171b1f] shadow-xl transition-transform duration-200 motion-reduce:transition-none lg:z-30 lg:translate-x-0 lg:shadow-none ${navWidth} ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className={`flex h-16 shrink-0 items-center border-b border-slate-800 ${hideLabels ? 'justify-center px-2' : 'justify-between px-4'}`}>
+        <div className={`flex h-16 shrink-0 items-center border-b border-white/10 ${hideLabels ? 'justify-center px-2' : 'justify-between px-4'}`}>
           <NavLink to="/app" end onClick={onCloseMobile} className="flex min-w-0 items-center gap-2.5 text-white">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-950/50">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#171b1f]">
               <Search className="h-4 w-4" aria-hidden="true" />
             </span>
             {!hideLabels && (
               <span className="min-w-0">
-                <span className="block truncate text-sm font-bold tracking-wide">RivalScope</span>
-                <span className="block truncate text-[10px] text-slate-500">竞争情报平台</span>
+                <span className="block truncate text-sm font-semibold tracking-wide">RivalScope</span>
+                <span className="block truncate text-[10px] tracking-wide text-slate-500">竞争情报平台</span>
               </span>
             )}
           </NavLink>
@@ -152,7 +152,7 @@ export default function Sidebar({
             <NavigationLink item={ASSISTANT_NAVIGATION} collapsed={hideLabels} onNavigate={onCloseMobile} />
           </div>
 
-          <div className="mt-3 border-t border-slate-800 pt-2">
+          <div className="mt-3 border-t border-white/10 pt-2">
             {!hideLabels && <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-600">账户</p>}
             <div className="space-y-1">
               {ACCOUNT_NAVIGATION.map((item) => <NavigationLink key={item.to} item={item} collapsed={hideLabels} onNavigate={onCloseMobile} />)}
@@ -161,7 +161,7 @@ export default function Sidebar({
           </div>
         </nav>
 
-        <div className="shrink-0 border-t border-slate-800 p-2.5">
+        <div className="shrink-0 border-t border-white/10 p-2.5">
           <NavLink
             to="/app/account"
             onClick={onCloseMobile}
@@ -171,7 +171,7 @@ export default function Sidebar({
             {user?.avatar?.startsWith('data:image/') ? (
               <img src={user.avatar} alt="头像" className="h-9 w-9 shrink-0 rounded-full object-cover" />
             ) : (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#245f8f] text-sm font-bold text-white">
                 {(user?.nickname || user?.email || '?').slice(0, 1).toUpperCase()}
               </span>
             )}

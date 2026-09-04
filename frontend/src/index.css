@@ -34,6 +34,50 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
+/* 工作台主题：暖纸底、墨色结构、钴蓝交互，覆盖所有业务页面的通用表面。 */
+.app-shell main {
+  background-image: radial-gradient(circle at 85% 4%, rgba(36, 95, 143, 0.055), transparent 28rem);
+}
+.app-shell .bg-white {
+  background-color: #fbfaf6;
+}
+.app-shell .bg-gray-50,
+.app-shell .bg-slate-50 {
+  background-color: #f3f0e8;
+}
+.app-shell .border-gray-200,
+.app-shell .border-slate-200 {
+  border-color: rgba(23, 27, 31, 0.12);
+}
+.app-shell .border-gray-100 {
+  border-color: rgba(23, 27, 31, 0.08);
+}
+.app-shell .shadow-sm {
+  box-shadow: 0 8px 28px rgba(23, 27, 31, 0.045);
+}
+.app-shell .bg-blue-600 {
+  background-color: #245f8f;
+}
+.app-shell button.bg-blue-600,
+.app-shell a.bg-blue-600 {
+  border-radius: 9999px;
+}
+.app-shell .hover\:bg-blue-700:hover {
+  background-color: #17446a;
+}
+.app-shell .text-blue-600,
+.app-shell .text-blue-700 {
+  color: #245f8f;
+}
+.app-shell .bg-blue-50 {
+  background-color: #e7edf0;
+}
+.app-shell input,
+.app-shell textarea,
+.app-shell select {
+  background-color: #fbfaf6;
+}
+
 /* Markdown 报告排版（中文长文阅读优化） */
 .report-md {
   font-size: 15px;

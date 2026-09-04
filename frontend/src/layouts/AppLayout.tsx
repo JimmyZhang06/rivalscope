@@ -53,7 +53,7 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-gray-900">
+    <div className="app-shell min-h-screen bg-[#f3f0e8] text-[#171b1f]">
       <Sidebar
         collapsed={collapsed}
         mobileOpen={mobileOpen}
@@ -71,7 +71,7 @@ export default function AppLayout() {
           onRefreshUnread={refreshUnreadCount}
         />
         {demoMode && (
-          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm font-medium text-amber-900 sm:px-6">
+          <div className="border-b border-[#245f8f]/15 bg-[#e7edf0] px-4 py-2 text-center text-sm font-medium text-[#17446a] sm:px-6">
             演示模式 · 当前显示示例数据，操作不会保存
           </div>
         )}

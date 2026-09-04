@@ -4,7 +4,7 @@ import { forgotPassword, resetPassword } from '../api/client'
 import AuthShell from '../components/AuthShell'
 
 const INPUT_CLS =
-  'w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
+  'w-full rounded-xl border border-black/15 bg-white/55 px-4 py-3 text-sm focus:border-[#245f8f] focus:outline-none focus:ring-1 focus:ring-[#245f8f]'
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate()
@@ -60,7 +60,7 @@ export default function ForgotPasswordPage() {
       subtitle={
         <>
           想起密码了？
-          <Link to="/login" className="font-medium text-blue-600 hover:underline">
+          <Link to="/login" className="font-medium text-[#245f8f] hover:underline">
             返回登录
           </Link>
         </>
@@ -86,7 +86,7 @@ export default function ForgotPasswordPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-md bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-full bg-[#171b1f] py-3 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? '发送中…' : '发送验证码'}
           </button>
@@ -143,7 +143,7 @@ export default function ForgotPasswordPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-md bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-full bg-[#171b1f] py-3 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? '提交中…' : '重置密码'}
           </button>

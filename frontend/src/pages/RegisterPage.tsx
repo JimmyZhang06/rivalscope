@@ -36,7 +36,7 @@ export default function RegisterPage() {
       subtitle={
         <>
           已有账号？
-          <Link to="/login" className="font-medium text-blue-600 hover:underline">
+          <Link to="/login" className="font-medium text-[#245f8f] hover:underline">
             直接登录
           </Link>
         </>
@@ -51,7 +51,7 @@ export default function RegisterPage() {
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             placeholder="如何称呼你？"
-            className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-xl border border-black/15 bg-white/55 px-4 py-3 text-sm focus:border-[#245f8f] focus:outline-none focus:ring-1 focus:ring-[#245f8f]"
             maxLength={50}
             required
             autoFocus
@@ -66,7 +66,7 @@ export default function RegisterPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-xl border border-black/15 bg-white/55 px-4 py-3 text-sm focus:border-[#245f8f] focus:outline-none focus:ring-1 focus:ring-[#245f8f]"
             required
           />
         </div>
@@ -79,7 +79,7 @@ export default function RegisterPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="至少 8 位，含字母和数字"
-            className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-xl border border-black/15 bg-white/55 px-4 py-3 text-sm focus:border-[#245f8f] focus:outline-none focus:ring-1 focus:ring-[#245f8f]"
             required
           />
         </div>
@@ -87,7 +87,7 @@ export default function RegisterPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-full bg-[#171b1f] py-3 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? '注册中…' : '免费注册'}
         </button>

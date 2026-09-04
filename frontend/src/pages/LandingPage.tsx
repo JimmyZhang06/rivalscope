@@ -129,9 +129,9 @@ export default function LandingPage() {
         <section id="workflow" className="border-y border-black/10 bg-[#e9e6dd] py-20 lg:py-28">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end"><div><p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#245f8f]">Evidence workflow</p><h2 className="mt-5 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">四步，形成可追溯的判断。</h2></div><div className="inline-flex items-center gap-2 text-sm font-medium text-slate-600"><FileSearch className="h-4 w-4 text-[#245f8f]" />任务阶段实时可见</div></div>
-            <ol className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-black/10 bg-black/10 lg:grid-cols-4">
+            <ol className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-black/10 bg-black/10 sm:grid-cols-2 xl:grid-cols-4">
               {WORKFLOW.map((item, index) => (
-                <li key={item.step} className="relative min-h-64 bg-[#f6f3eb] p-7"><span className="text-[11px] font-semibold tracking-[0.2em] text-[#245f8f]">{item.step}</span><h3 className="mt-16 text-xl font-semibold">{item.title}</h3><p className="mt-3 text-sm leading-6 text-slate-600">{item.desc}</p>{index < WORKFLOW.length - 1 && <ArrowRight className="absolute bottom-7 right-7 hidden h-4 w-4 text-slate-400 lg:block" />}</li>
+                <li key={item.step} className="relative min-h-52 bg-[#f6f3eb] p-7"><span className="text-[11px] font-semibold tracking-[0.2em] text-[#245f8f]">{item.step}</span><h3 className="mt-12 text-xl font-semibold">{item.title}</h3><p className="mt-3 text-sm leading-6 text-slate-600">{item.desc}</p>{index < WORKFLOW.length - 1 && <ArrowRight className="absolute bottom-7 right-7 hidden h-4 w-4 text-slate-400 xl:block" />}</li>
               ))}
             </ol>
           </div>
@@ -167,7 +167,7 @@ export default function LandingPage() {
         <section id="pricing" className="border-t border-black/10 bg-[#f8f6f0] py-20 lg:py-28">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="text-center"><p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#245f8f]">Plans</p><h2 className="mt-5 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">从一次研究开始。</h2></div>
-            <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-black/10 bg-black/10 lg:grid-cols-3">
+            <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-black/10 bg-black/10 md:grid-cols-3">
               {PRICING.map((item) => (
                 <article key={item.plan} className={`relative flex flex-col p-7 sm:p-8 ${item.highlight ? 'bg-[#e7edf0]' : 'bg-[#f8f6f0]'}`}>
                   {item.highlight && <span className="absolute right-6 top-6 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#245f8f]">推荐</span>}

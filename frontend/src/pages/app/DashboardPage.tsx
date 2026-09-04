@@ -89,7 +89,7 @@ function MetricCard({ label, value, note, icon: Icon, classes, to }: {
   to: string
 }) {
   return (
-    <Link to={to} className="group rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
+    <Link to={to} className="group rounded-2xl border border-black/10 bg-[#fbfaf6] p-4 transition hover:-translate-y-0.5 hover:border-[#245f8f]/30 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-gray-500">{label}</p>
@@ -254,21 +254,23 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 px-5 py-6 text-white shadow-sm sm:px-7">
+      <section className="relative isolate overflow-hidden rounded-3xl border border-black/10 bg-[#eeeae0] px-5 py-7 text-[#171b1f] shadow-[0_18px_50px_rgba(23,27,31,0.07)] sm:px-8 sm:py-8">
+        <img src="/rivalscope-ink-hero.png" alt="" className="pointer-events-none absolute inset-0 -z-20 h-full w-full object-cover object-[76%_48%] opacity-65" />
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(247,244,236,0.98),rgba(247,244,236,0.88)_50%,rgba(247,244,236,0.18))]" />
         <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-300">Intelligence overview</p>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">今天的情报，从事件开始</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[#245f8f]">Intelligence overview</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">今天的情报，从事件开始</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
               {criticalLoading
                 ? '正在汇聚最新事件与资产…'
                 : `共 ${summary?.total ?? events.length} 条事件，${summary?.active ?? runningEvents.length} 项正在运行，${needsAttention} 项需要关注。`}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link to="/app/competitors" className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 hover:bg-blue-50"><Building2 className="h-4 w-4" />添加对象</Link>
-            <Link to="/app/trackers" className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:border-slate-500"><RadioTower className="h-4 w-4" />创建监测</Link>
-            <Link to="/app/new" className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:border-slate-500"><Sparkles className="h-4 w-4" />发起分析</Link>
+            <Link to="/app/competitors" className="inline-flex items-center gap-2 rounded-full bg-[#171b1f] px-4 py-2 text-sm font-semibold text-white hover:bg-black"><Building2 className="h-4 w-4" />添加对象</Link>
+            <Link to="/app/trackers" className="inline-flex items-center gap-2 rounded-full border border-black/15 bg-white/45 px-4 py-2 text-sm font-semibold text-[#171b1f] backdrop-blur-sm hover:bg-white/70"><RadioTower className="h-4 w-4" />创建监测</Link>
+            <Link to="/app/new" className="inline-flex items-center gap-2 rounded-full border border-black/15 bg-white/45 px-4 py-2 text-sm font-semibold text-[#171b1f] backdrop-blur-sm hover:bg-white/70"><Sparkles className="h-4 w-4" />发起分析</Link>
           </div>
         </div>
       </section>

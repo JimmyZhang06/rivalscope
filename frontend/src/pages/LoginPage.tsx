@@ -49,7 +49,7 @@ export default function LoginPage() {
       subtitle={
         <>
           还没有账号？
-          <Link to="/register" className="font-medium text-blue-600 hover:underline">
+          <Link to="/register" className="font-medium text-[#245f8f] hover:underline">
             免费注册
           </Link>
         </>
@@ -65,7 +65,7 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-xl border border-black/15 bg-white/55 px-4 py-3 text-sm focus:border-[#245f8f] focus:outline-none focus:ring-1 focus:ring-[#245f8f]"
             required
             autoFocus
           />
@@ -73,7 +73,7 @@ export default function LoginPage() {
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <label htmlFor="login-password" className="block text-sm font-medium text-gray-700">密码</label>
-            <Link to="/forgot-password" className="text-xs text-blue-600 hover:underline">
+            <Link to="/forgot-password" className="text-xs text-[#245f8f] hover:underline">
               忘记密码？
             </Link>
           </div>
@@ -84,7 +84,7 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="请输入密码"
-            className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-xl border border-black/15 bg-white/55 px-4 py-3 text-sm focus:border-[#245f8f] focus:outline-none focus:ring-1 focus:ring-[#245f8f]"
             required
           />
         </div>
@@ -92,7 +92,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-full bg-[#171b1f] py-3 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? '登录中…' : '登录'}
         </button>
@@ -102,7 +102,7 @@ export default function LoginPage() {
         <span className="text-xs font-medium text-gray-400">或使用演示访问</span>
         <span className="h-px flex-1 bg-gray-200" />
       </div>
-      <form onSubmit={handleDemoSubmit} className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+      <form onSubmit={handleDemoSubmit} className="rounded-2xl border border-[#245f8f]/15 bg-[#e7edf0] p-4">
         <label htmlFor="demo-access-key" className="block text-sm font-semibold text-slate-900">演示访问密钥</label>
         <p className="mt-1 text-xs leading-5 text-slate-500">无需连接后端即可浏览示例工作台；演示操作不会保存。</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -113,13 +113,13 @@ export default function LoginPage() {
             value={demoKey}
             onChange={(e) => setDemoKey(e.target.value)}
             placeholder={DEMO_ACCESS_KEY}
-            className="min-w-0 flex-1 rounded-md border border-blue-200 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="min-w-0 flex-1 rounded-xl border border-[#245f8f]/20 bg-[#fbfaf6] px-3 py-2.5 text-sm focus:border-[#245f8f] focus:outline-none focus:ring-1 focus:ring-[#245f8f]"
             required
           />
           <button
             type="submit"
             disabled={demoLoading}
-            className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-full bg-[#245f8f] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#17446a] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {demoLoading ? '进入中…' : '进入演示'}
           </button>
