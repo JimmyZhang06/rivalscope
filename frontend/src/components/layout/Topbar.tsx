@@ -37,7 +37,7 @@ export default function Topbar({ unreadCount, user, onOpenMobile, onLogout, onRe
   }, [userMenuOpen])
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-black/10 bg-[#f8f6f0]/95 px-4 backdrop-blur-xl sm:px-6">
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-black/[0.08] bg-[#f4f1e9]/95 px-4 backdrop-blur-xl sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"

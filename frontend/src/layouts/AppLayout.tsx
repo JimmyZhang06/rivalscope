@@ -71,8 +71,9 @@ export default function AppLayout() {
           onRefreshUnread={refreshUnreadCount}
         />
         {demoMode && (
-          <div className="border-b border-[#245f8f]/15 bg-[#e7edf0] px-4 py-2 text-center text-sm font-medium text-[#17446a] sm:px-6">
-            演示模式 · 当前显示示例数据，操作不会保存
+          <div className="flex items-center justify-center gap-2 border-b border-black/[0.08] bg-[#f8f6f0] px-4 py-2 text-center text-sm text-slate-600 sm:px-6">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#f28c28]" aria-hidden="true" />
+            <span><strong className="font-semibold text-[#111a28]">演示模式</strong> · 当前显示示例数据，操作不会保存</span>
           </div>
         )}
         <main>
