@@ -43,8 +43,8 @@ function NavigationLink({ item, collapsed, onNavigate }: {
           collapsed ? 'justify-center px-2' : 'gap-3 px-3'
         } ${
           isActive
-            ? 'bg-white/10 text-white before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-[#7cb1d8]'
-            : 'text-slate-400 hover:bg-white/[0.07] hover:text-white'
+            ? 'bg-[#f8f6f0] text-[#171b1f] shadow-[0_8px_24px_rgba(0,0,0,0.18)] before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-full before:bg-[#245f8f]'
+            : 'text-slate-400 hover:bg-white/[0.08] hover:text-white'
         }`
       }
     >
@@ -56,7 +56,7 @@ function NavigationLink({ item, collapsed, onNavigate }: {
 
 function SectionLabel({ children, collapsed }: { children: string; collapsed: boolean }) {
   if (collapsed) return <div className="mx-3 my-2 border-t border-white/10" />
-  return <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">{children}</p>
+  return <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7cb1d8]/65">{children}</p>
 }
 
 export default function Sidebar({
@@ -83,7 +83,7 @@ export default function Sidebar({
   }, [mobileOpen, onCloseMobile])
 
   const hideLabels = collapsed && !mobileOpen
-  const navWidth = hideLabels ? 'lg:w-[76px]' : 'lg:w-64'
+  const navWidth = hideLabels ? 'lg:w-20' : 'lg:w-72'
 
   return (
     <>
@@ -101,7 +101,9 @@ export default function Sidebar({
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className={`flex h-16 shrink-0 items-center border-b border-white/10 ${hideLabels ? 'justify-center px-2' : 'justify-between px-4'}`}>
+        <img src="/rivalscope-ink-hero.png" alt="" className="pointer-events-none absolute inset-x-0 bottom-0 h-[62%] w-full object-cover object-[72%_center] opacity-[0.11] grayscale" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(23,27,31,1)_0%,rgba(23,27,31,0.92)_48%,rgba(23,27,31,0.72)_100%)]" />
+        <div className={`relative z-10 flex h-16 shrink-0 items-center border-b border-white/10 ${hideLabels ? 'justify-center px-2' : 'justify-between px-4'}`}>
           <NavLink to="/app" end onClick={onCloseMobile} className="flex min-w-0 items-center gap-2.5 text-white">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#171b1f]">
               <Search className="h-4 w-4" aria-hidden="true" />
@@ -109,7 +111,7 @@ export default function Sidebar({
             {!hideLabels && (
               <span className="min-w-0">
                 <span className="block truncate text-sm font-semibold tracking-wide">RivalScope</span>
-                <span className="block truncate text-[10px] tracking-wide text-slate-500">竞争情报平台</span>
+                <span className="block truncate text-[9px] uppercase tracking-[0.16em] text-[#7cb1d8]/70">Intelligence system</span>
               </span>
             )}
           </NavLink>
@@ -120,7 +122,7 @@ export default function Sidebar({
           )}
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2.5 py-3">
+        <nav className="relative z-10 flex-1 overflow-y-auto px-3 py-4">
           <SectionLabel collapsed={hideLabels}>平台</SectionLabel>
           <div className="space-y-1">
             {PLATFORM_NAVIGATION.map((item) => <NavigationLink key={item.to} item={item} collapsed={hideLabels} onNavigate={onCloseMobile} />)}
@@ -161,12 +163,12 @@ export default function Sidebar({
           </div>
         </nav>
 
-        <div className="shrink-0 border-t border-white/10 p-2.5">
+        <div className="relative z-10 shrink-0 border-t border-white/10 p-3">
           <NavLink
             to="/app/account"
             onClick={onCloseMobile}
             title={hideLabels ? '账户设置' : undefined}
-            className={`flex items-center rounded-lg p-2 text-slate-300 transition hover:bg-slate-800 motion-reduce:transition-none ${hideLabels ? 'justify-center' : 'gap-3'}`}
+            className={`flex items-center rounded-2xl border border-white/10 bg-white/[0.045] p-2.5 text-slate-300 transition hover:bg-white/[0.08] motion-reduce:transition-none ${hideLabels ? 'justify-center' : 'gap-3'}`}
           >
             {user?.avatar?.startsWith('data:image/') ? (
               <img src={user.avatar} alt="头像" className="h-9 w-9 shrink-0 rounded-full object-cover" />
@@ -187,7 +189,7 @@ export default function Sidebar({
               type="button"
               aria-label="折叠侧栏"
               onClick={onToggleCollapsed}
-              className="hidden flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-500 hover:bg-slate-800 hover:text-white lg:flex"
+              className="hidden flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-500 hover:bg-white/[0.07] hover:text-white lg:flex"
             >
               {hideLabels ? <ChevronsRight className="h-4 w-4" /> : <><ChevronsLeft className="h-4 w-4" /> 折叠侧栏</>}
             </button>
