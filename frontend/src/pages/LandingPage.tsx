@@ -138,26 +138,29 @@ export default function LandingPage() {
         </section>
 
         <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
-          <div className="overflow-hidden rounded-3xl bg-[#171b1f] text-white shadow-[0_32px_80px_rgba(21,25,29,0.16)]">
-            <div className="grid lg:grid-cols-[1fr_0.88fr]">
+          <div className="overflow-hidden rounded-3xl border border-black/10 bg-[#f2efe7] shadow-[0_24px_70px_rgba(35,43,49,0.09)]">
+            <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
               <div className="p-7 sm:p-10 lg:p-14">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#7cb1d8]">Decision-ready output</p><h2 className="mt-5 max-w-xl text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">不只给答案，也呈现答案从何而来。</h2><p className="mt-5 max-w-xl text-base leading-7 text-slate-300">结论与来源保持引用关系，关键事件进入时间线，差异进入对比结构，方便复核、分享与继续追问。</p>
-                <div className="mt-9 grid gap-y-5 sm:grid-cols-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#245f8f]">Decision-ready output</p>
+                <h2 className="mt-5 max-w-xl text-3xl font-semibold tracking-[-0.04em] text-[#171b1f] sm:text-4xl">不只给答案，也呈现答案从何而来。</h2>
+                <p className="mt-5 max-w-xl text-base leading-7 text-slate-600">结论与来源保持引用关系，关键事件进入时间线，差异进入对比结构，方便复核、分享与继续追问。</p>
+                <div className="mt-9 grid gap-px overflow-hidden rounded-2xl border border-black/10 bg-black/10 sm:grid-cols-2">
                   {[[BarChart3, '多维度对比与评分'], [Network, '企业与产业关系图谱'], [Building2, '标准化企业画像'], [ShieldCheck, '来源分级与审计记录']].map(([Icon, label]) => {
                     const FeatureIcon = Icon as typeof BarChart3
-                    return <div key={label as string} className="flex items-center gap-3 text-sm text-slate-200"><FeatureIcon className="h-4 w-4 text-[#7cb1d8]" />{label as string}</div>
+                    return <div key={label as string} className="flex items-center gap-3 bg-[#faf8f2] px-4 py-4 text-sm text-slate-700"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7edf0] text-[#245f8f]"><FeatureIcon className="h-4 w-4" /></span>{label as string}</div>
                   })}
                 </div>
               </div>
-              <div className="border-t border-white/10 bg-white/[0.035] p-7 sm:p-10 lg:border-l lg:border-t-0">
-                <div className="border-y border-white/15 py-5">
-                  <div className="flex items-center justify-between"><p className="text-sm font-semibold">竞争态势摘要</p><span className="text-[10px] font-semibold tracking-widest text-[#84c9a6]">已核验</span></div>
+              <div className="relative border-t border-black/10 bg-[#e7edf0]/65 p-7 sm:p-10 lg:border-l lg:border-t-0 lg:p-14">
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_10%,rgba(255,255,255,0.75),transparent_42%)]" />
+                <div className="relative">
+                  <div className="flex items-center justify-between border-b border-black/10 pb-5"><div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Verified brief</p><p className="mt-2 text-lg font-semibold text-[#171b1f]">竞争态势摘要</p></div><span className="rounded-full border border-emerald-700/15 bg-emerald-50/70 px-3 py-1 text-[10px] font-semibold tracking-widest text-emerald-700">已核验</span></div>
                   <div className="mt-7 space-y-6">
                     {[['产品完整度', 86], ['市场势能', 72], ['生态协同', 64], ['企业适配', 91]].map(([label, value]) => (
-                      <div key={label as string}><div className="mb-2 flex justify-between text-xs"><span className="text-slate-400">{label as string}</span><span className="font-semibold text-white">{value as number}</span></div><div className="h-px bg-white/15"><div className="h-px bg-[#7cb1d8]" style={{ width: `${value}%` }} /></div></div>
+                      <div key={label as string}><div className="mb-2.5 flex justify-between text-xs"><span className="text-slate-600">{label as string}</span><span className="font-semibold text-[#171b1f]">{value as number}</span></div><div className="h-1 overflow-hidden rounded-full bg-slate-900/10"><div className="h-full rounded-full bg-[#3979a9]" style={{ width: `${value}%` }} /></div></div>
                     ))}
                   </div>
-                  <div className="mt-8 border-l border-[#7cb1d8] pl-4"><p className="text-xs font-semibold text-[#a7cde8]">关键判断</p><p className="mt-2 text-xs leading-5 text-slate-400">竞争重心正从单点能力转向工作流整合，生态协同将成为下一阶段差异化来源。</p><p className="mt-3 text-[10px] text-slate-600">关联 8 条来源 · 更新于今天</p></div>
+                  <div className="mt-9 rounded-2xl border border-black/10 bg-[#faf8f2]/90 p-5"><p className="text-xs font-semibold text-[#245f8f]">关键判断</p><p className="mt-2 text-sm leading-6 text-slate-600">竞争重心正从单点能力转向工作流整合，生态协同将成为下一阶段差异化来源。</p><p className="mt-4 text-[10px] uppercase tracking-[0.12em] text-slate-400">关联 8 条来源 · 更新于今天</p></div>
                 </div>
               </div>
             </div>
