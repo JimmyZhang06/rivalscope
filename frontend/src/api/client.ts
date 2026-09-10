@@ -49,6 +49,7 @@ import type {
   User,
 } from './types'
 import { demoRequest, isDemoMode } from './demo'
+import { apiUrl } from './url'
 
 const TOKEN_KEY = 'cr_token'
 const REFRESH_KEY = 'cr_refresh'
@@ -104,7 +105,7 @@ export async function tryProactiveRefresh(): Promise<boolean> {
 
   refreshPromise = (async () => {
     try {
-      const resp = await fetch('/api/auth/refresh', {
+      const resp = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refresh }),
@@ -134,7 +135,7 @@ async function tryRefreshToken(): Promise<boolean> {
 
   refreshPromise = (async () => {
     try {
-      const resp = await fetch('/api/auth/refresh', {
+      const resp = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refresh }),
@@ -181,7 +182,7 @@ export async function request<T>(url: string, init: RequestInit = {}): Promise<T
   if (token) headers['Authorization'] = `Bearer ${token}`
   if (init.body) headers['Content-Type'] = 'application/json'
 
-  const resp = await fetch(url, { ...init, headers })
+  const resp = await fetch(apiUrl(url), { ...init, headers })
   const isAuthEndpoint = url.startsWith('/api/auth/')
 
   if (resp.status === 401) {
@@ -218,7 +219,7 @@ export async function request<T>(url: string, init: RequestInit = {}): Promise<T
     // Refresh succeeded, retry with new token
     const newToken = tokenStore.get()
     if (newToken) headers['Authorization'] = `Bearer ${newToken}`
-    const retry = await fetch(url, { ...init, headers })
+    const retry = await fetch(apiUrl(url), { ...init, headers })
 
     if (retry.status === 204) return undefined as T
     if (!retry.ok) {
@@ -256,7 +257,7 @@ async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Res
     const headers = new Headers(init.headers)
     const token = tokenStore.get()
     if (token) headers.set('Authorization', `Bearer ${token}`)
-    return fetch(url, { ...init, headers })
+    return fetch(apiUrl(url), { ...init, headers })
   }
   let response = await send()
   if (response.status === 401 && await tryRefreshToken()) response = await send()
@@ -436,7 +437,7 @@ export function subscribeEvents(
       { method: 'POST' },
     )
     if (cancelled) return
-    es = new EventSource(`/api/research/${id}/events?ticket=${encodeURIComponent(ticket)}`)
+    es = new EventSource(apiUrl(`/api/research/${id}/events?ticket=${encodeURIComponent(ticket)}`))
 
     es.addEventListener('step', (e) => {
       onStep(JSON.parse((e as MessageEvent).data))

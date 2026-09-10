@@ -201,6 +201,8 @@ CI 会执行 Python 编译、pytest、Bandit、Python/npm 依赖审计、TypeScr
 
 ## 部署说明
 
+GitHub Pages 前端 + 阿里云后端的部署配置与切换步骤见 [`deploy/README.md`](deploy/README.md)。目标前端域名为 `rivalscope.jimmyzhang.xyz`；服务器、DNS 和 GitHub Pages 尚需实际配置及验证，当前在线体验地址不代表已经切换。
+
 线上演示站采用静态前端部署，`frontend/.openai/hosting.json` 保存 Sites 项目标识和构建目录。完整生产部署还应：
 
 - 使用 `APP_ENV=production`，通过密钥管理服务注入 `JWT_SECRET`、`MASTER_KEY` 和第三方凭据；

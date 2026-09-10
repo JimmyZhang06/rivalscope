@@ -29,3 +29,5 @@ task_state.json
 task-detail-notion.png
 *.png
 .env
+.env.local
+.env.*.local
