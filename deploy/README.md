@@ -25,8 +25,8 @@
 1. 合并部署配置到仓库默认分支。在 Settings → Pages 选择 GitHub Actions。
 2. 将 Custom domain 设置为 `rivalscope.jimmyzhang.xyz`。Actions 发布必须通过 Pages 设置绑定域名，单独添加 CNAME 文件不足以完成绑定。
 3. 在 DNSPod 添加 `rivalscope` 的 CNAME，记录值为 `JimmyZhang06.github.io`，不要带仓库路径；先核对同名记录，避免覆盖其他服务。根域名记录无需修改。
-4. 在 Settings → Secrets and variables → Actions → Variables 设置 `VITE_API_ORIGIN=https://<API域名>`，不带 `/api` 或结尾斜杠。该值会公开写入构建产物，不能包含凭据。
-5. 在 Actions 手动执行 Deploy frontend to GitHub Pages。首次仅提供手动发布入口，待服务器及域名就绪后再决定是否启用 push 自动发布。
+4. 工作流默认使用 `https://rivalscope-api.jimmyzhang.xyz`。如需其他 API 域名，在 Settings → Secrets and variables → Actions → Variables 设置 `VITE_API_ORIGIN=https://<API域名>`，不带 `/api` 或结尾斜杠。该值会公开写入构建产物，不能包含凭据。默认地址仅解决前端构建配置，真实功能仍要求 API 的 DNS、HTTPS 和后端就绪。
+5. 在 Actions 手动执行 Deploy frontend to GitHub Pages；以后向 `agent-main` 推送 `frontend/**` 或本工作流的改动会自动发布。
 6. 等待 DNS 检查和证书签发后启用 Enforce HTTPS，验证首页、注册登录、刷新令牌、报告导出和实时进度。
 
 前端使用 BrowserRouter。工作流将 index.html 复制为 404.html，让直接访问 `/login` 或 `/app/...` 时仍能加载应用；GitHub Pages 对这些请求仍返回 HTTP 404 状态。若要求所有有效路由返回 200，应改用阿里云 Nginx 的 `try_files $uri $uri/ /index.html` 托管前端，或另行改为 HashRouter。

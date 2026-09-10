@@ -1,8 +1,12 @@
 name: Deploy frontend to GitHub Pages
 
-# First deployment is explicit, after the API and DNS are ready.
 on:
   workflow_dispatch:
+  push:
+    branches: [agent-main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/pages.yml'
 
 permissions:
   contents: read
@@ -15,7 +19,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      VITE_API_ORIGIN: ${{ vars.VITE_API_ORIGIN }}
+      VITE_API_ORIGIN: ${{ vars.VITE_API_ORIGIN || 'https://rivalscope-api.jimmyzhang.xyz' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
