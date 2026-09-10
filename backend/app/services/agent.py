@@ -94,6 +94,7 @@ def _add_step(task_id: str, phase: str, title: str, detail: str = "") -> None:
 
 
 async def _save_sources(task_id: str, results: list[dict]) -> None:
+    archives: list[tuple[int, str, str]] = []
     with SessionLocal() as db:
         for r in results:
             raw_pub = str(r.get("published_date") or "")
@@ -122,9 +123,15 @@ async def _save_sources(task_id: str, results: list[dict]) -> None:
             )
             db.add(source)
             db.flush()  # 获取 source.id 用于创建快照
-            from app.services.snapshot import save_archive
-            await save_archive(task_id, source.id, r["url"], raw_content=str(r.get("raw_content") or ""))
+            archives.append((source.id, r["url"], str(r.get("raw_content") or "")))
         db.commit()
+
+    # Release SQLite's writer lock before snapshot code opens another session.
+    # Network requests must also run outside the source transaction.
+    from app.services.snapshot import save_archive
+
+    for source_id, url, raw_content in archives:
+        await save_archive(task_id, source_id, url, raw_content=raw_content)
 
 
 def _save_insights(task_id: str, data: dict) -> None:
