@@ -22,6 +22,7 @@ MAX_RESULTS_PER_QUERY = 5
 SNIPPET_LIMIT = 1000  # 每条检索材料送入 LLM 的最大字符数
 RAW_CONTENT_LIMIT = 8000  # 原文摘录入库的最大字符数
 RECENCY_HALF_LIFE_DAYS = 180  # 时间衰减半衰期
+SNAPSHOT_CONCURRENCY = 4
 
 
 def _date_header() -> str:
@@ -130,8 +131,13 @@ async def _save_sources(task_id: str, results: list[dict]) -> None:
     # Network requests must also run outside the source transaction.
     from app.services.snapshot import save_archive
 
-    for source_id, url, raw_content in archives:
-        await save_archive(task_id, source_id, url, raw_content=raw_content)
+    semaphore = asyncio.Semaphore(SNAPSHOT_CONCURRENCY)
+
+    async def archive_one(source_id: int, url: str, raw_content: str) -> None:
+        async with semaphore:
+            await save_archive(task_id, source_id, url, raw_content=raw_content)
+
+    await asyncio.gather(*(archive_one(*entry) for entry in archives))
 
 
 def _save_insights(task_id: str, data: dict) -> None:
@@ -510,6 +516,7 @@ async def run_research(task_id: str) -> None:
             r["combined"] = 0.6 * float(r.get("score") or 0.0) + 0.4 * recency
         results.sort(key=lambda r: r.get("combined", 0.0), reverse=True)
 
+        _add_step(task_id, "searching", "保存来源快照", f"共 {len(results)} 条来源，并发抓取上限 {SNAPSHOT_CONCURRENCY}")
         await _save_sources(task_id, results)
         credibility = _credibility_summary(results, queries)
         _add_step(task_id, "searching", "检索完成", f"去重后共收集 {len(results)} 条信息来源\n{credibility}")

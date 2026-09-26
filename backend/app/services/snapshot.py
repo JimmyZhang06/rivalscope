@@ -1,6 +1,7 @@
 """页面快照服务：抓取来源页面的 HTML 存档 + 纯文本提取"""
 
 import logging
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,6 +13,7 @@ from app.db.models import SourceArchive
 from app.core.url_security import safe_external_request
 
 logger = logging.getLogger(__name__)
+SNAPSHOT_TIMEOUT_SECONDS = 15
 
 
 async def capture_snapshot(url: str, raw_content: str = "") -> dict[str, Any]:
@@ -35,11 +37,16 @@ async def capture_snapshot(url: str, raw_content: str = "") -> dict[str, Any]:
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await safe_external_request(
-                client,
-                "GET",
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; ResearchAgent/1.0)"},
+            # Bound the complete request, including redirects and response reading;
+            # httpx's per-I/O timeout alone does not bound total elapsed time.
+            resp = await asyncio.wait_for(
+                safe_external_request(
+                    client,
+                    "GET",
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; ResearchAgent/1.0)"},
+                ),
+                timeout=SNAPSHOT_TIMEOUT_SECONDS,
             )
             resp.raise_for_status()
             html = resp.text[:500_000]

@@ -3,7 +3,7 @@ import logging
 import re
 import asyncio
 
-from openai import AsyncOpenAI, APIError, APITimeoutError
+from openai import AsyncOpenAI, APIError, APITimeoutError, APIStatusError
 
 from app.core.config import get_settings
 from app.core.model_pricing import calc_cost
@@ -49,6 +49,7 @@ class LLMClient:
             base_url=settings.llm_base_url,
             api_key=settings.llm_api_key,
             timeout=timeout,
+            max_retries=0,  # Retry only here; avoid multiplying SDK and app retries.
         )
         self.user_id = user_id
         self.org_id = org_id
@@ -78,15 +79,17 @@ class LLMClient:
                 return content
             except asyncio.TimeoutError:
                 last_err = TimeoutError(f"LLM 调用超时（{timeout}s），模型：{self.model}")
-                logger.warning("LLM timeout after %ds (attempt %d/2): %s", timeout, attempt + 1, last_err)
+                logger.warning("LLM timeout after %ds (attempt %d/3): %s", timeout, attempt + 1, last_err)
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
                     continue
                 raise last_err  # type: ignore[misc]
             except (APITimeoutError, APIError) as exc:
+                if isinstance(exc, APIStatusError) and exc.status_code not in (408, 409, 429) and exc.status_code < 500:
+                    raise  # Invalid credentials/requests will not improve on retry.
                 last_err = exc
                 wait = 2 ** attempt
-                logger.warning("LLM call retry %d/2 after %s", attempt + 1, exc)
+                logger.warning("LLM call attempt %d/3 failed: %s", attempt + 1, exc)
                 if attempt < 2:
                     await asyncio.sleep(wait)
         raise last_err or RuntimeError("LLM call failed")  # type: ignore[misc]
